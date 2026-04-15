@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -43,21 +44,9 @@ jobs:
   release:
     needs: [build, lint]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -66,17 +55,28 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Build binary
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+      - name: Build binaries
         run: |
-          EXT=""
-          if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
-          go build -o bb-browser-${GOOS}-${GOARCH}${EXT} .
+          declare -a targets=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+          )
+          mkdir -p dist
+          for target in "${targets[@]}"; do
+            GOOS="${target%/*}"
+            GOARCH="${target#*/}"
+            EXT=""
+            if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
+            OUTPUT="dist/bb-browser-${GOOS}-${GOARCH}${EXT}"
+            echo "Building ${OUTPUT}..."
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" -o "$OUTPUT" .
+          done
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Create release
+        uses: softprops/action-gh-release@v2
         with:
-          name: bb-browser-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: bb-browser-*
+          generate_release_notes: true
+          files: dist/*

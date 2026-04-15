@@ -16,7 +16,7 @@ import (
 	"github.com/leolin310148/bb-browser-go/internal/site"
 )
 
-const version = "0.1.0"
+var version = "0.1.0"
 
 var jqExpression string
 
