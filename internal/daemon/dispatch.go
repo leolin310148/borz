@@ -474,6 +474,36 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		})
 	}
 
+	// `open` with no --tab opens a new tab, so it must work when no page
+	// targets exist yet (e.g. fresh Chrome with only about:blank closed).
+	if req.Action == protocol.ActionOpen && tabRef == "" {
+		if req.URL == "" {
+			return failResp(req.ID, "missing url parameter")
+		}
+		result, err := cdp.BrowserCommand("Target.createTarget", map[string]interface{}{
+			"url": req.URL, "background": true,
+		})
+		if err != nil {
+			return failResp(req.ID, err)
+		}
+		var created struct {
+			TargetID string `json:"targetId"`
+		}
+		json.Unmarshal(result, &created)
+		cdp.AttachAndEnable(created.TargetID)
+		newTab := cdp.TabManager.GetTab(created.TargetID)
+		shortID := ""
+		var seq *int
+		if newTab != nil {
+			shortID = newTab.ShortID
+			s := newTab.RecordAction()
+			seq = &s
+		}
+		return okResp(req.ID, &protocol.ResponseData{
+			TabID: created.TargetID, URL: req.URL, Tab: shortID, Seq: seq,
+		})
+	}
+
 	target, err := cdp.EnsurePageTarget(tabRef)
 	if err != nil {
 		return failResp(req.ID, err)
@@ -487,36 +517,11 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 	switch req.Action {
 	// --- Navigation ---
 	case protocol.ActionOpen:
+		// tabRef == "" is handled above (hoisted so it works with no existing pages).
 		if req.URL == "" {
 			return failResp(req.ID, "missing url parameter")
 		}
 		seq := tab.RecordAction()
-		if tabRef == "" {
-			// Open in new tab
-			result, err := cdp.BrowserCommand("Target.createTarget", map[string]interface{}{
-				"url": req.URL, "background": true,
-			})
-			if err != nil {
-				return failResp(req.ID, err)
-			}
-			var created struct {
-				TargetID string `json:"targetId"`
-			}
-			json.Unmarshal(result, &created)
-			newTarget, _ := cdp.EnsurePageTarget(created.TargetID)
-			newTab := cdp.TabManager.GetTab(created.TargetID)
-			newShort := shortID
-			if newTab != nil {
-				newShort = newTab.ShortID
-			}
-			newTargetID := created.TargetID
-			if newTarget != nil {
-				newTargetID = newTarget.ID
-			}
-			return okResp(req.ID, &protocol.ResponseData{
-				URL: req.URL, TabID: newTargetID, Tab: newShort, Seq: intPtr(seq),
-			})
-		}
 		cdp.PageCommand(target.ID, "Page.navigate", map[string]interface{}{"url": req.URL})
 		tab.Refs = map[string]*protocol.RefInfo{}
 		return okResp(req.ID, &protocol.ResponseData{

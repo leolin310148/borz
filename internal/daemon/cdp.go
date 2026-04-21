@@ -38,7 +38,8 @@ type CdpConnection struct {
 	CurrentTargetID string
 
 	socket    *websocket.Conn
-	pending   sync.Map // id -> *pendingCommand
+	writeMu   sync.Mutex // serializes socket.WriteMessage calls (gorilla requires one writer)
+	pending   sync.Map   // id -> *pendingCommand
 	nextID    atomic.Int64
 	sessions  sync.Map // targetId -> sessionId
 	attached  sync.Map // sessionId -> targetId
@@ -728,7 +729,10 @@ func (c *CdpConnection) BrowserCommand(method string, params interface{}) (json.
 	c.pending.Store(id, cmd)
 
 	data, _ := json.Marshal(payload)
-	if err := c.socket.WriteMessage(websocket.TextMessage, data); err != nil {
+	c.writeMu.Lock()
+	err := c.socket.WriteMessage(websocket.TextMessage, data)
+	c.writeMu.Unlock()
+	if err != nil {
 		c.pending.Delete(id)
 		return nil, err
 	}
@@ -782,7 +786,10 @@ func (c *CdpConnection) SessionCommand(targetID, method string, params interface
 	c.sessionMu.Unlock()
 
 	data, _ := json.Marshal(payload)
-	if err := c.socket.WriteMessage(websocket.TextMessage, data); err != nil {
+	c.writeMu.Lock()
+	err := c.socket.WriteMessage(websocket.TextMessage, data)
+	c.writeMu.Unlock()
+	if err != nil {
 		c.sessionMu.Lock()
 		delete(c.sessionListeners, id)
 		c.sessionMu.Unlock()
