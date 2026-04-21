@@ -294,6 +294,87 @@ func getAttributeValue(cdp *CdpConnection, targetID string, backendNodeID int, a
 	return fmt.Sprintf("%v", call.Result.Value), nil
 }
 
+// keyDef is the CDP keyboard event descriptor for a single key.
+type keyDef struct {
+	Key     string // KeyboardEvent.key
+	Code    string // KeyboardEvent.code
+	KeyCode int    // windowsVirtualKeyCode
+	Text    string // character to emit (empty for non-printable keys)
+}
+
+// specialKeymap maps named non-printable keys to their CDP descriptors.
+// Non-printable keys need windowsVirtualKeyCode set for Chrome's default
+// handler to fire OS-level behavior (newline, cursor move, etc.).
+var specialKeymap = map[string]keyDef{
+	"Enter":      {"Enter", "Enter", 13, "\r"},
+	"Return":     {"Enter", "Enter", 13, "\r"},
+	"Tab":        {"Tab", "Tab", 9, "\t"},
+	"Backspace":  {"Backspace", "Backspace", 8, ""},
+	"Delete":     {"Delete", "Delete", 46, ""},
+	"Escape":     {"Escape", "Escape", 27, ""},
+	"Esc":        {"Escape", "Escape", 27, ""},
+	"Space":      {" ", "Space", 32, " "},
+	"ArrowUp":    {"ArrowUp", "ArrowUp", 38, ""},
+	"ArrowDown":  {"ArrowDown", "ArrowDown", 40, ""},
+	"ArrowLeft":  {"ArrowLeft", "ArrowLeft", 37, ""},
+	"ArrowRight": {"ArrowRight", "ArrowRight", 39, ""},
+	"Up":         {"ArrowUp", "ArrowUp", 38, ""},
+	"Down":       {"ArrowDown", "ArrowDown", 40, ""},
+	"Left":       {"ArrowLeft", "ArrowLeft", 37, ""},
+	"Right":      {"ArrowRight", "ArrowRight", 39, ""},
+	"Home":       {"Home", "Home", 36, ""},
+	"End":        {"End", "End", 35, ""},
+	"PageUp":     {"PageUp", "PageUp", 33, ""},
+	"PageDown":   {"PageDown", "PageDown", 34, ""},
+	"Insert":     {"Insert", "Insert", 45, ""},
+	"Shift":      {"Shift", "ShiftLeft", 16, ""},
+	"Control":    {"Control", "ControlLeft", 17, ""},
+	"Alt":        {"Alt", "AltLeft", 18, ""},
+	"Meta":       {"Meta", "MetaLeft", 91, ""},
+	"F1":         {"F1", "F1", 112, ""},
+	"F2":         {"F2", "F2", 113, ""},
+	"F3":         {"F3", "F3", 114, ""},
+	"F4":         {"F4", "F4", 115, ""},
+	"F5":         {"F5", "F5", 116, ""},
+	"F6":         {"F6", "F6", 117, ""},
+	"F7":         {"F7", "F7", 118, ""},
+	"F8":         {"F8", "F8", 119, ""},
+	"F9":         {"F9", "F9", 120, ""},
+	"F10":        {"F10", "F10", 121, ""},
+	"F11":        {"F11", "F11", 122, ""},
+	"F12":        {"F12", "F12", 123, ""},
+}
+
+// resolveKey builds the CDP key descriptor for a key name or a single printable char.
+// Named keys are looked up in specialKeymap; single printable runes get a synthetic
+// keyCode (a-z → A-Z, 0-9 → 0-9) so typing works in canvas apps expecting real events.
+func resolveKey(keyName string) keyDef {
+	if def, ok := specialKeymap[keyName]; ok {
+		return def
+	}
+	runes := []rune(keyName)
+	if len(runes) == 1 {
+		r := runes[0]
+		def := keyDef{Key: keyName, Text: keyName}
+		switch {
+		case r >= 'a' && r <= 'z':
+			def.KeyCode = int(r - 'a' + 'A')
+			def.Code = "Key" + strings.ToUpper(keyName)
+		case r >= 'A' && r <= 'Z':
+			def.KeyCode = int(r)
+			def.Code = "Key" + keyName
+		case r >= '0' && r <= '9':
+			def.KeyCode = int(r)
+			def.Code = "Digit" + keyName
+		case r == ' ':
+			def.KeyCode = 32
+			def.Code = "Space"
+		}
+		return def
+	}
+	return keyDef{Key: keyName}
+}
+
 // modifierMask converts a list of modifier names into the CDP bitmask used by
 // Input.dispatchKeyEvent / Input.dispatchMouseEvent: alt=1, ctrl=2, meta=4, shift=8.
 func modifierMask(mods []string) int {
@@ -604,22 +685,32 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			keyType = "press"
 		}
 
-		dispatchKey := func(eventType, key, code, text string) error {
+		send := func(eventType string, def keyDef, withText bool) error {
 			params := map[string]interface{}{
 				"type":      eventType,
 				"modifiers": mods,
 			}
-			if key != "" {
-				params["key"] = key
+			if def.Key != "" {
+				params["key"] = def.Key
 			}
-			if code != "" {
-				params["code"] = code
+			if def.Code != "" {
+				params["code"] = def.Code
 			}
-			if text != "" {
-				params["text"] = text
+			if def.KeyCode > 0 {
+				params["windowsVirtualKeyCode"] = def.KeyCode
+				params["nativeVirtualKeyCode"] = def.KeyCode
+			}
+			if withText && def.Text != "" {
+				params["text"] = def.Text
+				params["unmodifiedText"] = def.Text
 			}
 			_, err := cdp.SessionCommand(target.ID, "Input.dispatchKeyEvent", params)
 			return err
+		}
+
+		keyDef := resolveKey(req.Key)
+		if req.Code != "" {
+			keyDef.Code = req.Code
 		}
 
 		switch keyType {
@@ -627,18 +718,14 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if req.Text == "" {
 				return failResp(req.ID, "missing text parameter for keyType=type")
 			}
-			// keyDown (no text, so no char insertion) → char (inserts) → keyUp.
-			// Emits full event sequence that listeners (xterm, SSH shells) expect
-			// without double-inserting.
+			// keyDown with text inserts the char via Chrome's default handler;
+			// keyUp closes the event pair. Playwright-style, no separate char event.
 			for _, r := range req.Text {
-				ch := string(r)
-				if err := dispatchKey("keyDown", ch, "", ""); err != nil {
+				def := resolveKey(string(r))
+				if err := send("keyDown", def, true); err != nil {
 					return failResp(req.ID, err)
 				}
-				if err := dispatchKey("char", ch, "", ch); err != nil {
-					return failResp(req.ID, err)
-				}
-				if err := dispatchKey("keyUp", ch, "", ""); err != nil {
+				if err := send("keyUp", def, false); err != nil {
 					return failResp(req.ID, err)
 				}
 			}
@@ -647,7 +734,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if req.Key == "" {
 				return failResp(req.ID, "missing key parameter")
 			}
-			if err := dispatchKey("keyDown", req.Key, req.Code, ""); err != nil {
+			if err := send("keyDown", keyDef, true); err != nil {
 				return failResp(req.ID, err)
 			}
 			return okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)})
@@ -655,7 +742,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if req.Key == "" {
 				return failResp(req.ID, "missing key parameter")
 			}
-			if err := dispatchKey("keyUp", req.Key, req.Code, ""); err != nil {
+			if err := send("keyUp", keyDef, false); err != nil {
 				return failResp(req.ID, err)
 			}
 			return okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)})
@@ -663,13 +750,10 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if req.Key == "" {
 				return failResp(req.ID, "missing key parameter")
 			}
-			if err := dispatchKey("keyDown", req.Key, req.Code, ""); err != nil {
+			if err := send("keyDown", keyDef, true); err != nil {
 				return failResp(req.ID, err)
 			}
-			if len(req.Key) == 1 {
-				dispatchKey("char", req.Key, req.Code, req.Key)
-			}
-			if err := dispatchKey("keyUp", req.Key, req.Code, ""); err != nil {
+			if err := send("keyUp", keyDef, false); err != nil {
 				return failResp(req.ID, err)
 			}
 			return okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)})
