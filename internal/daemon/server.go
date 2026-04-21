@@ -53,15 +53,20 @@ func NewServer(opts ServerOptions) *Server {
 
 // Run starts the daemon server (blocks until shutdown).
 func (s *Server) Run() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/command", s.handleCommand)
-	mux.HandleFunc("/status", s.handleStatus)
-	mux.HandleFunc("/shutdown", s.handleShutdown)
+	protectedMux := http.NewServeMux()
+	protectedMux.HandleFunc("/command", s.handleCommand)
+	protectedMux.HandleFunc("/status", s.handleStatus)
+	protectedMux.HandleFunc("/shutdown", s.handleShutdown)
+	s.registerRESTRoutes(protectedMux)
+
+	root := http.NewServeMux()
+	root.HandleFunc("/healthz", s.handleHealthz)
+	root.Handle("/", s.authMiddleware(protectedMux))
 
 	addr := fmt.Sprintf("%s:%d", s.opts.Host, s.opts.Port)
 	s.httpSrv = &http.Server{
 		Addr:    addr,
-		Handler: corsMiddleware(s.authMiddleware(mux)),
+		Handler: corsMiddleware(root),
 	}
 
 	s.startTime = time.Now()
@@ -226,6 +231,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"currentSeq":      s.cdp.TabManager.CurrentSeq(),
 		"currentTargetId": s.cdp.CurrentTargetID,
 		"tabs":            tabs,
+	})
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	sendJSON(w, 200, map[string]interface{}{
+		"ok":           true,
+		"cdpConnected": s.cdp.Connected(),
+		"uptime":       s.uptime(),
 	})
 }
 

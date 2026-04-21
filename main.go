@@ -35,7 +35,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since"}, []string{"--json", "--help", "--version"})
+	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--cdp-host", "--cdp-port"}, []string{"--json", "--help", "--version"})
 
 	if len(cleanArgs) == 0 {
 		printHelp()
@@ -384,6 +384,10 @@ func main() {
 	case "daemon":
 		handleDaemon(cmdArgs, args)
 
+	// --- Server (remote-accessible HTTP mode) ---
+	case "server":
+		handleServer(cmdArgs, args)
+
 	// --- Status ---
 	case "status":
 		raw, err := client.GetDaemonStatus()
@@ -647,6 +651,101 @@ func startDaemonForeground(rawArgs []string) {
 		fmt.Fprintf(os.Stderr, "Daemon error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// --- Server handling ---
+
+func handleServer(cmdArgs []string, rawArgs []string) {
+	if len(cmdArgs) > 0 {
+		switch cmdArgs[0] {
+		case "status":
+			raw, err := client.GetDaemonStatus()
+			if err != nil {
+				fmt.Println("Server is not running")
+				return
+			}
+			out, _ := json.MarshalIndent(json.RawMessage(raw), "", "  ")
+			fmt.Println(string(out))
+			return
+		case "shutdown", "stop":
+			if err := client.StopDaemon(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("Server stopped")
+			return
+		}
+	}
+
+	cdpHost := getArgValue(rawArgs, "--cdp-host")
+	if cdpHost == "" {
+		cdpHost = "127.0.0.1"
+	}
+	cdpPort := 19825
+	if v := getArgValue(rawArgs, "--cdp-port"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			cdpPort = p
+		}
+	}
+
+	host := getArgValue(rawArgs, "--host")
+	if host == "" {
+		host = os.Getenv("BB_BROWSER_SERVER_HOST")
+	}
+	if host == "" {
+		host = "0.0.0.0"
+	}
+
+	port := 19824
+	if v := getArgValue(rawArgs, "--port"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			port = p
+		}
+	} else if v := os.Getenv("BB_BROWSER_SERVER_PORT"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			port = p
+		}
+	}
+
+	token := getArgValue(rawArgs, "--token")
+	if token == "" {
+		token = os.Getenv("BB_BROWSER_TOKEN")
+	}
+
+	if isRemoteBind(host) && token == "" {
+		fmt.Fprintf(os.Stderr,
+			"Error: --host=%s is non-loopback; refusing to start without a token.\n"+
+				"       Pass --token <secret> or set BB_BROWSER_TOKEN.\n", host)
+		os.Exit(1)
+	}
+
+	srv := daemon.NewServer(daemon.ServerOptions{
+		Host:    host,
+		Port:    port,
+		Token:   token,
+		CDPHost: cdpHost,
+		CDPPort: cdpPort,
+	})
+
+	fmt.Fprintf(os.Stderr, "bb-browser server starting on %s:%d\n", host, port)
+	if token != "" {
+		fmt.Fprintln(os.Stderr, "Authorization required: Authorization: Bearer <token>")
+	} else {
+		fmt.Fprintln(os.Stderr, "Authorization disabled (loopback bind, no token set)")
+	}
+
+	if err := srv.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func isRemoteBind(host string) bool {
+	switch host {
+	case "127.0.0.1", "localhost", "::1":
+		return false
+	}
+	return true
 }
 
 // --- Site handling ---
@@ -973,6 +1072,10 @@ Utility:
   status                        Daemon status
   daemon                        Start daemon
   daemon shutdown               Stop daemon
+  server [--host H --port P     Start remote-accessible HTTP server
+          --token T]            (exposes /v1/* REST routes; binds 0.0.0.0 by
+                                default, requires --token on non-loopback)
+  server shutdown               Stop server
 
 Global Flags:
   --tab <id>                    Target tab

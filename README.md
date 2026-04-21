@@ -132,6 +132,105 @@ The MCP server exposes 26 tools:
 
 The workflow mirrors the CLI: call `browser_snapshot` to see the page structure with element refs, then use those refs with interaction tools like `browser_click` or `browser_fill`. Screenshots are returned as inline base64 PNG images.
 
+## Server Mode
+
+`bb-browser server` exposes the daemon as a remote-accessible HTTP API with ergonomic `/v1/*` REST routes. It's designed for integrations like n8n, Make, or any workflow tool that can send HTTP requests.
+
+### Start the server
+
+```bash
+# Local-only (no auth required)
+bb-browser server --host 127.0.0.1 --port 19824
+
+# Remote-accessible (token required)
+bb-browser server --host 0.0.0.0 --port 19824 --token "$(openssl rand -hex 16)"
+
+# Or via env
+export BB_BROWSER_TOKEN=mysecret
+bb-browser server --host 0.0.0.0
+```
+
+The server refuses to bind a non-loopback address without a token. Clients authenticate with `Authorization: Bearer <token>`.
+
+| Flag | Env | Default | Description |
+|------|-----|---------|-------------|
+| `--host` | `BB_BROWSER_SERVER_HOST` | `0.0.0.0` | Bind address |
+| `--port` | `BB_BROWSER_SERVER_PORT` | `19824` | Bind port |
+| `--token` | `BB_BROWSER_TOKEN` | *(none)* | Required for non-loopback host |
+| `--cdp-host` | — | `127.0.0.1` | Chrome CDP host |
+| `--cdp-port` | — | `19825` | Chrome CDP port |
+
+Stop the server:
+
+```bash
+bb-browser server shutdown
+```
+
+### REST endpoints
+
+All `/v1/*` routes accept JSON request bodies and return JSON responses shaped as `{id, success, data?, error?}`. Include `Authorization: Bearer <token>` when a token is configured.
+
+| Method | Path | Body fields |
+|--------|------|-------------|
+| GET | `/healthz` | — *(unauthenticated)* |
+| GET | `/status` | — |
+| GET | `/v1/tabs` | — |
+| POST | `/v1/tabs` | `{url?}` — open new tab |
+| POST | `/v1/tabs/select` | `{tabId?, index?}` |
+| POST | `/v1/tabs/close` | `{tabId?, index?}` |
+| POST | `/v1/open` | `{url, tab?}` |
+| POST | `/v1/back` \| `/forward` \| `/refresh` \| `/close` | `{tab?}` |
+| POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, tab?}` |
+| POST | `/v1/screenshot` | `{path?, tab?}` |
+| POST | `/v1/get` | `{attribute, ref?, tab?}` |
+| POST | `/v1/click` \| `/hover` \| `/check` \| `/uncheck` | `{ref, tab?}` |
+| POST | `/v1/fill` \| `/type` | `{ref, text, tab?}` |
+| POST | `/v1/select` | `{ref, value, tab?}` |
+| POST | `/v1/press` | `{key, modifiers?, tab?}` |
+| POST | `/v1/scroll` | `{direction, pixels?, tab?}` |
+| POST | `/v1/eval` | `{script, tab?}` |
+| POST | `/v1/wait` | `{ms?, tab?}` |
+| POST | `/v1/network` | `{command?, filter?, method?, status?, withBody?, since?, tab?}` |
+| POST | `/v1/console` | `{command?, filter?, since?, tab?}` |
+| POST | `/v1/errors` | `{command?, filter?, since?, tab?}` |
+| POST | `/v1/fetch` | `{url, method?, tab?}` — authenticated fetch |
+| POST | `/command` | raw `protocol.Request` — escape hatch |
+
+### Example: curl
+
+```bash
+TOKEN=mysecret
+BASE=http://host:19824
+
+curl -s $BASE/healthz
+
+curl -s -X POST $BASE/v1/open \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com"}'
+
+curl -s -X POST $BASE/v1/snapshot \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"interactive":true,"compact":true}'
+
+curl -s -X POST $BASE/v1/click \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ref":"4"}'
+```
+
+### Example: n8n
+
+Use n8n's **HTTP Request** node:
+
+- **Method:** `POST`
+- **URL:** `http://bb-host:19824/v1/snapshot`
+- **Authentication:** Header Auth → `Authorization: Bearer <token>`
+- **Body:** JSON → `{ "interactive": true, "compact": true }`
+
+Chain nodes to open → snapshot → click → extract. A dedicated n8n community node is on the roadmap.
+
 ## Quick Start
 
 ```bash
