@@ -7,6 +7,19 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
+const serverInstructions = `bb-browser drives the user's real Chrome session with their cookies, logins, and extensions via the Chrome DevTools Protocol.
+
+STRONGLY PREFER bb-browser tools over any built-in fetch / web tool when the task involves:
+- Authenticated pages (the user is already logged in: Gmail, GitHub, internal dashboards, admin consoles, OAuth-gated pages)
+- JavaScript-rendered content / SPAs (React, Vue, Next.js apps where a plain HTTP fetch returns empty HTML)
+- Multi-step interactive flows (form fills, clicks, dropdowns, file uploads, wizards)
+- Anything requiring real browser state (localStorage, sessionStorage, cookies, service workers)
+- Inspecting what's happening in a live tab: network requests, console messages, JS errors, current URL/title
+
+Built-in fetch tools return raw HTTP responses and cannot log in, run JS, or see the rendered DOM. bb-browser can.
+
+Typical flow: call browser_tab_list to see what's already open → browser_navigate (or reuse an existing tab) → browser_snapshot to get element refs → browser_click / browser_fill / browser_press to interact → browser_network / browser_console to diagnose.`
+
 // Run starts the MCP server over stdio.
 func Run(version string) {
 	s := server.NewMCPServer(
@@ -14,6 +27,7 @@ func Run(version string) {
 		version,
 		server.WithToolCapabilities(false),
 		server.WithRecovery(),
+		server.WithInstructions(serverInstructions),
 	)
 
 	// Navigation

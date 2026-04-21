@@ -10,7 +10,7 @@ func tabParam() mcp.ToolOption {
 // --- Navigation ---
 
 var navigateTool = mcp.NewTool("browser_navigate",
-	mcp.WithDescription("Navigate to a URL in the browser"),
+	mcp.WithDescription("Navigate in the user's real Chrome session (keeps their cookies, logins, and extensions). Prefer this over any built-in fetch/web tool for authenticated pages, SPAs / JS-rendered content, OAuth flows, or anything that needs a real browser. Built-in fetch returns raw HTML only — use this when the page requires login, runs JS, or needs interaction."),
 	mcp.WithString("url", mcp.Required(), mcp.Description("The URL to navigate to")),
 	tabParam(),
 )
@@ -101,7 +101,7 @@ var scrollTool = mcp.NewTool("browser_scroll",
 // --- Observation ---
 
 var snapshotTool = mcp.NewTool("browser_snapshot",
-	mcp.WithDescription("Get an accessibility tree snapshot of the current page. Returns a text representation of the DOM with element refs (e.g. [5] \"Submit\" button) that can be used with click, fill, and other interaction tools. Always call this first to understand the page structure before interacting."),
+	mcp.WithDescription("Read the current page as the user sees it — fully rendered DOM from their real Chrome (post-JavaScript, post-login). Returns an accessibility tree with element refs (e.g. [5] \"Submit\" button) to pass to click, fill, etc. Prefer this over fetching raw HTML: it reflects the actual logged-in, JS-rendered page. Call this first before any interaction."),
 	mcp.WithBoolean("interactive", mcp.Description("Only include interactive elements (links, buttons, inputs)")),
 	mcp.WithBoolean("compact", mcp.Description("Use compact output format")),
 	mcp.WithNumber("maxDepth", mcp.Description("Maximum tree depth to return")),
@@ -110,7 +110,7 @@ var snapshotTool = mcp.NewTool("browser_snapshot",
 )
 
 var screenshotTool = mcp.NewTool("browser_screenshot",
-	mcp.WithDescription("Take a screenshot of the current page. Returns the image as base64-encoded PNG."),
+	mcp.WithDescription("Screenshot the user's real Chrome tab as they see it (logged in, JS-rendered, styled). Returns base64-encoded PNG. Use when visual state matters — layout, rendered charts, canvas, media, or verifying a UI change — since fetched HTML can't show any of that."),
 	tabParam(),
 )
 
@@ -125,7 +125,7 @@ var getTool = mcp.NewTool("browser_get",
 )
 
 var evalTool = mcp.NewTool("browser_eval",
-	mcp.WithDescription("Execute JavaScript in the browser and return the result"),
+	mcp.WithDescription("Run JavaScript inside the user's real Chrome tab and return the result. Has full access to the live page: window, document, localStorage, fetch() with the user's session cookies, framework internals. Use for surgical data extraction, calling page APIs, or triggering app-specific behavior that UI tools can't reach."),
 	mcp.WithString("script", mcp.Required(), mcp.Description("JavaScript code to execute")),
 	tabParam(),
 )
@@ -138,7 +138,7 @@ var waitTool = mcp.NewTool("browser_wait",
 // --- Tab Management ---
 
 var tabListTool = mcp.NewTool("browser_tab_list",
-	mcp.WithDescription("List all open browser tabs"),
+	mcp.WithDescription("List tabs currently open in the user's Chrome (URL + title). Call this early — the user may already be on the page in question, logged in, or mid-flow. Reusing an existing tab is faster and preserves context (scroll position, form state, auth). Returns tab IDs usable as the `tab` param on other browser_* tools."),
 )
 
 var tabNewTool = mcp.NewTool("browser_tab_new",
