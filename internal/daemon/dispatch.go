@@ -294,6 +294,25 @@ func getAttributeValue(cdp *CdpConnection, targetID string, backendNodeID int, a
 	return fmt.Sprintf("%v", call.Result.Value), nil
 }
 
+// modifierMask converts a list of modifier names into the CDP bitmask used by
+// Input.dispatchKeyEvent / Input.dispatchMouseEvent: alt=1, ctrl=2, meta=4, shift=8.
+func modifierMask(mods []string) int {
+	var m int
+	for _, mod := range mods {
+		switch strings.ToLower(mod) {
+		case "alt":
+			m |= 1
+		case "ctrl", "control":
+			m |= 2
+		case "meta", "cmd", "command":
+			m |= 4
+		case "shift":
+			m |= 8
+		}
+	}
+	return m
+}
+
 // --- Trace state ---
 
 var (
@@ -575,6 +594,186 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		if err != nil {
 			return failResp(req.ID, err)
 		}
+		return okResp(req.ID, &protocol.ResponseData{Value: val, Tab: shortID})
+
+	case protocol.ActionKey:
+		seq := tab.RecordAction()
+		mods := modifierMask(req.Modifiers)
+		keyType := req.KeyType
+		if keyType == "" {
+			keyType = "press"
+		}
+
+		dispatchKey := func(eventType, key, code, text string) error {
+			params := map[string]interface{}{
+				"type":      eventType,
+				"modifiers": mods,
+			}
+			if key != "" {
+				params["key"] = key
+			}
+			if code != "" {
+				params["code"] = code
+			}
+			if text != "" {
+				params["text"] = text
+			}
+			_, err := cdp.SessionCommand(target.ID, "Input.dispatchKeyEvent", params)
+			return err
+		}
+
+		switch keyType {
+		case "type":
+			if req.Text == "" {
+				return failResp(req.ID, "missing text parameter for keyType=type")
+			}
+			for _, r := range req.Text {
+				ch := string(r)
+				if err := dispatchKey("keyDown", ch, "", ch); err != nil {
+					return failResp(req.ID, err)
+				}
+				if err := dispatchKey("char", ch, "", ch); err != nil {
+					return failResp(req.ID, err)
+				}
+				if err := dispatchKey("keyUp", ch, "", ""); err != nil {
+					return failResp(req.ID, err)
+				}
+			}
+			return okResp(req.ID, &protocol.ResponseData{Value: req.Text, Tab: shortID, Seq: intPtr(seq)})
+		case "down":
+			if req.Key == "" {
+				return failResp(req.ID, "missing key parameter")
+			}
+			text := ""
+			if len(req.Key) == 1 {
+				text = req.Key
+			}
+			if err := dispatchKey("keyDown", req.Key, req.Code, text); err != nil {
+				return failResp(req.ID, err)
+			}
+			return okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)})
+		case "up":
+			if req.Key == "" {
+				return failResp(req.ID, "missing key parameter")
+			}
+			if err := dispatchKey("keyUp", req.Key, req.Code, ""); err != nil {
+				return failResp(req.ID, err)
+			}
+			return okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)})
+		case "press":
+			if req.Key == "" {
+				return failResp(req.ID, "missing key parameter")
+			}
+			text := ""
+			if len(req.Key) == 1 {
+				text = req.Key
+			}
+			if err := dispatchKey("keyDown", req.Key, req.Code, text); err != nil {
+				return failResp(req.ID, err)
+			}
+			if text != "" {
+				dispatchKey("char", req.Key, req.Code, text)
+			}
+			if err := dispatchKey("keyUp", req.Key, req.Code, ""); err != nil {
+				return failResp(req.ID, err)
+			}
+			return okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)})
+		default:
+			return failResp(req.ID, fmt.Sprintf("unknown keyType: %s", keyType))
+		}
+
+	case protocol.ActionMouse:
+		seq := tab.RecordAction()
+		mouseType := req.MouseType
+		if mouseType == "" {
+			mouseType = "click"
+		}
+		button := req.Button
+		if button == "" && mouseType != "move" && mouseType != "wheel" {
+			button = "left"
+		}
+		if button == "" {
+			button = "none"
+		}
+		x, y := 0.0, 0.0
+		if req.X != nil {
+			x = *req.X
+		}
+		if req.Y != nil {
+			y = *req.Y
+		}
+		clickCount := 1
+		if req.ClickCount != nil {
+			clickCount = *req.ClickCount
+		}
+		mods := modifierMask(req.Modifiers)
+
+		send := func(eventType string, extra map[string]interface{}) error {
+			params := map[string]interface{}{
+				"type":      eventType,
+				"x":         x,
+				"y":         y,
+				"modifiers": mods,
+				"button":    button,
+			}
+			for k, v := range extra {
+				params[k] = v
+			}
+			_, err := cdp.SessionCommand(target.ID, "Input.dispatchMouseEvent", params)
+			return err
+		}
+
+		switch mouseType {
+		case "move":
+			if err := send("mouseMoved", nil); err != nil {
+				return failResp(req.ID, err)
+			}
+		case "down":
+			if err := send("mousePressed", map[string]interface{}{"clickCount": clickCount}); err != nil {
+				return failResp(req.ID, err)
+			}
+		case "up":
+			if err := send("mouseReleased", map[string]interface{}{"clickCount": clickCount}); err != nil {
+				return failResp(req.ID, err)
+			}
+		case "click":
+			send("mouseMoved", map[string]interface{}{"button": "none"})
+			if err := send("mousePressed", map[string]interface{}{"clickCount": clickCount}); err != nil {
+				return failResp(req.ID, err)
+			}
+			if err := send("mouseReleased", map[string]interface{}{"clickCount": clickCount}); err != nil {
+				return failResp(req.ID, err)
+			}
+		case "wheel":
+			dx, dy := 0.0, 0.0
+			if req.DeltaX != nil {
+				dx = *req.DeltaX
+			}
+			if req.DeltaY != nil {
+				dy = *req.DeltaY
+			}
+			if err := send("mouseWheel", map[string]interface{}{"deltaX": dx, "deltaY": dy}); err != nil {
+				return failResp(req.ID, err)
+			}
+		default:
+			return failResp(req.ID, fmt.Sprintf("unknown mouseType: %s", mouseType))
+		}
+		return okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)})
+
+	case protocol.ActionClipboardRead:
+		// Best-effort permission grant; ignore errors (already granted or unsupported).
+		cdp.BrowserCommand("Browser.grantPermissions", map[string]interface{}{
+			"permissions": []string{"clipboardReadWrite", "clipboardSanitizedWrite"},
+		})
+		cdp.SessionCommand(target.ID, "Page.bringToFront", nil)
+		raw, err := cdp.Evaluate(target.ID,
+			`navigator.clipboard.readText().then(t => t).catch(e => { throw new Error(e && e.message || String(e)); })`,
+			true)
+		if err != nil {
+			return failResp(req.ID, err)
+		}
+		var val string
+		json.Unmarshal(raw, &val)
 		return okResp(req.ID, &protocol.ResponseData{Value: val, Tab: shortID})
 
 	case protocol.ActionPress:

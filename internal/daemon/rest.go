@@ -60,6 +60,34 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/press", s.restJSON(func(body restBody) *protocol.Request {
 		return &protocol.Request{Action: protocol.ActionPress, Key: body.Key, Modifiers: body.Modifiers, TabID: body.tabID()}
 	}))
+	mux.HandleFunc("/v1/key", s.restJSON(func(body restBody) *protocol.Request {
+		return &protocol.Request{
+			Action:    protocol.ActionKey,
+			KeyType:   body.KeyType,
+			Key:       body.Key,
+			Code:      body.Code,
+			Text:      body.Text,
+			Modifiers: body.Modifiers,
+			TabID:     body.tabID(),
+		}
+	}))
+	mux.HandleFunc("/v1/mouse", s.restJSON(func(body restBody) *protocol.Request {
+		return &protocol.Request{
+			Action:     protocol.ActionMouse,
+			MouseType:  body.MouseType,
+			X:          body.X,
+			Y:          body.Y,
+			Button:     body.Button,
+			DeltaX:     body.DeltaX,
+			DeltaY:     body.DeltaY,
+			ClickCount: body.ClickCount,
+			Modifiers:  body.Modifiers,
+			TabID:      body.tabID(),
+		}
+	}))
+	mux.HandleFunc("/v1/clipboard-read", s.restJSON(func(body restBody) *protocol.Request {
+		return &protocol.Request{Action: protocol.ActionClipboardRead, TabID: body.tabID()}
+	}))
 	mux.HandleFunc("/v1/scroll", s.restJSON(func(body restBody) *protocol.Request {
 		req := &protocol.Request{Action: protocol.ActionScroll, Direction: body.Direction, TabID: body.tabID()}
 		if body.Pixels != nil {
@@ -227,6 +255,19 @@ type restBody struct {
 	TabID       interface{} `json:"tabId,omitempty"`
 	Tab         string      `json:"tab,omitempty"`
 	Index       *int        `json:"index,omitempty"`
+
+	// Key input
+	KeyType string `json:"keyType,omitempty"`
+	Code    string `json:"code,omitempty"`
+
+	// Mouse input
+	MouseType  string   `json:"mouseType,omitempty"`
+	X          *float64 `json:"x,omitempty"`
+	Y          *float64 `json:"y,omitempty"`
+	Button     string   `json:"button,omitempty"`
+	DeltaX     *float64 `json:"deltaX,omitempty"`
+	DeltaY     *float64 `json:"deltaY,omitempty"`
+	ClickCount *int     `json:"clickCount,omitempty"`
 }
 
 // tabID returns the tab identifier to pass through to the dispatcher.

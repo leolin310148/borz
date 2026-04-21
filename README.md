@@ -187,6 +187,9 @@ All `/v1/*` routes accept JSON request bodies and return JSON responses shaped a
 | POST | `/v1/fill` \| `/type` | `{ref, text, tab?}` |
 | POST | `/v1/select` | `{ref, value, tab?}` |
 | POST | `/v1/press` | `{key, modifiers?, tab?}` |
+| POST | `/v1/key` | `{keyType?, key?, code?, text?, modifiers?, tab?}` — raw OS-level key input (reaches canvas apps / SSH) |
+| POST | `/v1/mouse` | `{mouseType?, x?, y?, button?, deltaX?, deltaY?, clickCount?, modifiers?, tab?}` — raw OS-level mouse input |
+| POST | `/v1/clipboard-read` | `{tab?}` — returns `data.value` from `navigator.clipboard.readText()` |
 | POST | `/v1/scroll` | `{direction, pixels?, tab?}` |
 | POST | `/v1/eval` | `{script, tab?}` |
 | POST | `/v1/wait` | `{ms?, tab?}` |

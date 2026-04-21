@@ -36,6 +36,10 @@ const (
 	ActionErrors     ActionType = "errors"
 	ActionTrace      ActionType = "trace"
 	ActionHistory    ActionType = "history"
+
+	ActionKey           ActionType = "key"
+	ActionMouse         ActionType = "mouse"
+	ActionClipboardRead ActionType = "clipboard_read"
 )
 
 // Request is sent from CLI to daemon.
@@ -107,6 +111,24 @@ type Request struct {
 
 	// Wait type
 	WaitType string `json:"waitType,omitempty"`
+
+	// Low-level key input (ActionKey). KeyType is one of:
+	//   "press" (default, keyDown + optional char + keyUp)
+	//   "down"  (keyDown only)
+	//   "up"    (keyUp only)
+	//   "type"  (char event per rune in Text — reaches canvas apps / SSH sessions)
+	KeyType string `json:"keyType,omitempty"`
+	Code    string `json:"code,omitempty"`
+
+	// Low-level mouse input (ActionMouse). MouseType is one of:
+	//   "move", "down", "up", "click", "wheel"
+	MouseType  string   `json:"mouseType,omitempty"`
+	X          *float64 `json:"x,omitempty"`
+	Y          *float64 `json:"y,omitempty"`
+	Button     string   `json:"button,omitempty"` // left (default) | right | middle | none
+	DeltaX     *float64 `json:"deltaX,omitempty"`
+	DeltaY     *float64 `json:"deltaY,omitempty"`
+	ClickCount *int     `json:"clickCount,omitempty"`
 }
 
 // RefInfo stores element reference information from a snapshot.
