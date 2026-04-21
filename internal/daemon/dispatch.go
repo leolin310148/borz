@@ -627,9 +627,12 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if req.Text == "" {
 				return failResp(req.ID, "missing text parameter for keyType=type")
 			}
+			// keyDown (no text, so no char insertion) → char (inserts) → keyUp.
+			// Emits full event sequence that listeners (xterm, SSH shells) expect
+			// without double-inserting.
 			for _, r := range req.Text {
 				ch := string(r)
-				if err := dispatchKey("keyDown", ch, "", ch); err != nil {
+				if err := dispatchKey("keyDown", ch, "", ""); err != nil {
 					return failResp(req.ID, err)
 				}
 				if err := dispatchKey("char", ch, "", ch); err != nil {
@@ -644,11 +647,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if req.Key == "" {
 				return failResp(req.ID, "missing key parameter")
 			}
-			text := ""
-			if len(req.Key) == 1 {
-				text = req.Key
-			}
-			if err := dispatchKey("keyDown", req.Key, req.Code, text); err != nil {
+			if err := dispatchKey("keyDown", req.Key, req.Code, ""); err != nil {
 				return failResp(req.ID, err)
 			}
 			return okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)})
@@ -664,15 +663,11 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if req.Key == "" {
 				return failResp(req.ID, "missing key parameter")
 			}
-			text := ""
-			if len(req.Key) == 1 {
-				text = req.Key
-			}
-			if err := dispatchKey("keyDown", req.Key, req.Code, text); err != nil {
+			if err := dispatchKey("keyDown", req.Key, req.Code, ""); err != nil {
 				return failResp(req.ID, err)
 			}
-			if text != "" {
-				dispatchKey("char", req.Key, req.Code, text)
+			if len(req.Key) == 1 {
+				dispatchKey("char", req.Key, req.Code, req.Key)
 			}
 			if err := dispatchKey("keyUp", req.Key, req.Code, ""); err != nil {
 				return failResp(req.ID, err)
