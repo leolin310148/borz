@@ -1,0 +1,956 @@
+openapi: 3.1.0
+info:
+  title: bb-browser daemon API
+  version: "1.0.0"
+  description: |
+    HTTP/REST front-end for the bb-browser daemon. Each `/v1/*` endpoint accepts
+    a JSON body, dispatches a request to the attached Chrome (CDP) session, and
+    returns a `Response` envelope.
+
+    - Default address: `http://127.0.0.1:19824`.
+    - Authentication: if the daemon was started with a token, every request
+      (except `/healthz`) must carry `Authorization: Bearer <token>`.
+    - Tab targeting: most endpoints accept `tabId` (string or number) or the
+      short alias `tab` in the body. Omit to target the active tab.
+servers:
+  - url: http://127.0.0.1:19824
+    description: Local daemon (default)
+security:
+  - bearerAuth: []
+  - {}
+tags:
+  - name: health
+  - name: status
+  - name: navigation
+  - name: interaction
+  - name: input
+  - name: observation
+  - name: tabs
+  - name: sites
+  - name: raw
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe (unauthenticated)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  cdpConnected: { type: boolean }
+                  uptime: { type: integer, description: seconds since daemon start }
+
+  /status:
+    get:
+      tags: [status]
+      summary: Daemon and tab state
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DaemonStatus" }
+
+  /shutdown:
+    post:
+      tags: [status]
+      summary: Shut the daemon down
+      responses:
+        "200":
+          description: Shutdown scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer }
+                  message: { type: string }
+
+  /v1/open:
+    post:
+      tags: [navigation]
+      summary: Open a URL (reuses a matching tab unless `new` is true)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [url]
+                  properties:
+                    url: { type: string, format: uri }
+                    new: { type: boolean, default: false }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /v1/back:
+    post:
+      tags: [navigation]
+      summary: Navigate back
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/forward:
+    post:
+      tags: [navigation]
+      summary: Navigate forward
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/refresh:
+    post:
+      tags: [navigation]
+      summary: Refresh the page
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/close:
+    post:
+      tags: [navigation]
+      summary: Close the targeted tab
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/click:
+    post:
+      tags: [interaction]
+      summary: Click an element by snapshot ref
+      requestBody: { $ref: "#/components/requestBodies/RefOnly" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/hover:
+    post:
+      tags: [interaction]
+      summary: Hover an element by snapshot ref
+      requestBody: { $ref: "#/components/requestBodies/RefOnly" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/check:
+    post:
+      tags: [interaction]
+      summary: Check a checkbox/radio by ref
+      requestBody: { $ref: "#/components/requestBodies/RefOnly" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/uncheck:
+    post:
+      tags: [interaction]
+      summary: Uncheck a checkbox by ref
+      requestBody: { $ref: "#/components/requestBodies/RefOnly" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/fill:
+    post:
+      tags: [interaction]
+      summary: Fill an input by ref (replaces value)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [ref, text]
+                  properties:
+                    ref: { type: string }
+                    text: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/type:
+    post:
+      tags: [interaction]
+      summary: Type text into an input by ref (appends)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [ref, text]
+                  properties:
+                    ref: { type: string }
+                    text: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/select:
+    post:
+      tags: [interaction]
+      summary: Select an `<option>` in a `<select>` by ref
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [ref, value]
+                  properties:
+                    ref: { type: string }
+                    value: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/press:
+    post:
+      tags: [input]
+      summary: Dispatch a keyboard key (with optional modifiers)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [key]
+                  properties:
+                    key:
+                      type: string
+                      description: CDP key name (e.g. `Enter`, `Tab`, `Escape`, `a`)
+                    modifiers:
+                      type: array
+                      items:
+                        type: string
+                        enum: [alt, ctrl, meta, shift]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/key:
+    post:
+      tags: [input]
+      summary: Low-level key input (down/up/press/type)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    keyType:
+                      type: string
+                      enum: [press, down, up, type]
+                      default: press
+                      description: |
+                        - `press`: keyDown + optional char + keyUp (default)
+                        - `down` / `up`: only one half of a key event
+                        - `type`: dispatches a `char` event per rune in `text`
+                          (reaches canvas apps / SSH sessions)
+                    key: { type: string }
+                    code: { type: string }
+                    text: { type: string }
+                    modifiers:
+                      type: array
+                      items: { type: string, enum: [alt, ctrl, meta, shift] }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/mouse:
+    post:
+      tags: [input]
+      summary: Low-level mouse input (move/down/up/click/wheel)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [mouseType]
+                  properties:
+                    mouseType:
+                      type: string
+                      enum: [move, down, up, click, wheel]
+                    x: { type: number }
+                    y: { type: number }
+                    button:
+                      type: string
+                      enum: [left, right, middle, none]
+                      default: left
+                    deltaX: { type: number }
+                    deltaY: { type: number }
+                    clickCount: { type: integer }
+                    modifiers:
+                      type: array
+                      items: { type: string, enum: [alt, ctrl, meta, shift] }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/clipboard-read:
+    post:
+      tags: [input]
+      summary: Read the clipboard contents from the browser
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/scroll:
+    post:
+      tags: [interaction]
+      summary: Scroll the page
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [direction]
+                  properties:
+                    direction:
+                      type: string
+                      enum: [up, down, left, right, top, bottom]
+                    pixels:
+                      type: integer
+                      description: Distance in pixels; ignored for top/bottom.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/eval:
+    post:
+      tags: [interaction]
+      summary: Evaluate JavaScript in the page context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [script]
+                  properties:
+                    script:
+                      type: string
+                      description: |
+                        JS expression. To return a value asynchronously wrap in
+                        an IIFE that returns a Promise:
+                        `(async () => { return fetch('/x').then(r => r.text()) })()`.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/wait:
+    post:
+      tags: [interaction]
+      summary: Sleep for `ms` milliseconds
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    ms: { type: integer, minimum: 0 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/snapshot:
+    post:
+      tags: [observation]
+      summary: Accessibility-tree snapshot with element refs
+      description: |
+        Returns a YAML-ish snapshot plus a `refs`/`elements` map you can feed
+        back into `/v1/click`, `/v1/fill`, etc. Use `interactive: true` to skip
+        non-interactive nodes, or `selector` / `role` to filter.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    interactive: { type: boolean }
+                    compact: { type: boolean }
+                    maxDepth: { type: integer }
+                    selector: { type: string, description: CSS selector subtree root }
+                    role: { type: string, description: ARIA role filter }
+      responses:
+        "200":
+          description: Snapshot response
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          snapshotData: { $ref: "#/components/schemas/SnapshotData" }
+
+  /v1/screenshot:
+    post:
+      tags: [observation]
+      summary: Capture a PNG screenshot
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    path:
+                      type: string
+                      description: |
+                        If set, writes the PNG to this filesystem path on the
+                        daemon host. Omit to get a `data:` URL back.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/get:
+    post:
+      tags: [observation]
+      summary: Read a page or element attribute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [attribute]
+                  properties:
+                    attribute:
+                      type: string
+                      description: e.g. `title`, `url`, `textContent`, `value`, `outerHTML`
+                    ref:
+                      type: string
+                      description: Element ref from a snapshot (omit for page-level attributes).
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/network:
+    post:
+      tags: [observation]
+      summary: Inspect captured network requests
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    command:
+                      type: string
+                      enum: [requests, clear]
+                      default: requests
+                    filter: { type: string, description: URL substring filter }
+                    method: { type: string }
+                    status: { type: string, description: Status code or class (e.g. `200`, `4xx`) }
+                    withBody: { type: boolean }
+                    since: { $ref: "#/components/schemas/Since" }
+      responses:
+        "200":
+          description: Captured requests
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          networkRequests:
+                            type: array
+                            items: { $ref: "#/components/schemas/NetworkRequestInfo" }
+
+  /v1/console:
+    post:
+      tags: [observation]
+      summary: Inspect captured console messages
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    command:
+                      type: string
+                      enum: [get, clear]
+                      default: get
+                    filter: { type: string }
+                    since: { $ref: "#/components/schemas/Since" }
+      responses:
+        "200":
+          description: Console messages
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          consoleMessages:
+                            type: array
+                            items: { $ref: "#/components/schemas/ConsoleMessageInfo" }
+
+  /v1/errors:
+    post:
+      tags: [observation]
+      summary: Inspect captured JavaScript errors
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    command:
+                      type: string
+                      enum: [get, clear]
+                      default: get
+                    filter: { type: string }
+                    since: { $ref: "#/components/schemas/Since" }
+      responses:
+        "200":
+          description: JS errors
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          jsErrors:
+                            type: array
+                            items: { $ref: "#/components/schemas/JSErrorInfo" }
+
+  /v1/tabs:
+    get:
+      tags: [tabs]
+      summary: List open tabs
+      responses:
+        "200":
+          description: Tab list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          tabs:
+                            type: array
+                            items: { $ref: "#/components/schemas/TabInfo" }
+                          activeIndex: { type: integer }
+    post:
+      tags: [tabs]
+      summary: Open a new tab
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: Defaults to `about:blank` when omitted.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/tabs/select:
+    post:
+      tags: [tabs]
+      summary: Activate a tab by `tabId` or `index`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tabId: { $ref: "#/components/schemas/TabID" }
+                index: { type: integer }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/tabs/close:
+    post:
+      tags: [tabs]
+      summary: Close a tab by `tabId` or `index`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tabId: { $ref: "#/components/schemas/TabID" }
+                index: { type: integer }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/fetch:
+    post:
+      tags: [observation]
+      summary: HTTP request through the page's session (cookies, CORS, etc.)
+      description: |
+        Runs `fetch(url, { credentials: 'include' })` inside the targeted tab
+        and returns status, headers, and decoded body. Useful for hitting
+        authenticated endpoints without re-implementing the session handshake.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [url]
+                  properties:
+                    url: { type: string, format: uri }
+                    method: { type: string, default: GET }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/sites:
+    get:
+      tags: [sites]
+      summary: List installed site adapters
+      responses:
+        "200":
+          description: Adapter list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      sites:
+                        type: array
+                        items: { $ref: "#/components/schemas/SiteMeta" }
+
+  /v1/sites/info:
+    post:
+      tags: [sites]
+      summary: Describe a single adapter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "200":
+          description: Adapter metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      site: { $ref: "#/components/schemas/SiteMeta" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/sites/run:
+    post:
+      tags: [sites]
+      summary: Execute a site adapter against the targeted tab
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [name]
+                  properties:
+                    name: { type: string }
+                    args:
+                      type: object
+                      additionalProperties: true
+                      description: |
+                        Adapter-specific arguments, matching keys declared in
+                        the adapter's `@meta.args` block.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /command:
+    post:
+      tags: [raw]
+      summary: Raw protocol escape hatch
+      description: |
+        Accepts a full `protocol.Request` JSON body and dispatches it. Use only
+        when no `/v1/*` route fits — most clients should prefer the typed
+        endpoints above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Request" }
+      responses:
+        "200":
+          description: Raw response
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Response" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Required when the daemon was started with a token.
+
+  requestBodies:
+    RefOnly:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/TabTarget"
+              - type: object
+                required: [ref]
+                properties:
+                  ref: { type: string, description: Element ref from a prior snapshot }
+
+  responses:
+    Ok:
+      description: Successful response envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Response" }
+    Error:
+      description: Error envelope
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Response" }
+
+  schemas:
+    TabID:
+      description: Tab identifier — either a string (short ID / target ID) or an integer index.
+      oneOf:
+        - type: string
+        - type: integer
+
+    TabTarget:
+      type: object
+      description: Common tab-targeting fields accepted by most endpoints.
+      properties:
+        tabId: { $ref: "#/components/schemas/TabID" }
+        tab:
+          type: string
+          description: Short-ID alias for `tabId` (string form only).
+
+    Since:
+      description: |
+        Filter events newer than this point. Accepts:
+        - an integer sequence number,
+        - a numeric string,
+        - or the sentinel `"last_action"` meaning "since the last user action".
+      oneOf:
+        - type: integer
+        - type: string
+
+    Request:
+      type: object
+      description: Full `protocol.Request` envelope for `/command`.
+      required: [action]
+      properties:
+        id: { type: string }
+        action: { type: string }
+      additionalProperties: true
+
+    Response:
+      type: object
+      description: Standard response envelope.
+      properties:
+        id: { type: string }
+        success: { type: boolean }
+        error: { type: string }
+        data: { type: object, additionalProperties: true }
+
+    DaemonStatus:
+      type: object
+      properties:
+        running: { type: boolean }
+        cdpConnected: { type: boolean }
+        uptime: { type: integer }
+        currentSeq: { type: integer }
+        currentTargetId: { type: string }
+        tabs:
+          type: array
+          items:
+            type: object
+            properties:
+              shortId: { type: string }
+              targetId: { type: string }
+              networkRequests: { type: integer }
+              consoleMessages: { type: integer }
+              jsErrors: { type: integer }
+              lastActionSeq: { type: integer }
+
+    TabInfo:
+      type: object
+      properties:
+        index: { type: integer }
+        url: { type: string }
+        title: { type: string }
+        active: { type: boolean }
+        tabId: { $ref: "#/components/schemas/TabID" }
+        tab: { type: string }
+
+    RefInfo:
+      type: object
+      properties:
+        backendDOMNodeId: { type: integer }
+        xpath: { type: string }
+        role: { type: string }
+        name: { type: string }
+        tagName: { type: string }
+
+    ElementInfo:
+      type: object
+      properties:
+        ref: { type: string }
+        backendDOMNodeId: { type: integer }
+        xpath: { type: string }
+        role: { type: string }
+        name: { type: string }
+        tagName: { type: string }
+
+    SnapshotData:
+      type: object
+      properties:
+        snapshot:
+          type: string
+          description: Human-readable accessibility tree snapshot.
+        refs:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/RefInfo" }
+        elements:
+          type: array
+          items: { $ref: "#/components/schemas/ElementInfo" }
+
+    NetworkRequestInfo:
+      type: object
+      properties:
+        requestId: { type: string }
+        url: { type: string }
+        method: { type: string }
+        type: { type: string }
+        timestamp: { type: integer, format: int64 }
+        status: { type: integer }
+        statusText: { type: string }
+        failed: { type: boolean }
+        failureReason: { type: string }
+        requestHeaders:
+          type: object
+          additionalProperties: { type: string }
+        requestBody: { type: string }
+        requestBodyTruncated: { type: boolean }
+        responseHeaders:
+          type: object
+          additionalProperties: { type: string }
+        responseBody: { type: string }
+        responseBodyBase64: { type: boolean }
+        responseBodyTruncated: { type: boolean }
+        mimeType: { type: string }
+        bodyError: { type: string }
+        seq: { type: integer }
+
+    ConsoleMessageInfo:
+      type: object
+      properties:
+        type: { type: string }
+        text: { type: string }
+        timestamp: { type: integer, format: int64 }
+        url: { type: string }
+        lineNumber: { type: integer }
+        seq: { type: integer }
+
+    JSErrorInfo:
+      type: object
+      properties:
+        message: { type: string }
+        url: { type: string }
+        lineNumber: { type: integer }
+        columnNumber: { type: integer }
+        stackTrace: { type: string }
+        timestamp: { type: integer, format: int64 }
+        seq: { type: integer }
+
+    SiteArgDef:
+      type: object
+      properties:
+        required: { type: boolean }
+        description: { type: string }
+        default: { type: string }
+
+    SiteMeta:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        domain: { type: string }
+        readOnly: { type: boolean }
+        example: { type: string }
+        args:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/SiteArgDef" }

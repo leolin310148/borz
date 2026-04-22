@@ -171,9 +171,18 @@ bb-browser server shutdown
 
 All `/v1/*` routes accept JSON request bodies and return JSON responses shaped as `{id, success, data?, error?}`. Include `Authorization: Bearer <token>` when a token is configured.
 
+The full machine-readable contract is served by the daemon itself:
+
+- `GET /openapi.yaml` — OpenAPI 3.1 spec (unauthenticated)
+- `GET /docs` — interactive Swagger UI (unauthenticated)
+
+Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `openapi-generator`, `oapi-codegen`, etc.) at `http://<host>:<port>/openapi.yaml` to generate typed clients or import the collection.
+
 | Method | Path | Body fields |
 |--------|------|-------------|
 | GET | `/healthz` | — *(unauthenticated)* |
+| GET | `/openapi.yaml` | — *(unauthenticated, OpenAPI 3.1 spec)* |
+| GET | `/docs` | — *(unauthenticated, Swagger UI)* |
 | GET | `/status` | — |
 | GET | `/v1/tabs` | — |
 | POST | `/v1/tabs` | `{url?}` — open new tab |

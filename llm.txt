@@ -88,6 +88,8 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 | Method | Path | Body |
 |--------|------|------|
 | GET | `/healthz` | unauthenticated |
+| GET | `/openapi.yaml` | OpenAPI 3.1 spec (unauthenticated) |
+| GET | `/docs` | Swagger UI (unauthenticated) |
 | GET | `/status` | — |
 | GET | `/v1/tabs` | list |
 | POST | `/v1/tabs` | `{url?}` new tab |

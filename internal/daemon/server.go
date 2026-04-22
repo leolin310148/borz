@@ -64,6 +64,7 @@ func (s *Server) Run() error {
 
 	root := http.NewServeMux()
 	root.HandleFunc("/healthz", s.handleHealthz)
+	s.registerDocsRoutes(root)
 	root.Handle("/", s.authMiddleware(protectedMux))
 
 	addr := fmt.Sprintf("%s:%d", s.opts.Host, s.opts.Port)
