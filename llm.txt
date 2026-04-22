@@ -1,0 +1,143 @@
+# bb-browser-go
+
+> A single-binary Go CLI that drives any Chromium browser via the Chrome DevTools Protocol. It ships a daemon, a stdio MCP server, and a remote-accessible HTTP/REST server, so humans, shell scripts, workflow tools, and AI agents can all share the same live browser session (cookies, logins, extensions, JS state).
+
+## Why use it
+
+- Real Chrome, real session: operates on the user's logged-in browser. Built-in `fetch`-style tools can't log in, run JS, or see the rendered DOM.
+- Three front-ends over one daemon: CLI, MCP (stdio), HTTP/REST (`/v1/*`). Pick the integration that fits.
+- Zero runtime deps. Single static binary.
+
+## Install
+
+```bash
+# macOS (Apple Silicon)
+curl -LO https://github.com/leolin310148/bb-browser-go/releases/latest/download/bb-browser-darwin-arm64
+chmod +x bb-browser-darwin-arm64 && sudo mv bb-browser-darwin-arm64 /usr/local/bin/bb-browser
+# Or: go install github.com/leolin310148/bb-browser-go@latest
+```
+
+## Core model
+
+Everything is a request → dispatched over CDP → JSON response `{id, success, data?, error?}`.
+
+Interactive elements are identified by numeric refs returned from `snapshot`. The workflow is always: **snapshot → act on refs → snapshot again**.
+
+Every response carries a short `tab` id (e.g. `ab1c`); pass it as `--tab <id>` (CLI), `tab` (MCP), or `tab`/`tabId` (REST) to target a specific tab.
+
+## CLI cheat sheet
+
+```bash
+bb-browser open <url>                  # reuses tab with same URL; --new forces fresh
+bb-browser snapshot [-i] [-c] [-d N]   # accessibility tree with refs
+bb-browser click <ref>                 # refs come from snapshot
+bb-browser fill <ref> <text>           # clear + fill
+bb-browser type <ref> <text>           # append
+bb-browser press <key>                 # Enter, Tab, ArrowDown, Escape, ...
+bb-browser eval <script>               # JS in page context, returns JSON
+bb-browser screenshot                  # base64 PNG in JSON
+bb-browser get <url|title|text|href|value|class> [ref]
+bb-browser network [requests|clear] [--filter] [--method] [--status] [--with-body]
+bb-browser console [--clear] [--filter]
+bb-browser errors [--clear] [--filter]
+bb-browser fetch <url> [--method POST] # authenticated HTTP via page
+bb-browser tab                         # list; "tab new", "tab 2", "tab close 1"
+bb-browser frame <selector> | main     # iframe switching
+bb-browser dialog accept|dismiss [text]
+bb-browser trace start|stop|status
+bb-browser site list|search|info|run|update   # site adapters
+bb-browser <platform>/<adapter> [args]        # shorthand for "site run"
+bb-browser status | daemon [shutdown]
+bb-browser server --host 0.0.0.0 --token ... [shutdown]
+```
+
+Global flags: `--tab <id>`, `--json`, `--jq <expr>`, `--since <seq|last_action>`.
+
+## MCP (for AI agents)
+
+```bash
+bb-browser mcp   # stdio MCP server
+```
+
+MCP client config (e.g. Claude Code `.claude/settings.json`):
+
+```json
+{ "mcpServers": { "bb-browser": { "command": "bb-browser", "args": ["mcp"] } } }
+```
+
+Tools (29 total):
+
+- **Navigation:** `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close`
+- **Interaction:** `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_press`, `browser_scroll`
+- **Observation:** `browser_snapshot`, `browser_screenshot`, `browser_get`, `browser_eval`, `browser_wait`
+- **Tabs:** `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close`
+- **Diagnostics:** `browser_network`, `browser_console`, `browser_errors`
+- **Site adapters:** `browser_site_list`, `browser_site_info`, `browser_site_run`
+
+Recommended agent flow: `browser_tab_list` → `browser_navigate` (reuses tab with same URL unless `new=true`) → `browser_snapshot` → `browser_click`/`browser_fill`/`browser_press` → `browser_network`/`browser_console` to diagnose.
+
+## HTTP / REST (for remote integrations)
+
+```bash
+bb-browser server --host 0.0.0.0 --port 19824 --token "$(openssl rand -hex 16)"
+# refuses to bind non-loopback without --token
+```
+
+Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, error?}`.
+
+| Method | Path | Body |
+|--------|------|------|
+| GET | `/healthz` | unauthenticated |
+| GET | `/status` | — |
+| GET | `/v1/tabs` | list |
+| POST | `/v1/tabs` | `{url?}` new tab |
+| POST | `/v1/tabs/select` \| `/tabs/close` | `{tabId?, index?}` |
+| POST | `/v1/open` | `{url, new?, tab?}` |
+| POST | `/v1/back` \| `/forward` \| `/refresh` \| `/close` | `{tab?}` |
+| POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, tab?}` |
+| POST | `/v1/screenshot` | `{path?, tab?}` |
+| POST | `/v1/get` | `{attribute, ref?, tab?}` |
+| POST | `/v1/click` \| `/hover` \| `/check` \| `/uncheck` | `{ref, tab?}` |
+| POST | `/v1/fill` \| `/type` | `{ref, text, tab?}` |
+| POST | `/v1/select` | `{ref, value, tab?}` |
+| POST | `/v1/press` | `{key, modifiers?, tab?}` |
+| POST | `/v1/key` | raw OS-level key input |
+| POST | `/v1/mouse` | raw OS-level mouse input |
+| POST | `/v1/clipboard-read` | `{tab?}` |
+| POST | `/v1/scroll` | `{direction, pixels?, tab?}` |
+| POST | `/v1/eval` | `{script, tab?}` |
+| POST | `/v1/wait` | `{ms?, tab?}` |
+| POST | `/v1/network` \| `/console` \| `/errors` | `{command?, filter?, since?, tab?}` |
+| POST | `/v1/fetch` | `{url, method?, tab?}` |
+| GET | `/v1/sites` | list adapters |
+| POST | `/v1/sites/info` | `{name}` |
+| POST | `/v1/sites/run` | `{name, args?, tab?}` |
+| POST | `/command` | raw `protocol.Request` escape hatch |
+
+## Environment
+
+- `BB_BROWSER_CDP_URL` — override CDP endpoint
+- `BB_BROWSER_HOME` — config dir (default `~/.bb-browser`)
+- `BB_BROWSER_TOKEN`, `BB_BROWSER_SERVER_HOST`, `BB_BROWSER_SERVER_PORT` — server mode
+
+## Key behaviors to remember
+
+- **`open` reuses tabs with the exact same URL** (focus only, no reload). Use `--new` / `new: true` to force a fresh tab.
+- **Non-loopback bind requires a token.** The server refuses to start otherwise.
+- **Site adapters run on the daemon's filesystem**, not the client's. A remote client invoking `/v1/sites/*` or `browser_site_run` gets whatever adapters the server has in `~/.bb-browser/sites` or `~/.bb-browser/bb-sites` (community, pulled via `bb-browser site update`).
+- **Network/console/error buffers are per-tab rings.** Use `--since last_action` for incremental queries.
+
+## Minimal end-to-end example
+
+```bash
+bb-browser open https://news.ycombinator.com
+bb-browser snapshot -i -c
+bb-browser click 5
+bb-browser eval "document.querySelector('.title').textContent"
+```
+
+## Links
+
+- Source: https://github.com/leolin310148/bb-browser-go
+- Upstream (Node): https://github.com/nicepkg/bb-browser
+- Community site adapters: https://github.com/epiral/bb-sites
