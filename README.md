@@ -178,7 +178,7 @@ All `/v1/*` routes accept JSON request bodies and return JSON responses shaped a
 | POST | `/v1/tabs` | `{url?}` — open new tab |
 | POST | `/v1/tabs/select` | `{tabId?, index?}` |
 | POST | `/v1/tabs/close` | `{tabId?, index?}` |
-| POST | `/v1/open` | `{url, tab?}` |
+| POST | `/v1/open` | `{url, new?, tab?}` — reuses a tab with the exact same URL when one exists; `new: true` forces a fresh tab |
 | POST | `/v1/back` \| `/forward` \| `/refresh` \| `/close` | `{tab?}` |
 | POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, tab?}` |
 | POST | `/v1/screenshot` | `{path?, tab?}` |
@@ -271,17 +271,21 @@ bb-browser snapshot --jq ".snapshotData.refs | keys | length"
 
 | Command | Description |
 |---------|-------------|
-| `open <url>` | Open a URL (creates a new tab, or navigates current tab with `--tab`) |
+| `open <url>` | Open a URL. Reuses an existing tab when one has the exact same URL (focus only, no reload); otherwise opens a new tab. Pass `--new` to force a fresh tab, or `--tab <id>` to target a specific tab. |
 | `back` | Navigate back in history |
 | `forward` | Navigate forward in history |
 | `refresh` | Reload the current page |
 | `close` | Close the current tab |
 
 ```bash
-# Open a URL in a new tab
+# Open a URL. Reuses an existing tab with the same URL if one exists,
+# otherwise creates a new tab. This prevents tab-blowup in automated workflows.
 bb-browser open https://github.com
 
-# Open in a specific existing tab
+# Force a fresh tab even if one already has this URL
+bb-browser open https://github.com --new
+
+# Navigate a specific existing tab by ID
 bb-browser open https://github.com --tab ab1c
 
 # Navigate back

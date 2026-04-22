@@ -20,7 +20,7 @@ import (
 func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 	// Navigation
 	mux.HandleFunc("/v1/open", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionOpen, URL: body.URL, TabID: body.tabID()}
+		return &protocol.Request{Action: protocol.ActionOpen, URL: body.URL, New: body.New, TabID: body.tabID()}
 	}))
 	mux.HandleFunc("/v1/back", s.restJSON(func(body restBody) *protocol.Request {
 		return &protocol.Request{Action: protocol.ActionBack, TabID: body.tabID()}
@@ -231,6 +231,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 // relevant to a given route are simply ignored.
 type restBody struct {
 	URL         string      `json:"url,omitempty"`
+	New         bool        `json:"new,omitempty"`
 	Ref         string      `json:"ref,omitempty"`
 	Text        string      `json:"text,omitempty"`
 	Key         string      `json:"key,omitempty"`

@@ -54,12 +54,15 @@ func main() {
 	// --- Navigation ---
 	case "open":
 		if len(cmdArgs) == 0 {
-			fatal("Usage: bb-browser open <url> [--tab <tabId>]")
+			fatal("Usage: bb-browser open <url> [--tab <tabId>] [--new]")
 		}
 		url := cmdArgs[0]
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionOpen, URL: url}
 		if globalTabID != "" {
 			req.TabID = globalTabID
+		}
+		if hasFlag(args, "--new") {
+			req.New = true
 		}
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
 			if resp.Data != nil {
@@ -1018,7 +1021,7 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 		}
 		// Also strip short flags that have already been handled
 		if a == "-i" || a == "-c" || a == "--interactive" || a == "--compact" ||
-			a == "--with-body" || a == "--clear" || a == "--json" {
+			a == "--with-body" || a == "--clear" || a == "--json" || a == "--new" {
 			continue
 		}
 		if a == "-d" || a == "--depth" || a == "-s" || a == "--selector" ||

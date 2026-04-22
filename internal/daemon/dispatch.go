@@ -480,6 +480,30 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		if req.URL == "" {
 			return failResp(req.ID, "missing url parameter")
 		}
+
+		// Reuse-by-URL: if a page target already has this exact URL, focus it
+		// instead of opening a fresh tab. Prevents tab-blowup in automated
+		// workflows that call `open` repeatedly for the same URL. Opt out
+		// with --new (or `new: true` on the wire).
+		if !req.New {
+			if existing := findTargetByExactURL(cdp, req.URL); existing != nil {
+				cdp.CurrentTargetID = existing.ID
+				cdp.AttachAndEnable(existing.ID)
+				reused := cdp.TabManager.GetTab(existing.ID)
+				shortID := ""
+				var seq *int
+				if reused != nil {
+					shortID = reused.ShortID
+					s := reused.RecordAction()
+					seq = &s
+				}
+				return okResp(req.ID, &protocol.ResponseData{
+					TabID: existing.ID, URL: existing.URL, Title: existing.Title,
+					Tab: shortID, Seq: seq,
+				})
+			}
+		}
+
 		result, err := cdp.BrowserCommand("Target.createTarget", map[string]interface{}{
 			"url": req.URL, "background": true,
 		})

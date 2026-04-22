@@ -49,6 +49,8 @@ type Request struct {
 
 	// Navigation
 	URL string `json:"url,omitempty"`
+	// New forces `open` to always create a fresh tab, bypassing reuse-by-URL.
+	New bool `json:"new,omitempty"`
 
 	// Interaction
 	Ref  string `json:"ref,omitempty"`

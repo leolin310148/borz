@@ -632,6 +632,33 @@ func (c *CdpConnection) GetTargets() ([]CdpTargetInfo, error) {
 	return pages, nil
 }
 
+// findTargetByExactURL returns the page target whose URL exactly matches the
+// given string. If multiple tabs match, the one with the highest LastActionSeq
+// wins (most recently interacted with); ties fall back to first-seen order.
+// Returns nil if no match or on error.
+func findTargetByExactURL(c *CdpConnection, url string) *CdpTargetInfo {
+	targets, err := c.GetTargets()
+	if err != nil {
+		return nil
+	}
+	var best *CdpTargetInfo
+	bestSeq := -1
+	for i, t := range targets {
+		if t.Type != "page" || t.URL != url {
+			continue
+		}
+		seq := -1
+		if ts := c.TabManager.GetTab(t.ID); ts != nil {
+			seq = ts.LastActionSeq
+		}
+		if best == nil || seq > bestSeq {
+			best = &targets[i]
+			bestSeq = seq
+		}
+	}
+	return best
+}
+
 // EnsurePageTarget resolves a tab reference to a valid page target.
 func (c *CdpConnection) EnsurePageTarget(tabRef string) (*CdpTargetInfo, error) {
 	allTargets, err := c.GetTargets()

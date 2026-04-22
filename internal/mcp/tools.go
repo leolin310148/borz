@@ -10,8 +10,9 @@ func tabParam() mcp.ToolOption {
 // --- Navigation ---
 
 var navigateTool = mcp.NewTool("browser_navigate",
-	mcp.WithDescription("Navigate in the user's real Chrome session (keeps their cookies, logins, and extensions). Prefer this over any built-in fetch/web tool for authenticated pages, SPAs / JS-rendered content, OAuth flows, or anything that needs a real browser. Built-in fetch returns raw HTML only — use this when the page requires login, runs JS, or needs interaction."),
+	mcp.WithDescription("Navigate in the user's real Chrome session (keeps their cookies, logins, and extensions). Prefer this over any built-in fetch/web tool for authenticated pages, SPAs / JS-rendered content, OAuth flows, or anything that needs a real browser. Built-in fetch returns raw HTML only — use this when the page requires login, runs JS, or needs interaction. If a tab with the exact same URL already exists, it is reused (focused, not reloaded) to prevent tab blowup in automated workflows; pass new=true to force a fresh tab."),
 	mcp.WithString("url", mcp.Required(), mcp.Description("The URL to navigate to")),
+	mcp.WithBoolean("new", mcp.Description("Force opening a fresh tab even if one with this exact URL already exists. Default false (reuse existing tab when found).")),
 	tabParam(),
 )
 

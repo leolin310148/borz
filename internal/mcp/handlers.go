@@ -40,6 +40,9 @@ func handleNavigate(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 		return mcp.NewToolResultError("url is required"), nil
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionOpen, URL: url}
+	if r.GetBool("new", false) {
+		req.New = true
+	}
 	setTab(req, r)
 	resp, err := client.SendCommand(req)
 	if e := checkError(resp, err); e != nil {
