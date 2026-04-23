@@ -88,6 +88,12 @@ jobs:
             GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" -o "$OUTPUT" .
           done
 
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum bb-browser-* > checksums.txt
+          cat checksums.txt
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:

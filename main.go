@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"github.com/leolin310148/bb-browser-go/internal/jq"
 	mcpserver "github.com/leolin310148/bb-browser-go/internal/mcp"
 	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/bb-browser-go/internal/selfupdate"
 	"github.com/leolin310148/bb-browser-go/internal/site"
 )
 
@@ -35,7 +37,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--cdp-host", "--cdp-port"}, []string{"--json", "--help", "--version"})
+	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--cdp-host", "--cdp-port"}, []string{"--json", "--help", "--version", "--force", "--check"})
 
 	if len(cleanArgs) == 0 {
 		printHelp()
@@ -405,6 +407,17 @@ func main() {
 	// --- Site ---
 	case "site":
 		handleSite(cmdArgs, jsonOutput, globalTabID)
+
+	// --- Self-update ---
+	case "update":
+		err := selfupdate.Run(context.Background(), selfupdate.Options{
+			CurrentVersion: version,
+			Force:          hasFlag(args, "--force"),
+			CheckOnly:      hasFlag(args, "--check"),
+		})
+		if err != nil {
+			fatal(err.Error())
+		}
 
 	// --- History ---
 	case "history":
@@ -1090,6 +1103,7 @@ Utility:
           --token T]            (exposes /v1/* REST routes; binds 0.0.0.0 by
                                 default, requires --token on non-loopback)
   server shutdown               Stop server
+  update [--check] [--force]    Download latest release and replace self
 
 Global Flags:
   --tab <id>                    Target tab
