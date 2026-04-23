@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-commit hook: mirrors the CI build/lint/coverage gates so we catch
+# failures locally instead of burning GitHub Actions minutes.
+#
+# Activate with:   git config core.hooksPath .githooks
+# Bypass once:     git commit --no-verify
+set -euo pipefail
+
+# Skip if no Go files are staged — no point running tests for docs-only changes.
+staged_go=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.go$' || true)
+if [[ -z "$staged_go" ]]; then
+  exit 0
+fi
+
+echo "[pre-commit] go vet"
+go vet ./...
+
+echo "[pre-commit] go test -race -coverprofile"
+cov_file=$(mktemp -t bb-browser-cov.XXXXXX)
+trap 'rm -f "$cov_file"' EXIT
+go test -race -coverprofile="$cov_file" -covermode=atomic ./...
+
+total=$(go tool cover -func="$cov_file" | awk '/^total:/ {sub(/%/,"",$NF); print $NF}')
+floor=70
+echo "[pre-commit] total coverage: ${total}%  (floor: ${floor}%)"
+awk -v t="$total" -v f="$floor" 'BEGIN { exit (t+0 < f+0) ? 1 : 0 }' || {
+  echo "[pre-commit] coverage ${total}% is below ${floor}% floor" >&2
+  exit 1
+}

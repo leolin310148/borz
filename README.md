@@ -788,6 +788,18 @@ bb-browser eval "document.querySelector('.title').textContent"
 bb-browser snapshot --json --jq ".data.snapshotData.refs"
 ```
 
+## Development
+
+Activate the repo's pre-commit hook once per clone to run `go vet`, the
+race-enabled test suite, and the 70% coverage floor before every commit:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook skips when no `.go` files are staged. Bypass with `git commit
+--no-verify` if needed.
+
 ## License
 
 MIT
