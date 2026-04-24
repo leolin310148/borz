@@ -47,8 +47,40 @@ func main() {
 	command := cleanArgs[0]
 	cmdArgs := cleanArgs[1:]
 
+	// Intercept '<command> [sub] --help' / '<command> [sub] -h' before dispatch
+	// so a help request never executes the command (e.g. 'bb-browser update
+	// --help' used to perform a real self-update). The top-level 'help
+	// [command [sub]]' form is handled explicitly below.
+	if command != "help" && helpRequested(args, cmdArgs) {
+		// Adapter invocations ('platform/name --help', and also
+		// 'site platform/name --help') forward to 'site info' so agents see
+		// the adapter's args/domain/example.
+		if strings.Contains(command, "/") {
+			handleSite([]string{"info", command}, false, "")
+			return
+		}
+		if command == "site" {
+			for _, a := range cmdArgs {
+				if strings.Contains(a, "/") {
+					handleSite([]string{"info", a}, false, "")
+					return
+				}
+			}
+		}
+		printCommandHelp(resolveHelpKey(command, cmdArgs))
+		return
+	}
+
 	switch command {
 	case "help", "--help", "-h":
+		if len(cmdArgs) > 0 {
+			if strings.Contains(cmdArgs[0], "/") {
+				handleSite([]string{"info", cmdArgs[0]}, false, "")
+				return
+			}
+			printCommandHelp(resolveHelpKey(cmdArgs[0], cmdArgs[1:]))
+			return
+		}
 		printHelp()
 	case "version", "--version", "-v":
 		fmt.Println("bb-browser-go", version)
@@ -1109,5 +1141,19 @@ Global Flags:
   --tab <id>                    Target tab
   --json                        JSON output
   --jq <expr>                   Filter with jq expression
-  --since <seq|last_action>     Incremental query`)
+  --since <seq|last_action>     Incremental query
+
+Refs & snapshots:
+  Interaction commands (click, fill, ...) take a <ref> from a prior
+  accessibility snapshot. Snapshots render elements as 'button [ref=5]';
+  pass "5" (or "@5") as <ref>. Refs regenerate on every snapshot — always
+  re-snapshot after navigation or DOM changes.
+
+Per-command help:
+  bb-browser <command> --help   Detailed usage, flags, and examples
+  bb-browser help <command>     Same, via the 'help' subcommand
+
+Agents & automation:
+  See skill.md / llm.txt in this repo for end-to-end guidance on driving
+  bb-browser from an agent (MCP, CLI, and HTTP modes).`)
 }
