@@ -489,6 +489,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if existing := findTargetByExactURL(cdp, req.URL); existing != nil {
 				cdp.CurrentTargetID = existing.ID
 				cdp.AttachAndEnable(existing.ID)
+				cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": existing.ID})
 				reused := cdp.TabManager.GetTab(existing.ID)
 				shortID := ""
 				var seq *int
@@ -505,7 +506,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 
 		result, err := cdp.BrowserCommand("Target.createTarget", map[string]interface{}{
-			"url": req.URL, "background": true,
+			"url": req.URL,
 		})
 		if err != nil {
 			return failResp(req.ID, err)
@@ -515,6 +516,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 		json.Unmarshal(result, &created)
 		cdp.AttachAndEnable(created.TargetID)
+		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": created.TargetID})
 		newTab := cdp.TabManager.GetTab(created.TargetID)
 		shortID := ""
 		var seq *int
@@ -547,6 +549,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 		seq := tab.RecordAction()
 		cdp.PageCommand(target.ID, "Page.navigate", map[string]interface{}{"url": req.URL})
+		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": target.ID})
 		tab.Refs = map[string]*protocol.RefInfo{}
 		return okResp(req.ID, &protocol.ResponseData{
 			URL: req.URL, Title: target.Title, TabID: target.ID, Tab: shortID, Seq: intPtr(seq),

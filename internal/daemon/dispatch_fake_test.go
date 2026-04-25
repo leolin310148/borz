@@ -83,6 +83,76 @@ func TestDispatch_Open_ForceNewWithFlag(t *testing.T) {
 	}
 }
 
+// activatedTargetIDs returns the targetIds passed to every Target.activateTarget call.
+func activatedTargetIDs(t *testing.T, f *fakeCDP) []string {
+	t.Helper()
+	var ids []string
+	for _, c := range f.Calls() {
+		if c.Method != "Target.activateTarget" {
+			continue
+		}
+		var p struct {
+			TargetID string `json:"targetId"`
+		}
+		_ = json.Unmarshal(c.Params, &p)
+		ids = append(ids, p.TargetID)
+	}
+	return ids
+}
+
+func contains(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+func TestDispatch_Open_NewTab_ActivatesTab(t *testing.T) {
+	f := newFakeCDP(t)
+	f.On("Target.createTarget", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"targetId": "T-NEW"}, nil
+	})
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionOpen, URL: "https://ex.test"})
+	if !resp.Success {
+		t.Fatalf("open: %+v", resp)
+	}
+	if !contains(activatedTargetIDs(t, f), "T-NEW") {
+		t.Fatalf("expected Target.activateTarget for T-NEW, got %v", activatedTargetIDs(t, f))
+	}
+}
+
+func TestDispatch_Open_ReuseExisting_ActivatesTab(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://ex.test", "Existing")
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionOpen, URL: "https://ex.test"})
+	if !resp.Success {
+		t.Fatalf("open reuse: %+v", resp)
+	}
+	if !contains(activatedTargetIDs(t, f), "T1") {
+		t.Fatalf("expected Target.activateTarget for T1 (reused), got %v", activatedTargetIDs(t, f))
+	}
+}
+
+func TestDispatch_Open_ExistingTab_ActivatesTab(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://old", "Old")
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionOpen, URL: "https://new", TabID: "T1"})
+	if !resp.Success {
+		t.Fatalf("open --tab: %+v", resp)
+	}
+	if !contains(activatedTargetIDs(t, f), "T1") {
+		t.Fatalf("expected Target.activateTarget for T1, got %v", activatedTargetIDs(t, f))
+	}
+}
+
 func TestDispatch_TabNew(t *testing.T) {
 	f := newFakeCDP(t)
 	f.On("Target.createTarget", func(json.RawMessage) (interface{}, error) {
