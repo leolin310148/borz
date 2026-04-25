@@ -14,6 +14,7 @@ import (
 	"github.com/leolin310148/bb-browser-go/internal/config"
 	"github.com/leolin310148/bb-browser-go/internal/daemon"
 	"github.com/leolin310148/bb-browser-go/internal/jq"
+	"github.com/leolin310148/bb-browser-go/internal/jseval"
 	mcpserver "github.com/leolin310148/bb-browser-go/internal/mcp"
 	"github.com/leolin310148/bb-browser-go/internal/protocol"
 	"github.com/leolin310148/bb-browser-go/internal/selfupdate"
@@ -35,10 +36,11 @@ func main() {
 	globalTabID := getArgValue(args, "--tab")
 	jqExpression = getArgValue(args, "--jq")
 	jsonOutput := hasFlag(args, "--json") || jqExpression != ""
+	unwrap := hasFlag(args, "--unwrap")
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--cdp-host", "--cdp-port", "--idle-tab-timeout"}, []string{"--json", "--help", "--version", "--force", "--check"})
+	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await"})
 
 	if len(cleanArgs) == 0 {
 		printHelp()
@@ -89,7 +91,7 @@ func main() {
 	// --- Navigation ---
 	case "open":
 		if len(cmdArgs) == 0 {
-			fatal("Usage: bb-browser open <url> [--tab <tabId>] [--new]")
+			fatal("Usage: bb-browser open <url> [--tab <tabId>] [--new] [--wait-for <selector>] [--timeout <ms>]")
 		}
 		url := cmdArgs[0]
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionOpen, URL: url}
@@ -98,6 +100,16 @@ func main() {
 		}
 		if hasFlag(args, "--new") {
 			req.New = true
+		}
+		if waitFor := getArgValue(args, "--wait-for"); waitFor != "" {
+			req.WaitFor = waitFor
+		}
+		if v := getArgValue(args, "--timeout"); v != "" {
+			ms, err := strconv.Atoi(v)
+			if err != nil || ms < 0 {
+				fatal("--timeout must be a non-negative integer (ms)")
+			}
+			req.TimeoutMs = &ms
 		}
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
 			if resp.Data != nil {
@@ -207,18 +219,29 @@ func main() {
 		})
 
 	case "eval":
-		if len(cmdArgs) == 0 {
-			fatal("Usage: bb-browser eval <script>")
+		filePath := getArgValue(args, "--file")
+		var script string
+		if filePath != "" {
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				fatal(fmt.Sprintf("--file: %v", err))
+			}
+			script = string(data)
+			if len(cmdArgs) > 0 {
+				fatal("eval: --file and inline script are mutually exclusive")
+			}
+		} else {
+			if len(cmdArgs) == 0 {
+				fatal("Usage: bb-browser eval <script> | --file <path>")
+			}
+			script = strings.Join(cmdArgs, " ")
 		}
-		script := strings.Join(cmdArgs, " ")
+		if !hasFlag(args, "--no-auto-await") {
+			script = jseval.AutoWrapAwait(script)
+		}
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionEval, Script: script}
 		setTab(req, globalTabID)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
-			if resp.Data != nil && resp.Data.Result != nil {
-				out, _ := json.MarshalIndent(resp.Data.Result, "", "  ")
-				fmt.Println(string(out))
-			}
-		})
+		printEval(req, jsonOutput, unwrap)
 
 	case "get":
 		if len(cmdArgs) == 0 {
@@ -947,12 +970,7 @@ func handleSiteRun(name string, cmdArgs []string, jsonOutput bool, globalTabID s
 		fatal(err.Error())
 	}
 
-	sendAndPrint(evalReq, jsonOutput, func(resp *protocol.Response) {
-		if resp.Data != nil && resp.Data.Result != nil {
-			out, _ := json.MarshalIndent(resp.Data.Result, "", "  ")
-			fmt.Println(string(out))
-		}
-	})
+	printEval(evalReq, jsonOutput, hasFlag(os.Args[1:], "--unwrap"))
 }
 
 // --- Helpers ---
@@ -1007,6 +1025,39 @@ func sendAndPrint(req *protocol.Request, jsonOutput bool, prettyPrint func(*prot
 
 func printJSON(v interface{}) {
 	out, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(out))
+}
+
+// printEval handles eval (and adapter run) output: --jq > --json > --unwrap >
+// pretty default. Unwrap prints resp.Data.Result raw — strings without quotes,
+// other shapes as JSON.
+func printEval(req *protocol.Request, jsonOutput, unwrap bool) {
+	if jqExpression != "" || jsonOutput {
+		sendAndPrint(req, jsonOutput, nil)
+		return
+	}
+	resp, err := client.SendCommand(req)
+	if err != nil {
+		fatal(err.Error())
+	}
+	if !resp.Success {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", resp.Error)
+		os.Exit(1)
+	}
+	if resp.Data == nil || resp.Data.Result == nil {
+		return
+	}
+	if unwrap {
+		switch v := resp.Data.Result.(type) {
+		case string:
+			fmt.Println(v)
+		default:
+			out, _ := json.MarshalIndent(v, "", "  ")
+			fmt.Println(string(out))
+		}
+		return
+	}
+	out, _ := json.MarshalIndent(resp.Data.Result, "", "  ")
 	fmt.Println(string(out))
 }
 

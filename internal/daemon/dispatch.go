@@ -41,6 +41,42 @@ func failResp(id string, err interface{}) *protocol.Response {
 
 func intPtr(v int) *int { return &v }
 
+// applyWaitFor honors req.WaitFor / req.TimeoutMs by polling for the selector.
+// Returns nil immediately if WaitFor is empty.
+func applyWaitFor(cdp *CdpConnection, targetID string, req *protocol.Request) error {
+	if req.WaitFor == "" {
+		return nil
+	}
+	timeout := 10 * time.Second
+	if req.TimeoutMs != nil && *req.TimeoutMs > 0 {
+		timeout = time.Duration(*req.TimeoutMs) * time.Millisecond
+	}
+	return waitForSelector(cdp, targetID, req.WaitFor, timeout)
+}
+
+// waitForSelector polls Runtime.evaluate(document.querySelector(sel)!=null) on
+// 100ms ticks until truthy or timeout. cdp.Evaluate may transiently fail while
+// the navigation tears down the old execution context — those errors are
+// retried, only the timeout is reported.
+func waitForSelector(cdp *CdpConnection, targetID, selector string, timeout time.Duration) error {
+	selJSON, _ := json.Marshal(selector)
+	expr := fmt.Sprintf("!!document.querySelector(%s)", string(selJSON))
+	deadline := time.Now().Add(timeout)
+	for {
+		raw, err := cdp.Evaluate(targetID, expr, true)
+		if err == nil {
+			var found bool
+			if json.Unmarshal(raw, &found) == nil && found {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("wait-for selector %q: timeout after %s", selector, timeout)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 // --- Snapshot ---
 
 func buildSnapshot(cdp *CdpConnection, targetID string, tab *TabState, req *protocol.Request) (*protocol.SnapshotData, error) {
@@ -498,6 +534,9 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 					s := reused.RecordAction()
 					seq = &s
 				}
+				if err := applyWaitFor(cdp, existing.ID, req); err != nil {
+					return failResp(req.ID, err)
+				}
 				return okResp(req.ID, &protocol.ResponseData{
 					TabID: existing.ID, URL: existing.URL, Title: existing.Title,
 					Tab: shortID, Seq: seq,
@@ -525,6 +564,9 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			s := newTab.RecordAction()
 			seq = &s
 		}
+		if err := applyWaitFor(cdp, created.TargetID, req); err != nil {
+			return failResp(req.ID, err)
+		}
 		return okResp(req.ID, &protocol.ResponseData{
 			TabID: created.TargetID, URL: req.URL, Tab: shortID, Seq: seq,
 		})
@@ -551,6 +593,9 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		cdp.PageCommand(target.ID, "Page.navigate", map[string]interface{}{"url": req.URL})
 		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": target.ID})
 		tab.Refs = map[string]*protocol.RefInfo{}
+		if err := applyWaitFor(cdp, target.ID, req); err != nil {
+			return failResp(req.ID, err)
+		}
 		return okResp(req.ID, &protocol.ResponseData{
 			URL: req.URL, Title: target.Title, TabID: target.ID, Tab: shortID, Seq: intPtr(seq),
 		})

@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -52,6 +53,62 @@ func TestDispatch_Open_NewTab(t *testing.T) {
 	}
 	if resp.Data.URL != "https://ex.test" {
 		t.Fatalf("url: %q", resp.Data.URL)
+	}
+}
+
+func TestDispatch_Open_WaitFor_Found(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://ex.test", "Existing")
+
+	// Return false the first two probes, then true.
+	var probes int32
+	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			Expression string `json:"expression"`
+		}
+		_ = json.Unmarshal(params, &p)
+		if !strings.Contains(p.Expression, "querySelector") {
+			return map[string]interface{}{"result": map[string]interface{}{"type": "undefined"}}, nil
+		}
+		n := atomic.AddInt32(&probes, 1)
+		val := n >= 3
+		return map[string]interface{}{
+			"result": map[string]interface{}{"type": "boolean", "value": val},
+		}, nil
+	})
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionOpen, URL: "https://ex.test", WaitFor: ".article",
+	})
+	if !resp.Success {
+		t.Fatalf("open --wait-for: %+v", resp)
+	}
+	if got := atomic.LoadInt32(&probes); got < 3 {
+		t.Fatalf("expected at least 3 probes, got %d", got)
+	}
+}
+
+func TestDispatch_Open_WaitFor_Timeout(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://ex.test", "Existing")
+	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
+		// Always report "not found" so the wait times out.
+		return map[string]interface{}{
+			"result": map[string]interface{}{"type": "boolean", "value": false},
+		}, nil
+	})
+	c := connectCdp(t, f)
+
+	timeoutMs := 150
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionOpen, URL: "https://ex.test", WaitFor: ".never", TimeoutMs: &timeoutMs,
+	})
+	if resp.Success {
+		t.Fatalf("expected timeout failure, got success: %+v", resp)
+	}
+	if !strings.Contains(resp.Error, "timeout") {
+		t.Fatalf("expected timeout error, got: %q", resp.Error)
 	}
 }
 

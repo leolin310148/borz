@@ -27,6 +27,8 @@ const globalFlagsNote = `Global flags (available on every command):
   --tab <id>              Target a specific tab (from 'bb-browser tab')
   --json                  Emit the raw JSON response instead of pretty output
   --jq <expr>             Filter JSON output with a jq expression (implies --json)
+  --unwrap                For 'eval'/site adapters: print resp.data.result raw
+                          (strings unquoted, other shapes as JSON)
   --since <seq|last_action>  Only include events newer than this (network/console/errors)`
 
 // commandHelp indexes per-command help. Canonical commands are the keys; any
@@ -36,14 +38,18 @@ var commandHelp = map[string]cmdHelp{
 	// --- Navigation ---
 	"open": {
 		Summary: "Open a URL (reuses a tab with the same URL unless --new).",
-		Usage:   "bb-browser open <url> [--new] [--tab <id>]",
+		Usage:   "bb-browser open <url> [--new] [--tab <id>] [--wait-for <selector>] [--timeout <ms>]",
 		Flags: []string{
-			"  --new        Force a new tab even if the URL is already open",
-			"  --tab <id>   Navigate an existing tab instead of opening a new one",
+			"  --new                   Force a new tab even if the URL is already open",
+			"  --tab <id>              Navigate an existing tab instead of opening a new one",
+			"  --wait-for <selector>   Block until document.querySelector(<selector>) is non-null",
+			"  --timeout <ms>          Cap --wait-for (default 10000ms)",
 		},
 		Examples: []string{
 			"  bb-browser open https://github.com",
 			"  bb-browser open https://github.com --new",
+			"  bb-browser open https://example.com/spa --wait-for '.article-content'",
+			"  bb-browser open https://slow.example --wait-for '#root' --timeout 30000",
 		},
 	},
 	"back":    {Summary: "Go back in the current tab's history.", Usage: "bb-browser back [--tab <id>]"},
@@ -126,13 +132,23 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"eval": {
 		Summary: "Run JavaScript in the page context and return the JSON result.",
-		Usage:   "bb-browser eval <script...> [--tab <id>]",
+		Usage:   "bb-browser eval <script...> [--file <path>] [--unwrap] [--no-auto-await] [--tab <id>]",
+		Flags: []string{
+			"  --file <path>      Read the script from a file instead of inline args",
+			"  --unwrap           Print the result raw (strings unquoted, otherwise JSON)",
+			"  --no-auto-await    Disable the auto-wrap of top-level `await` in an async IIFE",
+		},
 		Examples: []string{
 			"  bb-browser eval 'document.title'",
-			"  bb-browser eval 'document.querySelectorAll(\"a\").length'",
+			"  bb-browser eval --unwrap 'document.title'",
+			"  bb-browser eval 'await fetch(\"/api/me\").then(r=>r.json())'",
+			"  bb-browser eval --file ./extract.js",
 		},
 		Notes: "All remaining args are joined with spaces and evaluated as one expression.\n" +
-			"The return value is JSON-serialised. For authenticated HTTP calls prefer 'bb-browser fetch'.",
+			"By default, scripts that contain a top-level `await` are auto-wrapped in\n" +
+			"`(async () => { return (<script>) })()` so the resolved value is returned\n" +
+			"instead of `[object Promise]`. Use --no-auto-await to disable.\n" +
+			"For authenticated HTTP calls prefer 'bb-browser fetch'.",
 	},
 	"wait": {
 		Summary:  "Sleep for <ms> milliseconds (default 1000) without releasing the daemon.",

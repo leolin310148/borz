@@ -51,6 +51,11 @@ type Request struct {
 	URL string `json:"url,omitempty"`
 	// New forces `open` to always create a fresh tab, bypassing reuse-by-URL.
 	New bool `json:"new,omitempty"`
+	// WaitFor, when set, polls document.querySelector(WaitFor) after Page.navigate
+	// until it resolves to a non-null node or TimeoutMs elapses.
+	WaitFor string `json:"waitFor,omitempty"`
+	// TimeoutMs caps WaitFor (default 10000 when WaitFor is set).
+	TimeoutMs *int `json:"timeoutMs,omitempty"`
 
 	// Interaction
 	Ref  string `json:"ref,omitempty"`
