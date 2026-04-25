@@ -27,6 +27,7 @@ tags:
   - name: observation
   - name: tabs
   - name: sites
+  - name: diagnostics
   - name: raw
 
 paths:
@@ -84,6 +85,7 @@ paths:
             schema:
               allOf:
                 - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
                 - type: object
                   required: [url]
                   properties:
@@ -98,7 +100,12 @@ paths:
       tags: [navigation]
       summary: Navigate back
       requestBody:
-        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
@@ -107,7 +114,12 @@ paths:
       tags: [navigation]
       summary: Navigate forward
       requestBody:
-        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
@@ -116,7 +128,12 @@ paths:
       tags: [navigation]
       summary: Refresh the page
       requestBody:
-        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
@@ -172,6 +189,7 @@ paths:
             schema:
               allOf:
                 - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
                 - type: object
                   required: [ref, text]
                   properties:
@@ -191,6 +209,7 @@ paths:
             schema:
               allOf:
                 - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
                 - type: object
                   required: [ref, text]
                   properties:
@@ -210,6 +229,7 @@ paths:
             schema:
               allOf:
                 - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
                 - type: object
                   required: [ref, value]
                   properties:
@@ -229,6 +249,7 @@ paths:
             schema:
               allOf:
                 - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
                 - type: object
                   required: [key]
                   properties:
@@ -326,6 +347,7 @@ paths:
             schema:
               allOf:
                 - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
                 - type: object
                   required: [direction]
                   properties:
@@ -349,14 +371,16 @@ paths:
             schema:
               allOf:
                 - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
                 - type: object
                   required: [script]
                   properties:
                     script:
                       type: string
                       description: |
-                        JS expression. To return a value asynchronously wrap in
-                        an IIFE that returns a Promise:
+                        JS expression. The REST endpoint does not auto-wrap top-level
+                        `await` (the CLI does); pass an async IIFE that returns a
+                        Promise instead:
                         `(async () => { return fetch('/x').then(r => r.text()) })()`.
       responses:
         "200": { $ref: "#/components/responses/Ok" }
@@ -398,6 +422,14 @@ paths:
                     maxDepth: { type: integer }
                     selector: { type: string, description: CSS selector subtree root }
                     role: { type: string, description: ARIA role filter }
+                    mode:
+                      type: string
+                      enum: [text]
+                      description: |
+                        Output format. Default is the accessibility tree with refs.
+                        `"text"` returns a reader-mode plain-text dump (title +
+                        URL + visible text, with nav/header/footer/script/style
+                        stripped). No refs are produced in text mode.
       responses:
         "200":
           description: Snapshot response
@@ -563,6 +595,40 @@ paths:
                           jsErrors:
                             type: array
                             items: { $ref: "#/components/schemas/JSErrorInfo" }
+
+  /v1/doctor:
+    get:
+      tags: [diagnostics]
+      summary: Daemon-side health summary (CDP attach + tab presence)
+      description: |
+        Quick stack diagnostic from inside the daemon. Returns 200 with
+        `{ok: true, checks: [...]}` when all checks pass, 503 when any check
+        fails. Use this as the remote analogue of the CLI `bb-browser doctor`.
+      responses:
+        "200":
+          description: All checks passed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DoctorReport" }
+        "503":
+          description: One or more checks failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DoctorReport" }
+    post:
+      tags: [diagnostics]
+      summary: Same as GET — POST is accepted for clients that prefer it
+      responses:
+        "200":
+          description: All checks passed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DoctorReport" }
+        "503":
+          description: One or more checks failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DoctorReport" }
 
   /v1/tabs:
     get:
@@ -765,6 +831,7 @@ components:
           schema:
             allOf:
               - $ref: "#/components/schemas/TabTarget"
+              - $ref: "#/components/schemas/WaitOptions"
               - type: object
                 required: [ref]
                 properties:
@@ -798,6 +865,22 @@ components:
           type: string
           description: Short-ID alias for `tabId` (string form only).
 
+    WaitOptions:
+      type: object
+      description: |
+        After-action wait options accepted by every endpoint that changes the
+        page. Once the action runs the daemon polls
+        `document.querySelector(waitFor)` on a 100 ms tick until it returns a
+        non-null node or `timeoutMs` elapses (default 10000).
+      properties:
+        waitFor:
+          type: string
+          description: CSS selector to wait for after the action returns.
+        timeoutMs:
+          type: integer
+          minimum: 0
+          description: Cap for waitFor in milliseconds (default 10000).
+
     Since:
       description: |
         Filter events newer than this point. Accepts:
@@ -825,6 +908,25 @@ components:
         success: { type: boolean }
         error: { type: string }
         data: { type: object, additionalProperties: true }
+
+    DoctorCheck:
+      type: object
+      properties:
+        name: { type: string }
+        status:
+          type: string
+          enum: [ok, warn, fail]
+        detail: { type: string }
+
+    DoctorReport:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          description: True when no check has status `fail`. Warnings do not flip this.
+        checks:
+          type: array
+          items: { $ref: "#/components/schemas/DoctorCheck" }
 
     DaemonStatus:
       type: object

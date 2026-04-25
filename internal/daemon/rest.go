@@ -20,16 +20,16 @@ import (
 func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 	// Navigation
 	mux.HandleFunc("/v1/open", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionOpen, URL: body.URL, New: body.New, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionOpen, URL: body.URL, New: body.New, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/back", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionBack, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionBack, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/forward", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionForward, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionForward, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/refresh", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionRefresh, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionRefresh, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/close", s.restJSON(func(body restBody) *protocol.Request {
 		return &protocol.Request{Action: protocol.ActionClose, TabID: body.tabID()}
@@ -37,28 +37,28 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 
 	// Interaction
 	mux.HandleFunc("/v1/click", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionClick, Ref: body.Ref, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionClick, Ref: body.Ref, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/hover", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionHover, Ref: body.Ref, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionHover, Ref: body.Ref, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/fill", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionFill, Ref: body.Ref, Text: body.Text, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionFill, Ref: body.Ref, Text: body.Text, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/type", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionType_, Ref: body.Ref, Text: body.Text, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionType_, Ref: body.Ref, Text: body.Text, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/check", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionCheck, Ref: body.Ref, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionCheck, Ref: body.Ref, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/uncheck", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionUncheck, Ref: body.Ref, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionUncheck, Ref: body.Ref, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/select", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionSelect, Ref: body.Ref, Value: body.Value, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionSelect, Ref: body.Ref, Value: body.Value, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/press", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionPress, Key: body.Key, Modifiers: body.Modifiers, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionPress, Key: body.Key, Modifiers: body.Modifiers, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/key", s.restJSON(func(body restBody) *protocol.Request {
 		return &protocol.Request{
@@ -93,10 +93,10 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		if body.Pixels != nil {
 			req.Pixels = body.Pixels
 		}
-		return req
+		return body.applyWait(req)
 	}))
 	mux.HandleFunc("/v1/eval", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionEval, Script: body.Script, TabID: body.tabID()}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionEval, Script: body.Script, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/wait", s.restJSON(func(body restBody) *protocol.Request {
 		return &protocol.Request{Action: protocol.ActionWait, Ms: body.Ms, TabID: body.tabID()}
@@ -111,6 +111,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			MaxDepth:    body.MaxDepth,
 			Selector:    body.Selector,
 			Role:        body.Role,
+			Mode:        body.Mode,
 			TabID:       body.tabID(),
 		}
 	}))
@@ -202,6 +203,9 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		return req
 	}))
 
+	// Diagnostics
+	mux.HandleFunc("/v1/doctor", s.handleDoctor)
+
 	// Fetch (authenticated HTTP through the browser session)
 	mux.HandleFunc("/v1/fetch", s.restJSON(func(body restBody) *protocol.Request {
 		method := body.Method
@@ -259,6 +263,16 @@ type restBody struct {
 	Tab         string      `json:"tab,omitempty"`
 	Index       *int        `json:"index,omitempty"`
 
+	// After-action wait. WaitFor polls document.querySelector(WaitFor) on a
+	// 100ms tick once the action returns; TimeoutMs caps the wait (default
+	// 10000 when WaitFor is set).
+	WaitFor   string `json:"waitFor,omitempty"`
+	TimeoutMs *int   `json:"timeoutMs,omitempty"`
+
+	// Mode selects an alternate output format. For /v1/snapshot, "text"
+	// returns a reader-mode plain-text dump (no refs).
+	Mode string `json:"mode,omitempty"`
+
 	// Key input
 	KeyType string `json:"keyType,omitempty"`
 	Code    string `json:"code,omitempty"`
@@ -271,6 +285,18 @@ type restBody struct {
 	DeltaX     *float64 `json:"deltaX,omitempty"`
 	DeltaY     *float64 `json:"deltaY,omitempty"`
 	ClickCount *int     `json:"clickCount,omitempty"`
+}
+
+// applyWait copies WaitFor / TimeoutMs onto req when the body sets them, so
+// the dispatcher polls document.querySelector after the action returns.
+func (b restBody) applyWait(req *protocol.Request) *protocol.Request {
+	if b.WaitFor != "" {
+		req.WaitFor = b.WaitFor
+	}
+	if b.TimeoutMs != nil {
+		req.TimeoutMs = b.TimeoutMs
+	}
+	return req
 }
 
 // tabID returns the tab identifier to pass through to the dispatcher.
@@ -373,4 +399,62 @@ func newReqID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// doctorCheck mirrors diagnostics.Check shape so REST output matches the CLI
+// 'bb-browser doctor' format. The daemon-side variant skips the binary,
+// daemon-process, and daemon-HTTP rows (we are inside the daemon, those would
+// trivially pass) and reports CDP attach + tab presence based on s.cdp.
+type doctorCheck struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Detail string `json:"detail,omitempty"`
+}
+
+func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+		return
+	}
+
+	checks := []doctorCheck{}
+	if s.opts.Version != "" {
+		checks = append(checks, doctorCheck{Name: "Daemon", Status: "ok", Detail: fmt.Sprintf("bb-browser-go %s", s.opts.Version)})
+	} else {
+		checks = append(checks, doctorCheck{Name: "Daemon", Status: "ok", Detail: "running"})
+	}
+
+	cdpTarget := fmt.Sprintf("%s:%d", s.cdp.Host, s.cdp.Port)
+	if s.cdp.Connected() {
+		checks = append(checks, doctorCheck{Name: "CDP connected", Status: "ok", Detail: cdpTarget + " attached"})
+	} else {
+		detail := cdpTarget + " not attached"
+		if s.cdp.LastError != "" {
+			detail += " (" + s.cdp.LastError + ")"
+		}
+		checks = append(checks, doctorCheck{Name: "CDP connected", Status: "fail", Detail: detail})
+	}
+
+	tabs := s.cdp.TabManager.AllTabs()
+	if len(tabs) == 0 {
+		checks = append(checks, doctorCheck{Name: "Tabs", Status: "warn", Detail: "no open tabs"})
+	} else {
+		checks = append(checks, doctorCheck{Name: "Tabs", Status: "ok", Detail: fmt.Sprintf("%d open", len(tabs))})
+	}
+
+	failed := false
+	for _, c := range checks {
+		if c.Status == "fail" {
+			failed = true
+			break
+		}
+	}
+	status := 200
+	if failed {
+		status = 503
+	}
+	sendJSON(w, status, map[string]interface{}{
+		"ok":     !failed,
+		"checks": checks,
+	})
 }

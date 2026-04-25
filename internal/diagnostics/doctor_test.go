@@ -1,47 +1,17 @@
-package main
+package diagnostics
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// withCapturedStdout runs fn with os.Stdout swapped for a pipe; returns the
-// captured output. Doctor's emit helpers print directly, so we capture rather
-// than refactor them to take a writer.
-func withCapturedStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stdout = w
-	defer func() { os.Stdout = old }()
-
-	done := make(chan struct{})
-	var buf bytes.Buffer
-	go func() {
-		_, _ = io.Copy(&buf, r)
-		close(done)
-	}()
-
-	fn()
-	w.Close()
-	<-done
-	return buf.String()
-}
-
-func TestEmitDoctorText_AllOK(t *testing.T) {
-	out := withCapturedStdout(t, func() {
-		emitDoctorText([]doctorCheck{
-			{Name: "A", Status: "ok", Detail: "fine"},
-			{Name: "B", Status: "ok"},
-		})
+func TestRenderText_AllOK(t *testing.T) {
+	out := RenderText([]Check{
+		{Name: "A", Status: "ok", Detail: "fine"},
+		{Name: "B", Status: "ok"},
 	})
 	if !strings.Contains(out, "[OK]") {
 		t.Errorf("expected [OK] marker; got: %s", out)
@@ -51,13 +21,11 @@ func TestEmitDoctorText_AllOK(t *testing.T) {
 	}
 }
 
-func TestEmitDoctorText_WithFail(t *testing.T) {
-	out := withCapturedStdout(t, func() {
-		emitDoctorText([]doctorCheck{
-			{Name: "A", Status: "ok"},
-			{Name: "B", Status: "fail", Detail: "broken"},
-			{Name: "C", Status: "warn", Detail: "stale"},
-		})
+func TestRenderText_WithFail(t *testing.T) {
+	out := RenderText([]Check{
+		{Name: "A", Status: "ok"},
+		{Name: "B", Status: "fail", Detail: "broken"},
+		{Name: "C", Status: "warn", Detail: "stale"},
 	})
 	if !strings.Contains(out, "[FAIL]") || !strings.Contains(out, "[WARN]") {
 		t.Errorf("expected FAIL+WARN markers; got: %s", out)
@@ -67,16 +35,14 @@ func TestEmitDoctorText_WithFail(t *testing.T) {
 	}
 }
 
-func TestEmitDoctorJSON_Shape(t *testing.T) {
-	out := withCapturedStdout(t, func() {
-		emitDoctorJSON([]doctorCheck{
-			{Name: "A", Status: "ok"},
-			{Name: "B", Status: "fail", Detail: "broken"},
-		})
+func TestRenderJSON_Shape(t *testing.T) {
+	out := RenderJSON([]Check{
+		{Name: "A", Status: "ok"},
+		{Name: "B", Status: "fail", Detail: "broken"},
 	})
 	var decoded struct {
-		OK     bool          `json:"ok"`
-		Checks []doctorCheck `json:"checks"`
+		OK     bool    `json:"ok"`
+		Checks []Check `json:"checks"`
 	}
 	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, out)

@@ -625,6 +625,70 @@ func TestHandleSiteRun_SendError(t *testing.T) {
 	}
 }
 
+// --- new flag plumbing (waitFor/timeout, snapshot mode, eval auto-await, doctor) ---
+
+func TestHandleNavigate_PassesWaitForAndTimeout(t *testing.T) {
+	cap := capturingSend(t, ok())
+	_, _ = handleNavigate(context.Background(), mkReq(map[string]any{
+		"url":     "https://example.com",
+		"waitFor": ".loaded",
+		"timeout": float64(2500),
+	}))
+	if cap.req.WaitFor != ".loaded" {
+		t.Errorf("waitFor = %q", cap.req.WaitFor)
+	}
+	if cap.req.TimeoutMs == nil || *cap.req.TimeoutMs != 2500 {
+		t.Errorf("timeoutMs = %v", cap.req.TimeoutMs)
+	}
+}
+
+func TestHandleClick_PassesWaitFor(t *testing.T) {
+	cap := capturingSend(t, ok())
+	_, _ = handleClick(context.Background(), mkReq(map[string]any{
+		"ref":     "@7",
+		"waitFor": ".modal",
+	}))
+	if cap.req.WaitFor != ".modal" {
+		t.Errorf("waitFor = %q", cap.req.WaitFor)
+	}
+}
+
+func TestHandleSnapshot_TextOnlySetsMode(t *testing.T) {
+	cap := capturingSend(t, ok())
+	_, _ = handleSnapshot(context.Background(), mkReq(map[string]any{"textOnly": true}))
+	if cap.req.Mode != "text" {
+		t.Errorf("mode = %q, want text", cap.req.Mode)
+	}
+}
+
+func TestHandleEval_AutoWrapsTopLevelAwait(t *testing.T) {
+	cap := capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{Result: "ok"}})
+	_, _ = handleEval(context.Background(), mkReq(map[string]any{"script": "await fetch('/x')"}))
+	if !strings.Contains(cap.req.Script, "async") {
+		t.Errorf("expected auto-wrap to inject async IIFE; got %q", cap.req.Script)
+	}
+}
+
+func TestHandleEval_NoAutoAwait(t *testing.T) {
+	cap := capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{Result: "ok"}})
+	src := "await fetch('/x')"
+	_, _ = handleEval(context.Background(), mkReq(map[string]any{"script": src, "noAutoAwait": true}))
+	if cap.req.Script != src {
+		t.Errorf("expected raw script; got %q", cap.req.Script)
+	}
+}
+
+func TestHandleDoctor_ReturnsCheckList(t *testing.T) {
+	res, err := handleDoctor(context.Background(), mkReq(map[string]any{"json": true}))
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	out := firstText(t, res)
+	if !strings.Contains(out, "\"checks\"") || !strings.Contains(out, "\"ok\"") {
+		t.Errorf("expected doctor JSON envelope; got: %s", out)
+	}
+}
+
 func TestHandleErrors(t *testing.T) {
 	cap := capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{
 		JSErrors: []protocol.JSErrorInfo{{Message: "oops"}},

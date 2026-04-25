@@ -22,6 +22,7 @@ Typical flow: call browser_tab_list to see what's already open → browser_navig
 
 // Run starts the MCP server over stdio.
 func Run(version string) {
+	mcpVersion = version
 	s := server.NewMCPServer(
 		"bb-browser",
 		version,
@@ -65,6 +66,7 @@ func Run(version string) {
 	s.AddTool(networkTool, handleNetwork)
 	s.AddTool(consoleTool, handleConsole)
 	s.AddTool(errorsTool, handleErrors)
+	s.AddTool(doctorTool, handleDoctor)
 
 	// Site Adapters
 	s.AddTool(siteListTool, handleSiteList)

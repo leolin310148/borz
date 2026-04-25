@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/leolin310148/bb-browser-go/internal/client"
+	"github.com/leolin310148/bb-browser-go/internal/diagnostics"
+	"github.com/leolin310148/bb-browser-go/internal/jseval"
 	"github.com/leolin310148/bb-browser-go/internal/protocol"
 	"github.com/leolin310148/bb-browser-go/internal/site"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -42,6 +44,18 @@ func setTab(req *protocol.Request, r mcp.CallToolRequest) {
 	}
 }
 
+// applyWaitFor reads optional waitFor / timeout params off the tool call and
+// attaches them to the request so the daemon polls document.querySelector
+// after the action runs.
+func applyWaitFor(req *protocol.Request, r mcp.CallToolRequest) {
+	if sel := r.GetString("waitFor", ""); sel != "" {
+		req.WaitFor = sel
+	}
+	if ms := r.GetInt("timeout", 0); ms > 0 {
+		req.TimeoutMs = intPtr(ms)
+	}
+}
+
 // intPtr returns a pointer to an int.
 func intPtr(v int) *int { return &v }
 
@@ -57,6 +71,7 @@ func handleNavigate(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 		req.New = true
 	}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -67,6 +82,7 @@ func handleNavigate(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 func handleBack(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionBack}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -77,6 +93,7 @@ func handleBack(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult
 func handleForward(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionForward}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -87,6 +104,7 @@ func handleForward(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRes
 func handleRefresh(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionRefresh}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -113,6 +131,7 @@ func handleClick(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResul
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionClick, Ref: normalizeRef(ref)}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -127,6 +146,7 @@ func handleHover(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResul
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionHover, Ref: normalizeRef(ref)}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -145,6 +165,7 @@ func handleFill(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionFill, Ref: normalizeRef(ref), Text: text}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -163,6 +184,7 @@ func handleType(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionType_, Ref: normalizeRef(ref), Text: text}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -177,6 +199,7 @@ func handleCheck(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResul
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionCheck, Ref: normalizeRef(ref)}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -191,6 +214,7 @@ func handleUncheck(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRes
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionUncheck, Ref: normalizeRef(ref)}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -209,6 +233,7 @@ func handleSelect(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResu
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionSelect, Ref: normalizeRef(ref), Value: value}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -223,6 +248,7 @@ func handlePress(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResul
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionPress, Key: key}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -240,6 +266,7 @@ func handleScroll(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResu
 		Pixels:    intPtr(pixels),
 	}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -260,6 +287,11 @@ func handleSnapshot(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 	}
 	if depth := r.GetInt("maxDepth", 0); depth > 0 {
 		req.MaxDepth = intPtr(depth)
+	}
+	if r.GetBool("textOnly", false) {
+		req.Mode = "text"
+	} else if mode := r.GetString("mode", ""); mode != "" {
+		req.Mode = mode
 	}
 	setTab(req, r)
 	resp, err := sendCommand(req)
@@ -301,8 +333,12 @@ func handleEval(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult
 	if err != nil {
 		return mcp.NewToolResultError("script is required"), nil
 	}
+	if !r.GetBool("noAutoAwait", false) {
+		script = jseval.AutoWrapAwait(script)
+	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionEval, Script: script}
 	setTab(req, r)
+	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
@@ -421,6 +457,17 @@ func handleConsole(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRes
 		return mcp.NewToolResultText("Console messages cleared"), nil
 	}
 	return formatConsole(resp), nil
+}
+
+// mcpVersion is set by Run() so handleDoctor can stamp the binary check.
+var mcpVersion = "unknown"
+
+func handleDoctor(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	checks, _ := diagnostics.Run(mcpVersion)
+	if r.GetBool("json", false) {
+		return mcp.NewToolResultText(diagnostics.RenderJSON(checks)), nil
+	}
+	return mcp.NewToolResultText(diagnostics.RenderText(checks)), nil
 }
 
 // --- Site Adapter Handlers ---

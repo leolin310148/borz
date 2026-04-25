@@ -7,6 +7,17 @@ func tabParam() mcp.ToolOption {
 	return mcp.WithString("tab", mcp.Description("Target tab ID (short or full target ID)"))
 }
 
+// waitForParam / timeoutParam expose the after-action wait-for / timeout
+// options. The daemon polls document.querySelector(waitFor) on a 100ms tick
+// after the action runs until non-null or timeout elapses (default 10000ms).
+func waitForParam() mcp.ToolOption {
+	return mcp.WithString("waitFor", mcp.Description("After the action runs, wait until document.querySelector(waitFor) returns a non-null node. Use for DOM changes (modal opened, content loaded) instead of fixed waits."))
+}
+
+func timeoutParam() mcp.ToolOption {
+	return mcp.WithNumber("timeout", mcp.Description("Cap for waitFor in milliseconds (default 10000). Ignored without waitFor."))
+}
+
 // --- Navigation ---
 
 var navigateTool = mcp.NewTool("browser_navigate",
@@ -14,21 +25,29 @@ var navigateTool = mcp.NewTool("browser_navigate",
 	mcp.WithString("url", mcp.Required(), mcp.Description("The URL to navigate to")),
 	mcp.WithBoolean("new", mcp.Description("Force opening a fresh tab even if one with this exact URL already exists. Default false (reuse existing tab when found).")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var backTool = mcp.NewTool("browser_back",
 	mcp.WithDescription("Go back in browser history"),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var forwardTool = mcp.NewTool("browser_forward",
 	mcp.WithDescription("Go forward in browser history"),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var refreshTool = mcp.NewTool("browser_refresh",
 	mcp.WithDescription("Refresh the current page"),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var closeTool = mcp.NewTool("browser_close",
@@ -42,12 +61,16 @@ var clickTool = mcp.NewTool("browser_click",
 	mcp.WithDescription("Click an element on the page. Use browser_snapshot first to get element refs."),
 	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot (e.g. \"5\" or \"@5\")")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var hoverTool = mcp.NewTool("browser_hover",
 	mcp.WithDescription("Hover over an element on the page"),
 	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var fillTool = mcp.NewTool("browser_fill",
@@ -55,6 +78,8 @@ var fillTool = mcp.NewTool("browser_fill",
 	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot")),
 	mcp.WithString("text", mcp.Required(), mcp.Description("Text to fill into the field")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var typeTool = mcp.NewTool("browser_type",
@@ -62,18 +87,24 @@ var typeTool = mcp.NewTool("browser_type",
 	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot")),
 	mcp.WithString("text", mcp.Required(), mcp.Description("Text to type")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var checkTool = mcp.NewTool("browser_check",
 	mcp.WithDescription("Check a checkbox"),
 	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var uncheckTool = mcp.NewTool("browser_uncheck",
 	mcp.WithDescription("Uncheck a checkbox"),
 	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var selectTool = mcp.NewTool("browser_select",
@@ -81,12 +112,16 @@ var selectTool = mcp.NewTool("browser_select",
 	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot")),
 	mcp.WithString("value", mcp.Required(), mcp.Description("Value to select")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var pressTool = mcp.NewTool("browser_press",
 	mcp.WithDescription("Press a keyboard key (e.g. Enter, Tab, ArrowDown, a, A)"),
 	mcp.WithString("key", mcp.Required(), mcp.Description("Key to press (e.g. \"Enter\", \"Tab\", \"Escape\", \"ArrowDown\")")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var scrollTool = mcp.NewTool("browser_scroll",
@@ -97,6 +132,8 @@ var scrollTool = mcp.NewTool("browser_scroll",
 	),
 	mcp.WithNumber("pixels", mcp.Description("Number of pixels to scroll (default 300)")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 // --- Observation ---
@@ -108,6 +145,7 @@ var snapshotTool = mcp.NewTool("browser_snapshot",
 	mcp.WithNumber("maxDepth", mcp.Description("Maximum tree depth to return")),
 	mcp.WithString("selector", mcp.Description("Case-insensitive substring match across tag/role/name/xpath/attribute values. Not CSS. Filters elements; pass e.g. \"submit\" to narrow the snapshot. Combine with role for precision.")),
 	mcp.WithString("role", mcp.Description("Filter to elements of an exact accessibility role (case-insensitive), e.g. \"button\", \"textbox\", \"link\". AND'd with selector.")),
+	mcp.WithBoolean("textOnly", mcp.Description("Reader-mode output: title + URL + visible page text only (nav/header/footer/script/style stripped). No element refs are produced — use for summarization or LLM context, not before interaction.")),
 	tabParam(),
 )
 
@@ -127,9 +165,12 @@ var getTool = mcp.NewTool("browser_get",
 )
 
 var evalTool = mcp.NewTool("browser_eval",
-	mcp.WithDescription("Run JavaScript inside the user's real Chrome tab and return the result. Has full access to the live page: window, document, localStorage, fetch() with the user's session cookies, framework internals. Use for surgical data extraction, calling page APIs, or triggering app-specific behavior that UI tools can't reach."),
+	mcp.WithDescription("Run JavaScript inside the user's real Chrome tab and return the result. Has full access to the live page: window, document, localStorage, fetch() with the user's session cookies, framework internals. Use for surgical data extraction, calling page APIs, or triggering app-specific behavior that UI tools can't reach. Top-level `await` is auto-wrapped in an async IIFE — pass noAutoAwait=true to opt out."),
 	mcp.WithString("script", mcp.Required(), mcp.Description("JavaScript code to execute")),
+	mcp.WithBoolean("noAutoAwait", mcp.Description("Disable auto-wrapping of top-level await. Default false.")),
 	tabParam(),
+	waitForParam(),
+	timeoutParam(),
 )
 
 var waitTool = mcp.NewTool("browser_wait",
@@ -187,6 +228,11 @@ var errorsTool = mcp.NewTool("browser_errors",
 	mcp.WithBoolean("clear", mcp.Description("Clear errors instead of listing them")),
 	mcp.WithString("filter", mcp.Description("Pattern to filter errors")),
 	tabParam(),
+)
+
+var doctorTool = mcp.NewTool("browser_doctor",
+	mcp.WithDescription("Run end-to-end diagnostics on the bb-browser stack (binary → daemon JSON → daemon process → daemon HTTP → CDP attach → tabs). Use when something isn't working and it's unclear which layer is broken; returns the first failing layer with a remediation hint."),
+	mcp.WithBoolean("json", mcp.Description("Return structured JSON {ok, checks[]} instead of the human-readable report.")),
 )
 
 // --- Site Adapters ---

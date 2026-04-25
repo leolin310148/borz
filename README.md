@@ -120,7 +120,7 @@ Add to your MCP client configuration (e.g. `.claude/settings.json` for Claude Co
 
 ### Available Tools
 
-The MCP server exposes 29 tools:
+The MCP server exposes 30 tools:
 
 | Category | Tools |
 |----------|-------|
@@ -128,10 +128,18 @@ The MCP server exposes 29 tools:
 | **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_press`, `browser_scroll` |
 | **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_get`, `browser_eval`, `browser_wait` |
 | **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close` |
-| **Diagnostics** | `browser_network`, `browser_console`, `browser_errors` |
+| **Diagnostics** | `browser_network`, `browser_console`, `browser_errors`, `browser_doctor` |
 | **Site Adapters** | `browser_site_list`, `browser_site_info`, `browser_site_run` |
 
 The workflow mirrors the CLI: call `browser_snapshot` to see the page structure with element refs, then use those refs with interaction tools like `browser_click` or `browser_fill`. Screenshots are returned as inline base64 PNG images.
+
+Most action tools accept optional `waitFor` (CSS selector) and `timeout` (ms, default 10000) params — after the action runs, the daemon polls `document.querySelector(waitFor)` until it returns a non-null node or the timeout elapses. Use this for SPA loads or modals instead of fixed `browser_wait` calls.
+
+Other notable params:
+
+- `browser_snapshot` accepts `textOnly: true` for a reader-mode plain-text dump (no element refs) — useful for summarization or feeding the page to an LLM as context.
+- `browser_eval` auto-wraps top-level `await` in an async IIFE so `await fetch(...)` works without manual boilerplate. Pass `noAutoAwait: true` to opt out.
+- `browser_doctor` runs end-to-end stack diagnostics (binary → daemon → CDP → tabs) and returns the first failing layer with a remediation hint. Pass `json: true` for structured output.
 
 ## Server Mode
 
@@ -188,29 +196,33 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/tabs` | `{url?}` — open new tab |
 | POST | `/v1/tabs/select` | `{tabId?, index?}` |
 | POST | `/v1/tabs/close` | `{tabId?, index?}` |
-| POST | `/v1/open` | `{url, new?, tab?}` — reuses a tab with the exact same URL when one exists; `new: true` forces a fresh tab |
-| POST | `/v1/back` \| `/forward` \| `/refresh` \| `/close` | `{tab?}` |
-| POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, tab?}` |
+| POST | `/v1/open` | `{url, new?, tab?, waitFor?, timeoutMs?}` — reuses a tab with the exact same URL when one exists; `new: true` forces a fresh tab |
+| POST | `/v1/back` \| `/forward` \| `/refresh` | `{tab?, waitFor?, timeoutMs?}` |
+| POST | `/v1/close` | `{tab?}` |
+| POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, role?, mode?, tab?}` — `mode: "text"` returns a reader-mode plain-text dump (no element refs) |
 | POST | `/v1/screenshot` | `{path?, tab?}` |
 | POST | `/v1/get` | `{attribute, ref?, tab?}` |
-| POST | `/v1/click` \| `/hover` \| `/check` \| `/uncheck` | `{ref, tab?}` |
-| POST | `/v1/fill` \| `/type` | `{ref, text, tab?}` |
-| POST | `/v1/select` | `{ref, value, tab?}` |
-| POST | `/v1/press` | `{key, modifiers?, tab?}` |
+| POST | `/v1/click` \| `/hover` \| `/check` \| `/uncheck` | `{ref, tab?, waitFor?, timeoutMs?}` |
+| POST | `/v1/fill` \| `/type` | `{ref, text, tab?, waitFor?, timeoutMs?}` |
+| POST | `/v1/select` | `{ref, value, tab?, waitFor?, timeoutMs?}` |
+| POST | `/v1/press` | `{key, modifiers?, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/key` | `{keyType?, key?, code?, text?, modifiers?, tab?}` — raw OS-level key input (reaches canvas apps / SSH) |
 | POST | `/v1/mouse` | `{mouseType?, x?, y?, button?, deltaX?, deltaY?, clickCount?, modifiers?, tab?}` — raw OS-level mouse input |
 | POST | `/v1/clipboard-read` | `{tab?}` — returns `data.value` from `navigator.clipboard.readText()` |
-| POST | `/v1/scroll` | `{direction, pixels?, tab?}` |
-| POST | `/v1/eval` | `{script, tab?}` |
+| POST | `/v1/scroll` | `{direction, pixels?, tab?, waitFor?, timeoutMs?}` |
+| POST | `/v1/eval` | `{script, tab?, waitFor?, timeoutMs?}` — clients are responsible for any `await` wrapping; the CLI's auto-await is not applied here |
 | POST | `/v1/wait` | `{ms?, tab?}` |
 | POST | `/v1/network` | `{command?, filter?, method?, status?, withBody?, since?, tab?}` |
 | POST | `/v1/console` | `{command?, filter?, since?, tab?}` |
 | POST | `/v1/errors` | `{command?, filter?, since?, tab?}` |
 | POST | `/v1/fetch` | `{url, method?, tab?}` — authenticated fetch |
+| GET \| POST | `/v1/doctor` | — daemon-side health summary (`{ok, checks[]}`); returns 503 on a failing check |
 | GET | `/v1/sites` | — list site adapters on the server |
 | POST | `/v1/sites/info` | `{name}` — adapter metadata |
 | POST | `/v1/sites/run` | `{name, args?, tab?}` — run a site adapter |
 | POST | `/command` | raw `protocol.Request` — escape hatch |
+
+`waitFor` (CSS selector) and `timeoutMs` (default 10000) are honored across all action endpoints. After the action returns, the daemon polls `document.querySelector(waitFor)` on a 100 ms tick until it resolves to a non-null node or the timeout elapses, then returns. Combine with chained REST calls instead of guessing with fixed `/v1/wait` durations.
 
 ### Example: curl
 
@@ -303,7 +315,12 @@ bb-browser open https://github.com --tab ab1c
 
 # Navigate back
 bb-browser back
+
+# Wait for a selector before returning (default 10s, override with --timeout <ms>)
+bb-browser open https://app.example.com --wait-for ".dashboard-loaded"
 ```
+
+`--wait-for <selector>` and `--timeout <ms>` work on **every action that changes the page** — `open`, `click`, `hover`, `fill`, `type`, `check`, `uncheck`, `select`, `press`, `scroll`, `eval`, `back`, `forward`, `refresh`. The daemon runs the action, then polls `document.querySelector(...)` on a 100 ms tick until the node appears or the timeout elapses. Prefer this over `wait <ms>` for any DOM change.
 
 ### Observation
 
@@ -331,6 +348,10 @@ bb-browser snapshot -s "search"
 
 # Combine flags
 bb-browser snapshot -i -c
+
+# Reader-mode plain text (title + URL + visible text only) — no element refs.
+# Good for "summarize this page" or feeding the page to an LLM as context.
+bb-browser snapshot --text-only
 ```
 
 Example output:
@@ -397,6 +418,11 @@ bb-browser network requests --with-body
 
 # Show only requests since last action
 bb-browser network requests --since last_action
+
+# Live stream new requests as they arrive (Ctrl+C to stop).
+# Pairs with --filter / --method / --status and --json (JSONL output).
+bb-browser network requests --tail
+bb-browser network requests --tail --filter /api/ --method POST
 
 # Clear captured requests
 bb-browser network clear
@@ -507,8 +533,21 @@ bb-browser eval "window.location.href"
 # Multi-word scripts
 bb-browser eval "document.querySelector('h1').textContent"
 
-# Async/IIFE
-bb-browser eval "(async () => { const r = await fetch('/api/data'); return r.json(); })()"
+# Top-level await is auto-wrapped in an async IIFE — no manual boilerplate.
+bb-browser eval "await fetch('/api/data').then(r => r.json())"
+
+# Disable auto-wrapping if you need the raw script.
+bb-browser eval --no-auto-await "(async () => { ... })()"
+
+# Read a script from disk so long extraction snippets aren't trapped in a shell quote.
+bb-browser eval --file ./extract.js
+
+# Inject CLI-supplied JSON values as top-level consts the script can read.
+bb-browser eval --file ./greet.js --json-arg user='{"id":7}' --json-arg n=3
+
+# Print the result raw — strings unquoted, other shapes JSON-formatted.
+# Removes the need for ' | jq .data.result' on every call.
+bb-browser eval --unwrap "document.title"
 ```
 
 #### `wait`
@@ -643,6 +682,17 @@ bb-browser status
 # Stop the daemon
 bb-browser daemon shutdown
 ```
+
+### Diagnosing the stack
+
+When something doesn't work it's not always obvious which layer is broken: stale `daemon.json`, dead daemon process, daemon up but not attached to CDP, or no tabs. `bb-browser doctor` walks the stack top-down and reports the first failing layer with a remediation hint.
+
+```bash
+bb-browser doctor          # human-readable report
+bb-browser doctor --json   # structured {ok, checks[]} for scripts
+```
+
+Exit code is `1` on any fail; warnings (e.g. daemon not started yet) do not fail. The same diagnostic is exposed to AI agents as the `browser_doctor` MCP tool and to remote integrations as `GET /v1/doctor` (returns 503 on a failing check).
 
 ## Global Flags
 

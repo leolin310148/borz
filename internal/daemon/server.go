@@ -29,6 +29,10 @@ type ServerOptions struct {
 	// IdleTabCloseMinutes auto-closes tabs after this many minutes without a
 	// user-initiated action. 0 disables. Negative values are clamped to 0.
 	IdleTabCloseMinutes int
+
+	// Version is reported by /v1/doctor so REST clients can see which
+	// bb-browser binary is serving them. Optional.
+	Version string
 }
 
 // Server is the bb-browser daemon HTTP server.

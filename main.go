@@ -785,6 +785,7 @@ func startDaemonForeground(rawArgs []string) {
 		CDPHost:             cdpHost,
 		CDPPort:             cdpPort,
 		IdleTabCloseMinutes: resolveIdleTabTimeout(rawArgs),
+		Version:             version,
 	})
 
 	if err := srv.Run(); err != nil {
@@ -866,6 +867,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 		CDPHost:             cdpHost,
 		CDPPort:             cdpPort,
 		IdleTabCloseMinutes: resolveIdleTabTimeout(rawArgs),
+		Version:             version,
 	})
 
 	fmt.Fprintf(os.Stderr, "bb-browser server starting on %s:%d\n", host, port)

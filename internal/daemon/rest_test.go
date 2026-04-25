@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/leolin310148/bb-browser-go/internal/protocol"
 )
 
 func TestRestBody_TabID(t *testing.T) {
@@ -48,6 +50,66 @@ func TestRestBody_SinceValue(t *testing.T) {
 	// Unknown type also falls through.
 	if got := (restBody{Since: true}).sinceValue(); got != true {
 		t.Fatalf("bool: got %v", got)
+	}
+}
+
+func TestRestBody_ApplyWait(t *testing.T) {
+	// Empty body leaves req untouched.
+	req := (restBody{}).applyWait(&protocol.Request{Action: protocol.ActionClick})
+	if req.WaitFor != "" || req.TimeoutMs != nil {
+		t.Fatalf("empty body should not set wait fields: %+v", req)
+	}
+	// WaitFor + TimeoutMs propagate.
+	ms := 2500
+	req = (restBody{WaitFor: ".loaded", TimeoutMs: &ms}).applyWait(&protocol.Request{Action: protocol.ActionClick})
+	if req.WaitFor != ".loaded" {
+		t.Fatalf("waitFor = %q", req.WaitFor)
+	}
+	if req.TimeoutMs == nil || *req.TimeoutMs != 2500 {
+		t.Fatalf("timeoutMs = %v", req.TimeoutMs)
+	}
+}
+
+func TestReadBody_ParsesNewFields(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/x",
+		strings.NewReader(`{"waitFor":".x","timeoutMs":250,"mode":"text"}`))
+	body, err := readBody(req)
+	if err != nil {
+		t.Fatalf("readBody: %v", err)
+	}
+	if body.WaitFor != ".x" {
+		t.Errorf("waitFor = %q", body.WaitFor)
+	}
+	if body.TimeoutMs == nil || *body.TimeoutMs != 250 {
+		t.Errorf("timeoutMs = %v", body.TimeoutMs)
+	}
+	if body.Mode != "text" {
+		t.Errorf("mode = %q", body.Mode)
+	}
+}
+
+func TestHandleDoctor_NoCDP(t *testing.T) {
+	s := newTestServer(t, "")
+	s.opts.Version = "test-1.0"
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/doctor", nil)
+	s.handleDoctor(rec, req)
+	// CDP is unattached in tests, so the handler must report the failure.
+	if rec.Code != 503 {
+		t.Fatalf("expected 503 when CDP not attached, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "\"checks\"") || !strings.Contains(rec.Body.String(), "test-1.0") {
+		t.Fatalf("body missing expected fields: %s", rec.Body.String())
+	}
+}
+
+func TestHandleDoctor_RejectsWrongMethod(t *testing.T) {
+	s := newTestServer(t, "")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/v1/doctor", nil)
+	s.handleDoctor(rec, req)
+	if rec.Code != 405 {
+		t.Fatalf("got %d want 405", rec.Code)
 	}
 }
 
