@@ -299,6 +299,81 @@ func TestRunReplacesExecutable(t *testing.T) {
 	}
 }
 
+func TestRunFiresOnReplaced(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("rename semantics differ on windows")
+	}
+	newBin := []byte("new-binary-payload")
+	sum := sha256.Sum256(newBin)
+	sumHex := hex.EncodeToString(sum[:])
+
+	srv := newFakeReleaseServer(t, "v2.0.0", sumHex, newBin, AssetName(runtime.GOOS, runtime.GOARCH))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	fakeExe := filepath.Join(dir, "bb-browser")
+	if err := os.WriteFile(fakeExe, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	called := 0
+	err := Run(context.Background(), Options{
+		CurrentVersion: "1.0.0",
+		Repo:           "owner/repo",
+		APIBaseURL:     srv.URL,
+		ExecutablePath: fakeExe,
+		Stderr:         io.Discard,
+		OnReplaced:     func() { called++ },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called != 1 {
+		t.Errorf("OnReplaced called %d times, want 1", called)
+	}
+}
+
+func TestRunSkipsOnReplacedWhenUpToDate(t *testing.T) {
+	srv := newFakeReleaseServer(t, "v1.0.0", "bogus", nil, "")
+	defer srv.Close()
+
+	called := 0
+	err := Run(context.Background(), Options{
+		CurrentVersion: "1.0.0",
+		Repo:           "owner/repo",
+		APIBaseURL:     srv.URL,
+		Stderr:         io.Discard,
+		OnReplaced:     func() { called++ },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called != 0 {
+		t.Errorf("OnReplaced fired on no-op update (called=%d)", called)
+	}
+}
+
+func TestRunSkipsOnReplacedForCheckOnly(t *testing.T) {
+	srv := newFakeReleaseServer(t, "v2.0.0", "bogus", nil, "")
+	defer srv.Close()
+
+	called := 0
+	err := Run(context.Background(), Options{
+		CurrentVersion: "1.0.0",
+		Repo:           "owner/repo",
+		CheckOnly:      true,
+		APIBaseURL:     srv.URL,
+		Stderr:         io.Discard,
+		OnReplaced:     func() { called++ },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called != 0 {
+		t.Errorf("OnReplaced fired in --check mode (called=%d)", called)
+	}
+}
+
 func TestRunMissingAsset(t *testing.T) {
 	srv := newFakeReleaseServer(t, "v2.0.0", "sum", []byte("x"), "other-asset-name")
 	defer srv.Close()

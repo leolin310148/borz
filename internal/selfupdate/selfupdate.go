@@ -42,6 +42,13 @@ type Options struct {
 	HTTPClient     *http.Client
 	Stderr         io.Writer
 
+	// OnReplaced fires after the executable on disk has been swapped for the
+	// new release. The currently-running daemon is from the old binary and
+	// will silently ignore any new request fields, so callers use this hook
+	// to shut it down — the next CLI invocation will respawn from the new
+	// binary. Not called for --check or "already up to date" (without --force).
+	OnReplaced func()
+
 	// Test seams. Zero values use production defaults.
 	ExecutablePath string // overrides os.Executable() resolution
 	APIBaseURL     string // overrides https://api.github.com
@@ -123,6 +130,9 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	fmt.Fprintf(opts.Stderr, "Updated to %s\n", latest)
+	if opts.OnReplaced != nil {
+		opts.OnReplaced()
+	}
 	return nil
 }
 

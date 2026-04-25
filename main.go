@@ -492,6 +492,7 @@ func main() {
 			CurrentVersion: version,
 			Force:          hasFlag(args, "--force"),
 			CheckOnly:      hasFlag(args, "--check"),
+			OnReplaced:     stopDaemonAfterUpdate,
 		})
 		if err != nil {
 			fatal(err.Error())
@@ -736,6 +737,38 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 	default:
 		startDaemonForeground(rawArgs)
 	}
+}
+
+// stopDaemonAfterUpdate shuts down a running daemon following a self-update.
+// The running daemon is still the *old* binary's process and will silently
+// ignore any new request fields the upgraded CLI sends; stopping it lets the
+// next CLI call respawn the daemon from the new binary on disk. Best-effort:
+// no-op if no daemon is running, and shutdown errors are reported but do not
+// fail the update.
+//
+// Server-mode (non-loopback bind) processes are deliberately *not* auto-stopped:
+// they are started by hand with config (CDP host/port, idle-tab timeout, token)
+// that we don't have a reliable way to replay, so silently respawning them
+// could change their effective configuration. Instead we surface a clear
+// instruction so the operator can restart with their original flags.
+func stopDaemonAfterUpdate() {
+	info, err := client.ReadDaemonJSON()
+	if err != nil || info == nil {
+		return
+	}
+	if isRemoteBind(info.Host) {
+		fmt.Fprintf(os.Stderr, "Note: bb-browser server running on %s:%d (pid %d) is still on the old binary.\n", info.Host, info.Port, info.PID)
+		fmt.Fprintln(os.Stderr, "      Restart it with your original flags so the new binary takes effect:")
+		fmt.Fprintln(os.Stderr, "          bb-browser server shutdown")
+		fmt.Fprintln(os.Stderr, "          bb-browser server --host <host> --port <port> --token <token> [other flags]")
+		return
+	}
+	if err := client.StopDaemon(); err != nil {
+		fmt.Fprintf(os.Stderr, "Note: could not stop running daemon (pid %d): %v\n", info.PID, err)
+		fmt.Fprintln(os.Stderr, "      Restart it manually so the new binary is in effect: bb-browser daemon shutdown")
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Stopped running daemon (pid %d); next command will relaunch it from the new binary.\n", info.PID)
 }
 
 func startDaemonForeground(rawArgs []string) {
