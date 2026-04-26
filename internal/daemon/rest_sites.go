@@ -79,10 +79,11 @@ func (s *Server) handleSiteInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 type siteRunBody struct {
-	Name  string                 `json:"name"`
-	Args  map[string]interface{} `json:"args"`
-	TabID interface{}            `json:"tabId,omitempty"`
-	Tab   string                 `json:"tab,omitempty"`
+	Name     string                 `json:"name"`
+	Args     map[string]interface{} `json:"args"`
+	TabID    interface{}            `json:"tabId,omitempty"`
+	Tab      string                 `json:"tab,omitempty"`
+	Activate bool                   `json:"activate,omitempty"`
 }
 
 func (b siteRunBody) tabID() interface{} {
@@ -152,6 +153,9 @@ func (s *Server) handleSiteRun(w http.ResponseWriter, r *http.Request) {
 		if _, isString := body.TabID.(string); !isString {
 			req.TabID = body.TabID
 		}
+	}
+	if body.Activate {
+		req.Activate = true
 	}
 	s.dispatchAndWrite(w, req)
 }

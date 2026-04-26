@@ -77,6 +77,11 @@ type Request struct {
 	// Tab/Frame
 	TabID interface{} `json:"tabId,omitempty"` // number or string
 	Index *int        `json:"index,omitempty"`
+	// Activate brings the resolved tab to the foreground (Target.activateTarget
+	// + Page.bringToFront) before running the action. Use it when the action
+	// needs real focus — clipboard reads, paste shortcuts, video autoplay,
+	// pages that throttle backgrounded tabs.
+	Activate bool `json:"activate,omitempty"`
 
 	// Dialog
 	DialogResponse string `json:"dialogResponse,omitempty"`

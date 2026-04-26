@@ -32,7 +32,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		return body.applyWait(&protocol.Request{Action: protocol.ActionRefresh, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/close", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionClose, TabID: body.tabID()}
+		return body.withActivate(&protocol.Request{Action: protocol.ActionClose, TabID: body.tabID()})
 	}))
 
 	// Interaction
@@ -61,7 +61,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		return body.applyWait(&protocol.Request{Action: protocol.ActionPress, Key: body.Key, Modifiers: body.Modifiers, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/key", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{
+		return body.withActivate(&protocol.Request{
 			Action:    protocol.ActionKey,
 			KeyType:   body.KeyType,
 			Key:       body.Key,
@@ -69,10 +69,10 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			Text:      body.Text,
 			Modifiers: body.Modifiers,
 			TabID:     body.tabID(),
-		}
+		})
 	}))
 	mux.HandleFunc("/v1/mouse", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{
+		return body.withActivate(&protocol.Request{
 			Action:     protocol.ActionMouse,
 			MouseType:  body.MouseType,
 			X:          body.X,
@@ -83,10 +83,10 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			ClickCount: body.ClickCount,
 			Modifiers:  body.Modifiers,
 			TabID:      body.tabID(),
-		}
+		})
 	}))
 	mux.HandleFunc("/v1/clipboard-read", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionClipboardRead, TabID: body.tabID()}
+		return body.withActivate(&protocol.Request{Action: protocol.ActionClipboardRead, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/scroll", s.restJSON(func(body restBody) *protocol.Request {
 		req := &protocol.Request{Action: protocol.ActionScroll, Direction: body.Direction, TabID: body.tabID()}
@@ -99,12 +99,12 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		return body.applyWait(&protocol.Request{Action: protocol.ActionEval, Script: body.Script, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/wait", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionWait, Ms: body.Ms, TabID: body.tabID()}
+		return body.withActivate(&protocol.Request{Action: protocol.ActionWait, Ms: body.Ms, TabID: body.tabID()})
 	}))
 
 	// Observation
 	mux.HandleFunc("/v1/snapshot", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{
+		return body.withActivate(&protocol.Request{
 			Action:      protocol.ActionSnapshot,
 			Interactive: body.Interactive,
 			Compact:     body.Compact,
@@ -113,20 +113,20 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			Role:        body.Role,
 			Mode:        body.Mode,
 			TabID:       body.tabID(),
-		}
+		})
 	}))
 	mux.HandleFunc("/v1/screenshot", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionScreenshot, Path: body.Path, TabID: body.tabID()}
+		return body.withActivate(&protocol.Request{Action: protocol.ActionScreenshot, Path: body.Path, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/get", s.restJSON(func(body restBody) *protocol.Request {
-		return &protocol.Request{Action: protocol.ActionGet, Attribute: body.Attribute, Ref: body.Ref, TabID: body.tabID()}
+		return body.withActivate(&protocol.Request{Action: protocol.ActionGet, Attribute: body.Attribute, Ref: body.Ref, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/network", s.restJSON(func(body restBody) *protocol.Request {
 		cmd := body.Command
 		if cmd == "" {
 			cmd = "requests"
 		}
-		return &protocol.Request{
+		return body.withActivate(&protocol.Request{
 			Action:         protocol.ActionNetwork,
 			NetworkCommand: cmd,
 			Filter:         body.Filter,
@@ -135,33 +135,33 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			Status:         body.Status,
 			Since:          body.sinceValue(),
 			TabID:          body.tabID(),
-		}
+		})
 	}))
 	mux.HandleFunc("/v1/console", s.restJSON(func(body restBody) *protocol.Request {
 		cmd := body.Command
 		if cmd == "" {
 			cmd = "get"
 		}
-		return &protocol.Request{
+		return body.withActivate(&protocol.Request{
 			Action:         protocol.ActionConsole,
 			ConsoleCommand: cmd,
 			Filter:         body.Filter,
 			Since:          body.sinceValue(),
 			TabID:          body.tabID(),
-		}
+		})
 	}))
 	mux.HandleFunc("/v1/errors", s.restJSON(func(body restBody) *protocol.Request {
 		cmd := body.Command
 		if cmd == "" {
 			cmd = "get"
 		}
-		return &protocol.Request{
+		return body.withActivate(&protocol.Request{
 			Action:        protocol.ActionErrors,
 			ErrorsCommand: cmd,
 			Filter:        body.Filter,
 			Since:         body.sinceValue(),
 			TabID:         body.tabID(),
-		}
+		})
 	}))
 
 	// Tabs — GET lists, POST creates
@@ -228,7 +228,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 				return { error: e.message };
 			}
 		})()`, body.URL, method)
-		return &protocol.Request{Action: protocol.ActionEval, Script: script, TabID: body.tabID()}
+		return body.withActivate(&protocol.Request{Action: protocol.ActionEval, Script: script, TabID: body.tabID()})
 	}))
 }
 
@@ -269,6 +269,9 @@ type restBody struct {
 	WaitFor   string `json:"waitFor,omitempty"`
 	TimeoutMs *int   `json:"timeoutMs,omitempty"`
 
+	// Bring the resolved tab to the foreground before running the action.
+	Activate bool `json:"activate,omitempty"`
+
 	// Mode selects an alternate output format. For /v1/snapshot, "text"
 	// returns a reader-mode plain-text dump (no refs).
 	Mode string `json:"mode,omitempty"`
@@ -287,14 +290,27 @@ type restBody struct {
 	ClickCount *int     `json:"clickCount,omitempty"`
 }
 
-// applyWait copies WaitFor / TimeoutMs onto req when the body sets them, so
-// the dispatcher polls document.querySelector after the action returns.
+// applyWait copies WaitFor / TimeoutMs / Activate onto req when the body
+// sets them. WaitFor polls document.querySelector after the action returns;
+// Activate brings the tab to the foreground before the action runs.
 func (b restBody) applyWait(req *protocol.Request) *protocol.Request {
 	if b.WaitFor != "" {
 		req.WaitFor = b.WaitFor
 	}
 	if b.TimeoutMs != nil {
 		req.TimeoutMs = b.TimeoutMs
+	}
+	if b.Activate {
+		req.Activate = true
+	}
+	return req
+}
+
+// withActivate copies Activate onto a request that doesn't go through
+// applyWait (e.g. observation endpoints with no post-action wait).
+func (b restBody) withActivate(req *protocol.Request) *protocol.Request {
+	if b.Activate {
+		req.Activate = true
 	}
 	return req
 }

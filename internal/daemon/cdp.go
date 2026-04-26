@@ -724,7 +724,15 @@ func (c *CdpConnection) EnsurePageTarget(tabRef string) (*CdpTargetInfo, error) 
 		target = &pages[0]
 	}
 
-	c.CurrentTargetID = target.ID
+	// Only mutate CurrentTargetID when the caller did NOT pass an explicit
+	// tabRef. Explicit-tab requests are routed by target.ID locally, so
+	// changing the daemon's "current tab" pointer would race with concurrent
+	// callers that rely on the implicit current tab. Actions that semantically
+	// switch focus (open, tab_select, Activate=true) update CurrentTargetID
+	// themselves at the dispatch site.
+	if tabRef == "" {
+		c.CurrentTargetID = target.ID
+	}
 	// Best-effort attach — the target may already be attached via auto-attach
 	c.AttachAndEnable(target.ID)
 	return target, nil

@@ -322,6 +322,65 @@ func TestDispatch_TabSelect(t *testing.T) {
 	if !resp.Success {
 		t.Fatalf("tab_select: %+v", resp)
 	}
+	// tab_select must physically activate the tab in Chrome's UI, not just
+	// flip the daemon's CurrentTargetID. Otherwise n8n / external apps that
+	// expect "switch tab" semantics see no visible change.
+	if !contains(activatedTargetIDs(t, f), "T1") {
+		t.Fatalf("tab_select should call Target.activateTarget for T1, got %v", activatedTargetIDs(t, f))
+	}
+}
+
+func TestDispatch_Activate_Flag_FocusesTab(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	c := connectCdp(t, f)
+
+	// Any action with Activate=true should bring the tab forward before
+	// running. Use snapshot — it normally does NOT activate.
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionSnapshot, TabID: "T1", Activate: true,
+	})
+	if !resp.Success {
+		t.Fatalf("snapshot+activate: %+v", resp)
+	}
+	if !contains(activatedTargetIDs(t, f), "T1") {
+		t.Fatalf("Activate=true should call Target.activateTarget, got %v", activatedTargetIDs(t, f))
+	}
+}
+
+func TestEnsurePageTarget_DoesNotMutateCurrentWhenTabRefSet(t *testing.T) {
+	f := newFakeCDP(t)
+	f.On("Target.getTargets", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{
+			"targetInfos": []interface{}{
+				map[string]interface{}{"targetId": "T1", "type": "page", "url": "https://a", "title": "A"},
+				map[string]interface{}{"targetId": "T2", "type": "page", "url": "https://b", "title": "B"},
+			},
+		}, nil
+	})
+	c := connectCdp(t, f)
+
+	// Seed CurrentTargetID to T1, then route a command at T2 explicitly.
+	c.CurrentTargetID = "T1"
+	target, err := c.EnsurePageTarget("T2")
+	if err != nil || target.ID != "T2" {
+		t.Fatalf("EnsurePageTarget(T2) = (%v, %v)", target, err)
+	}
+	// CurrentTargetID must NOT change — explicit-tab requests should not
+	// race-shift the implicit "current tab" used by other concurrent callers.
+	if c.CurrentTargetID != "T1" {
+		t.Fatalf("CurrentTargetID mutated to %q after explicit-tab routing; want T1", c.CurrentTargetID)
+	}
+
+	// Conversely, an empty tabRef MAY update CurrentTargetID (no caller is
+	// claiming a specific tab, so the daemon's notion of "current" may follow).
+	c.CurrentTargetID = ""
+	if _, err := c.EnsurePageTarget(""); err != nil {
+		t.Fatal(err)
+	}
+	if c.CurrentTargetID == "" {
+		t.Fatal("EnsurePageTarget(\"\") with no current should seed CurrentTargetID")
+	}
 }
 
 func TestDispatch_TabClose(t *testing.T) {

@@ -600,6 +600,17 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 	}
 	shortID := tab.ShortID
 
+	// Per-request foreground request. Honored for any action that fell through
+	// to EnsurePageTarget — handy for fetch/eval against pages that throttle
+	// backgrounded tabs, or for clipboard/paste shortcuts that need real focus.
+	// Explicit Activate also updates CurrentTargetID since the caller asked to
+	// switch focus to this tab.
+	if req.Activate {
+		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": target.ID})
+		cdp.SessionCommand(target.ID, "Page.bringToFront", nil)
+		cdp.CurrentTargetID = target.ID
+	}
+
 	switch req.Action {
 	// --- Navigation ---
 	case protocol.ActionOpen:
@@ -610,6 +621,9 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		seq := tab.RecordAction()
 		cdp.PageCommand(target.ID, "Page.navigate", map[string]interface{}{"url": req.URL})
 		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": target.ID})
+		// open always activates — pin CurrentTargetID since EnsurePageTarget
+		// no longer mutates it for explicit-tab requests.
+		cdp.CurrentTargetID = target.ID
 		tab.Refs = map[string]*protocol.RefInfo{}
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{
 			URL: req.URL, Title: target.Title, TabID: target.ID, Tab: shortID, Seq: intPtr(seq),
@@ -1093,6 +1107,10 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 		cdp.CurrentTargetID = selected.ID
 		cdp.AttachAndEnable(selected.ID)
+		// tab_select is a focus switch — bring the tab to the foreground in
+		// Chrome's UI, not just route the daemon's command stream.
+		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": selected.ID})
+		cdp.SessionCommand(selected.ID, "Page.bringToFront", nil)
 		selTab := cdp.TabManager.GetTab(selected.ID)
 		tabShort := ""
 		if selTab != nil {
