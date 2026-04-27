@@ -291,6 +291,45 @@ func TestDispatch_TabNew(t *testing.T) {
 	}
 }
 
+// TestDispatch_TabNew_WaitsForNavigation guards against the race that produced
+// gh#1: tab_new returned a tabId whose page context was still about:blank, so
+// the next fetch ran with the wrong origin and failed CORS as a generic
+// "Failed to fetch". The fix polls until the document leaves about:blank
+// before returning. Here the fake initially reports the page as still on
+// about:blank for the first 2 probes, then ready — tab_new must not return
+// until the ready signal arrives.
+func TestDispatch_TabNew_WaitsForNavigation(t *testing.T) {
+	f := newFakeCDP(t)
+	f.On("Target.createTarget", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"targetId": "T-NEW"}, nil
+	})
+	var probes int32
+	f.On("Runtime.evaluate", func(json.RawMessage) (interface{}, error) {
+		n := atomic.AddInt32(&probes, 1)
+		href := "about:blank"
+		state := "loading"
+		if n >= 3 {
+			href = "https://reddit.test/"
+			state = "complete"
+		}
+		return map[string]interface{}{
+			"result": map[string]interface{}{
+				"type":  "string",
+				"value": `{"readyState":"` + state + `","href":"` + href + `"}`,
+			},
+		}, nil
+	})
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionTabNew, URL: "https://reddit.test/"})
+	if !resp.Success {
+		t.Fatalf("tab_new: %+v", resp)
+	}
+	if got := atomic.LoadInt32(&probes); got < 3 {
+		t.Fatalf("expected at least 3 readiness probes, got %d", got)
+	}
+}
+
 func TestDispatch_TabList_NonEmpty(t *testing.T) {
 	f := newFakeCDP(t)
 	f.On("Target.getTargets", func(json.RawMessage) (interface{}, error) {

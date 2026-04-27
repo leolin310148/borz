@@ -79,6 +79,18 @@ func newFakeCDP(t *testing.T) *fakeCDP {
 	for _, m := range []string{"Page.enable", "Runtime.enable", "Network.enable", "DOM.enable", "Accessibility.enable"} {
 		f.On(m, func(json.RawMessage) (interface{}, error) { return map[string]interface{}{}, nil })
 	}
+	// Default Runtime.evaluate returns a ready document on a non-blank URL so
+	// the post-tab_new readiness probe (waitForTabNavigated) returns
+	// immediately instead of polling its full timeout. Tests that exercise
+	// real Runtime.evaluate behavior override this with their own handler.
+	f.On("Runtime.evaluate", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{
+			"result": map[string]interface{}{
+				"type":  "string",
+				"value": `{"readyState":"complete","href":"https://ready.test/"}`,
+			},
+		}, nil
+	})
 
 	return f
 }

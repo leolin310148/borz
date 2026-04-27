@@ -119,3 +119,51 @@ func TestV1Tabs_POST(t *testing.T) {
 		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestV1Fetch_ScriptShape pins the JS shape sent to the page so the
+// diagnostic-on-error contract from gh#1 can't silently regress. The fake
+// returns whatever the script evaluates as a string; we capture the
+// expression and assert it short-circuits about:blank and includes
+// readyState/location in the error path.
+func TestV1Fetch_ScriptShape(t *testing.T) {
+	s, f := serverWithFakeCDP(t)
+
+	var capturedExpr string
+	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			Expression string `json:"expression"`
+		}
+		_ = json.Unmarshal(params, &p)
+		// Capture the fetch script (skip the readiness probe, which uses a
+		// short JSON.stringify expression).
+		if strings.Contains(p.Expression, "fetch(") {
+			capturedExpr = p.Expression
+		}
+		return map[string]interface{}{
+			"result": map[string]interface{}{
+				"type":  "string",
+				"value": `{"readyState":"complete","href":"https://ready.test/"}`,
+			},
+		}, nil
+	})
+
+	mux := http.NewServeMux()
+	s.registerRESTRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/fetch",
+		strings.NewReader(`{"url":"https://api.example/x.json","tab":"T1"}`))
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if capturedExpr == "" {
+		t.Fatal("Runtime.evaluate was never called with a fetch expression")
+	}
+	for _, want := range []string{"about:blank", "readyState", "location"} {
+		if !strings.Contains(capturedExpr, want) {
+			t.Errorf("fetch script missing %q diagnostic; got:\n%s", want, capturedExpr)
+		}
+	}
+}

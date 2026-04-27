@@ -67,6 +67,58 @@ func withWaitFor(req *protocol.Request, cdp *CdpConnection, targetID string, res
 	return resp
 }
 
+// waitForTabNavigated polls a freshly-created tab until its document has left
+// the initial about:blank context and document.readyState is at least
+// 'interactive'. Used right after Target.createTarget so callers don't get a
+// tabId that points at a still-blank page — a fetch evaluated against
+// about:blank fails CORS as a generic "TypeError: Failed to fetch".
+//
+// Best-effort: never returns an error to the caller. If the timeout elapses
+// (slow network, slow cross-origin nav) the function just returns and the
+// dispatch path continues; the caller may see the same race they would have
+// without this helper, but at least the common case is fixed.
+//
+// requestedURL is the URL passed to Target.createTarget. If it's empty or
+// "about:blank" we only wait on readyState (there is no navigation to wait
+// for). Otherwise we wait for location.href to match the requested origin
+// (path/query may legitimately differ after redirects).
+func waitForTabNavigated(cdp *CdpConnection, targetID, requestedURL string, timeout time.Duration) {
+	if timeout <= 0 {
+		return
+	}
+	wantNav := requestedURL != "" && requestedURL != "about:blank"
+	deadline := time.Now().Add(timeout)
+	expr := `JSON.stringify({readyState: document.readyState, href: location.href})`
+	for {
+		raw, err := cdp.Evaluate(targetID, expr, true)
+		if err == nil {
+			var encoded string
+			if json.Unmarshal(raw, &encoded) == nil {
+				var state struct {
+					ReadyState string `json:"readyState"`
+					Href       string `json:"href"`
+				}
+				if json.Unmarshal([]byte(encoded), &state) == nil {
+					ready := state.ReadyState == "interactive" || state.ReadyState == "complete"
+					navigated := !wantNav || (state.Href != "" && state.Href != "about:blank")
+					if ready && navigated {
+						return
+					}
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// newTabReadyTimeout caps how long ActionTabNew / ActionOpen wait for the
+// just-created tab's page context to leave about:blank. Kept short so a slow
+// cross-origin load doesn't stall the daemon.
+const newTabReadyTimeout = 5 * time.Second
+
 // waitForSelector polls Runtime.evaluate(document.querySelector(sel)!=null) on
 // 100ms ticks until truthy or timeout. cdp.Evaluate may transiently fail while
 // the navigation tears down the old execution context — those errors are
@@ -521,6 +573,10 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 		json.Unmarshal(result, &created)
 		cdp.AttachAndEnable(created.TargetID)
+		// Wait for the new tab's page context to leave about:blank so that
+		// follow-up fetch/eval calls don't run in the initial blank context
+		// and fail CORS with a generic "Failed to fetch".
+		waitForTabNavigated(cdp, created.TargetID, url, newTabReadyTimeout)
 		newTab := cdp.TabManager.GetTab(created.TargetID)
 		shortID := ""
 		var seq *int
@@ -577,6 +633,8 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		json.Unmarshal(result, &created)
 		cdp.AttachAndEnable(created.TargetID)
 		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": created.TargetID})
+		// Same readiness wait as ActionTabNew — see waitForTabNavigated.
+		waitForTabNavigated(cdp, created.TargetID, req.URL, newTabReadyTimeout)
 		newTab := cdp.TabManager.GetTab(created.TargetID)
 		shortID := ""
 		var seq *int

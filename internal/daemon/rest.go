@@ -212,7 +212,20 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		if method == "" {
 			method = "GET"
 		}
+		// On error, include the page's location and document.readyState so the
+		// caller can tell "tab not ready / wrong origin" apart from a real
+		// network failure — both surface as "TypeError: Failed to fetch" in
+		// the browser. Also short-circuit the about:blank case with a clear
+		// message before fetch even runs (CORS would block it from the
+		// initial blank context).
 		script := fmt.Sprintf(`(async () => {
+			const diag = () => ({
+				location: (typeof location !== 'undefined' && location.href) || '',
+				readyState: (typeof document !== 'undefined' && document.readyState) || ''
+			});
+			if (typeof location !== 'undefined' && (location.href === 'about:blank' || location.protocol === 'chrome:' || location.protocol === 'chrome-error:')) {
+				return Object.assign({ error: 'tab page context not ready: ' + (location.href || '<unknown>') }, diag());
+			}
 			try {
 				const resp = await fetch(%q, { method: %q, credentials: 'include' });
 				const contentType = resp.headers.get('content-type') || '';
@@ -225,7 +238,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 					body: isJson ? JSON.parse(text) : text
 				};
 			} catch(e) {
-				return { error: e.message };
+				return Object.assign({ error: (e && e.message) || String(e) }, diag());
 			}
 		})()`, body.URL, method)
 		return body.withActivate(&protocol.Request{Action: protocol.ActionEval, Script: script, TabID: body.tabID()})
