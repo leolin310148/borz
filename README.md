@@ -850,6 +850,20 @@ git config core.hooksPath .githooks
 The hook skips when no `.go` files are staged. Bypass with `git commit
 --no-verify` if needed.
 
+### Local Chrome e2e tests
+
+The browser e2e test starts `internal/e2e_verify_site` on localhost, starts a
+local daemon, connects to a real Chromium-based browser through CDP, and drives
+the CLI against that page. It is opt-in locally and explicitly skips in GitHub
+Actions.
+
+```bash
+BB_BROWSER_E2E=1 go test -run TestE2ECLICommandsAgainstVerifySite -count=1 -v .
+```
+
+Set `BB_BROWSER_CDP_URL=http://host:port` to force a specific Chrome CDP
+endpoint; otherwise the normal managed-browser discovery flow is used.
+
 ## License
 
 MIT

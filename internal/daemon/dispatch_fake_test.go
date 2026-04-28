@@ -54,6 +54,9 @@ func TestDispatch_Open_NewTab(t *testing.T) {
 	if resp.Data.URL != "https://ex.test" {
 		t.Fatalf("url: %q", resp.Data.URL)
 	}
+	if c.CurrentTargetID != "T-NEW" {
+		t.Fatalf("open should set current target to new tab, got %q", c.CurrentTargetID)
+	}
 }
 
 func TestDispatch_Open_WaitFor_Found(t *testing.T) {
@@ -606,7 +609,9 @@ func TestDispatch_Get_URLAndTitle(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
 	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
-		var p struct{ Expression string `json:"expression"` }
+		var p struct {
+			Expression string `json:"expression"`
+		}
 		json.Unmarshal(params, &p)
 		if p.Expression == "location.href" {
 			return map[string]interface{}{"result": map[string]interface{}{"value": "https://got-url"}}, nil
@@ -672,7 +677,9 @@ func TestDispatch_Snapshot_Fallback(t *testing.T) {
 	setupOnePage(f, "T1", "https://a", "Page Title")
 	// buildDomTree script fails so dispatch falls back to document.title.
 	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
-		var p struct{ Expression string `json:"expression"` }
+		var p struct {
+			Expression string `json:"expression"`
+		}
 		json.Unmarshal(params, &p)
 		if strings.Contains(p.Expression, "buildDomTree") {
 			return nil, &cdpErr{msg: "script failed"}
@@ -698,7 +705,9 @@ func TestDispatch_Snapshot_TextOnly(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
 	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
-		var p struct{ Expression string `json:"expression"` }
+		var p struct {
+			Expression string `json:"expression"`
+		}
 		json.Unmarshal(params, &p)
 		if !strings.Contains(p.Expression, "stripSelectors") {
 			t.Fatalf("expected text-snapshot script, got: %s", p.Expression)

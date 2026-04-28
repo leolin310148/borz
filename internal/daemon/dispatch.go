@@ -187,7 +187,7 @@ func resolveBackendNodeIDByXPath(cdp *CdpConnection, targetID, xpath string) (in
 	cdp.SessionCommand(targetID, "DOM.getDocument", map[string]interface{}{"depth": 0})
 
 	searchRaw, err := cdp.SessionCommand(targetID, "DOM.performSearch", map[string]interface{}{
-		"query":                      xpath,
+		"query":                     xpath,
 		"includeUserAgentShadowDOM": true,
 	})
 	if err != nil {
@@ -209,7 +209,7 @@ func resolveBackendNodeIDByXPath(cdp *CdpConnection, targetID, xpath string) (in
 	}
 
 	resultsRaw, err := cdp.SessionCommand(targetID, "DOM.getSearchResults", map[string]interface{}{
-		"searchId": search.SearchID,
+		"searchId":  search.SearchID,
 		"fromIndex": 0,
 		"toIndex":   search.ResultCount,
 	})
@@ -354,7 +354,7 @@ func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, 
 			}
 			return false;
 		}`),
-		"arguments":   []map[string]interface{}{{"value": clearFirst}},
+		"arguments":     []map[string]interface{}{{"value": clearFirst}},
 		"returnByValue": true,
 	})
 
@@ -635,6 +635,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": created.TargetID})
 		// Same readiness wait as ActionTabNew — see waitForTabNavigated.
 		waitForTabNavigated(cdp, created.TargetID, req.URL, newTabReadyTimeout)
+		cdp.CurrentTargetID = created.TargetID
 		newTab := cdp.TabManager.GetTab(created.TargetID)
 		shortID := ""
 		var seq *int
@@ -782,11 +783,13 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 		resolvedRaw, _ := cdp.SessionCommand(target.ID, "DOM.resolveNode", map[string]interface{}{"backendNodeId": backendID})
 		var resolved struct {
-			Object struct{ ObjectID string `json:"objectId"` } `json:"object"`
+			Object struct {
+				ObjectID string `json:"objectId"`
+			} `json:"object"`
 		}
 		json.Unmarshal(resolvedRaw, &resolved)
 		cdp.SessionCommand(target.ID, "Runtime.callFunctionOn", map[string]interface{}{
-			"objectId": resolved.Object.ObjectID,
+			"objectId":            resolved.Object.ObjectID,
 			"functionDeclaration": fmt.Sprintf(`function() { this.checked = %v; this.dispatchEvent(new Event('input', { bubbles: true })); this.dispatchEvent(new Event('change', { bubbles: true })); }`, desired),
 		})
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
@@ -802,12 +805,14 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 		resolvedRaw, _ := cdp.SessionCommand(target.ID, "DOM.resolveNode", map[string]interface{}{"backendNodeId": backendID})
 		var resolved struct {
-			Object struct{ ObjectID string `json:"objectId"` } `json:"object"`
+			Object struct {
+				ObjectID string `json:"objectId"`
+			} `json:"object"`
 		}
 		json.Unmarshal(resolvedRaw, &resolved)
 		valueJSON, _ := json.Marshal(req.Value)
 		cdp.SessionCommand(target.ID, "Runtime.callFunctionOn", map[string]interface{}{
-			"objectId": resolved.Object.ObjectID,
+			"objectId":            resolved.Object.ObjectID,
 			"functionDeclaration": fmt.Sprintf(`function() { this.value = %s; this.dispatchEvent(new Event('input', { bubbles: true })); this.dispatchEvent(new Event('change', { bubbles: true })); }`, string(valueJSON)),
 		})
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Value: req.Value, Tab: shortID, Seq: intPtr(seq)}))
@@ -1297,7 +1302,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		tab.ActiveFrameID = ""
 		return okResp(req.ID, &protocol.ResponseData{
 			FrameInfo: map[string]interface{}{"frameId": 0},
-			Tab: shortID, Seq: intPtr(seq),
+			Tab:       shortID, Seq: intPtr(seq),
 		})
 
 	// --- Dialog ---
@@ -1428,12 +1433,12 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			return okResp(req.ID, &protocol.ResponseData{
 				TraceEvents: events,
 				TraceStatus: &protocol.TraceStatus{Recording: false, EventCount: len(events)},
-				Tab: shortID,
+				Tab:         shortID,
 			})
 		case "status":
 			return okResp(req.ID, &protocol.ResponseData{
 				TraceStatus: &protocol.TraceStatus{Recording: traceRecording, EventCount: len(traceEvents)},
-				Tab: shortID,
+				Tab:         shortID,
 			})
 		default:
 			return failResp(req.ID, fmt.Sprintf("unknown trace subcommand: %s", subCmd))
