@@ -20,6 +20,7 @@ import (
 func resetState() {
 	cachedInfo = nil
 	daemonReady = false
+	useRemote = false
 }
 
 // stubDiscover replaces discoverCDPPort for the test duration.
@@ -132,6 +133,15 @@ func TestRemoteConfigReadWriteAndToggle(t *testing.T) {
 	cfg, enabled, err := EnabledRemoteConfig()
 	if err != nil {
 		t.Fatalf("EnabledRemoteConfig: %v", err)
+	}
+	if enabled || cfg != nil {
+		t.Fatalf("remote routing should stay inactive without explicit --remote, enabled=%v cfg=%+v", enabled, cfg)
+	}
+
+	SetRemoteRouting(true)
+	cfg, enabled, err = EnabledRemoteConfig()
+	if err != nil {
+		t.Fatalf("EnabledRemoteConfig after SetRemoteRouting: %v", err)
 	}
 	if !enabled || cfg.URL != "http://127.0.0.1:19824" {
 		t.Fatalf("enabled=%v cfg=%+v", enabled, cfg)
@@ -281,7 +291,18 @@ func TestSendCommand_InvalidResponse(t *testing.T) {
 	}
 }
 
-func TestSendCommand_RemoteEnabled(t *testing.T) {
+func TestEnabledRemoteConfigRequiresSetupWhenRemoteRequested(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	SetRemoteRouting(true)
+
+	if _, enabled, err := EnabledRemoteConfig(); err == nil || enabled {
+		t.Fatalf("expected missing config error with remote routing enabled, enabled=%v err=%v", enabled, err)
+	}
+}
+
+func TestSendCommand_RemoteFlag(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
 	home := t.TempDir()
@@ -309,9 +330,10 @@ func TestSendCommand_RemoteEnabled(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	if err := WriteRemoteConfig(&RemoteConfig{URL: ts.URL, Token: "secret", Enabled: true}); err != nil {
+	if err := WriteRemoteConfig(&RemoteConfig{URL: ts.URL, Token: "secret", Enabled: false}); err != nil {
 		t.Fatalf("write remote config: %v", err)
 	}
+	SetRemoteRouting(true)
 	resp, err := SendCommand(&protocol.Request{ID: "r1", Action: protocol.ActionGet})
 	if err != nil {
 		t.Fatalf("SendCommand: %v", err)
@@ -321,7 +343,7 @@ func TestSendCommand_RemoteEnabled(t *testing.T) {
 	}
 }
 
-func TestGetJSONAndStatus_RemoteEnabled(t *testing.T) {
+func TestGetJSONAndStatus_RemoteFlag(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
 	home := t.TempDir()
@@ -343,9 +365,10 @@ func TestGetJSONAndStatus_RemoteEnabled(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	if err := WriteRemoteConfig(&RemoteConfig{URL: ts.URL, Token: "secret", Enabled: true}); err != nil {
+	if err := WriteRemoteConfig(&RemoteConfig{URL: ts.URL, Token: "secret", Enabled: false}); err != nil {
 		t.Fatalf("write remote config: %v", err)
 	}
+	SetRemoteRouting(true)
 	status, err := GetDaemonStatus()
 	if err != nil {
 		t.Fatalf("GetDaemonStatus: %v", err)

@@ -227,28 +227,25 @@ func TestE2EClientModeAgainstServer(t *testing.T) {
 	token := "e2e-remote-token"
 	env, serverURL := startE2EServer(t, home, token)
 	runE2ECLI(t, env, "client", "setup", serverURL, "--token", token)
-	runE2ECLI(t, env, "client", "enable")
 
-	statusOut := runE2ECLI(t, env, "status")
+	statusOut := runE2ECLI(t, env, "--remote", "status")
 	requireContains(t, statusOut, `"cdpConnected": true`, "remote status")
 
-	openResp := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	openResp := runE2EJSON(t, env, "--remote", "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
 	if openResp.Data == nil || openResp.Data.Tab == "" {
 		t.Fatalf("remote open response did not include tab: %+v", openResp.Data)
 	}
-	requireEvalString(t, env, "document.title", "E2E Verify Home")
+	requireEvalStringWithPrefix(t, env, []string{"--remote"}, "document.title", "E2E Verify Home")
 
-	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+	snapshot := runE2EJSON(t, env, "--remote", "snapshot", "-i", "--json")
 	clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
-	runE2EJSON(t, env, "click", clickRef, "--json")
-	requireEvalString(t, env, `document.querySelector("#clicked-result").textContent`, "clicked 1")
+	runE2EJSON(t, env, "--remote", "click", clickRef, "--json")
+	requireEvalStringWithPrefix(t, env, []string{"--remote"}, `document.querySelector("#clicked-result").textContent`, "clicked 1")
 
-	tabs := runE2EJSON(t, env, "tab", "list", "--json")
+	tabs := runE2EJSON(t, env, "--remote", "tab", "list", "--json")
 	if len(tabs.Data.Tabs) == 0 {
 		t.Fatalf("remote tab list returned no tabs: %+v", tabs.Data)
 	}
-
-	runE2ECLI(t, env, "client", "disable")
 }
 
 type e2eDaemonEnv struct {
@@ -465,7 +462,13 @@ func refByName(t *testing.T, snapshot *protocol.SnapshotData, name string) strin
 
 func requireEvalString(t *testing.T, env e2eDaemonEnv, script, want string) {
 	t.Helper()
-	resp := runE2EJSON(t, env, "eval", script, "--json")
+	requireEvalStringWithPrefix(t, env, nil, script, want)
+}
+
+func requireEvalStringWithPrefix(t *testing.T, env e2eDaemonEnv, prefix []string, script, want string) {
+	t.Helper()
+	args := append(append([]string{}, prefix...), "eval", script, "--json")
+	resp := runE2EJSON(t, env, args...)
 	got, ok := resp.Data.Result.(string)
 	if !ok || got != want {
 		t.Fatalf("eval %q = %#v, want %q", script, resp.Data.Result, want)

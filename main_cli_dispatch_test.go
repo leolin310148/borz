@@ -494,10 +494,8 @@ func TestMainStatusAndHelpCommands(t *testing.T) {
 }
 
 func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	fd := newFakeDaemon(t)
 	client.ResetForTests()
-	t.Cleanup(client.ResetForTests)
 
 	var commands []protocol.Request
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -532,6 +530,22 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 	if !strings.Contains(out, "Remote client configured") {
 		t.Fatalf("setup output = %q", out)
 	}
+	if !strings.Contains(out, "--remote") {
+		t.Fatalf("setup output should mention --remote, got %q", out)
+	}
+
+	out = captureStdout(t, func() {
+		oldArgs := os.Args
+		os.Args = []string{"bb-browser", "--remote", "open", "https://remote-after-setup.test", "--json"}
+		defer func() { os.Args = oldArgs }()
+		main()
+	})
+	if !strings.Contains(out, `"success": true`) {
+		t.Fatalf("remote open after setup output = %q", out)
+	}
+	if len(commands) != 1 || commands[0].Action != protocol.ActionOpen || commands[0].URL != "https://remote-after-setup.test" {
+		t.Fatalf("remote commands after setup = %+v", commands)
+	}
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
@@ -539,7 +553,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
-	if !strings.Contains(out, "Remote client enabled") {
+	if !strings.Contains(out, "legacy config") || !strings.Contains(out, "--remote") {
 		t.Fatalf("enable output = %q", out)
 	}
 
@@ -552,8 +566,24 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 	if !strings.Contains(out, `"success": true`) {
 		t.Fatalf("open output = %q", out)
 	}
-	if len(commands) != 1 || commands[0].Action != protocol.ActionOpen || commands[0].URL != "https://remote.test" {
-		t.Fatalf("commands = %+v", commands)
+	if len(commands) != 1 {
+		t.Fatalf("open without --remote should stay local, remote commands = %+v", commands)
+	}
+	if len(fd.requests) != 1 || fd.requests[0].Action != protocol.ActionOpen || fd.requests[0].URL != "https://remote.test" {
+		t.Fatalf("local requests = %+v", fd.requests)
+	}
+
+	out = captureStdout(t, func() {
+		oldArgs := os.Args
+		os.Args = []string{"bb-browser", "--remote", "open", "https://remote.test", "--json"}
+		defer func() { os.Args = oldArgs }()
+		main()
+	})
+	if !strings.Contains(out, `"success": true`) {
+		t.Fatalf("remote open output = %q", out)
+	}
+	if len(commands) != 2 || commands[1].Action != protocol.ActionOpen || commands[1].URL != "https://remote.test" {
+		t.Fatalf("remote commands = %+v", commands)
 	}
 
 	out = captureStdout(t, func() {
@@ -572,7 +602,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
-	if !strings.Contains(out, "Remote client disabled") {
+	if !strings.Contains(out, "legacy config") {
 		t.Fatalf("disable output = %q", out)
 	}
 }

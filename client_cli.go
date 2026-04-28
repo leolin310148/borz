@@ -51,11 +51,7 @@ func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			return
 		}
 		fmt.Printf("Remote client configured: %s\n", cfg.URL)
-		if cfg.Enabled {
-			fmt.Println("Remote client is enabled")
-		} else {
-			fmt.Println("Remote client is disabled; run 'bb-browser client enable' to use it")
-		}
+		fmt.Println("Use 'bb-browser --remote <command>' to send a command to this server")
 
 	case "enable":
 		cfg, err := client.ReadRemoteConfig()
@@ -78,7 +74,8 @@ func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			printJSON(clientStatusPayload(cfg))
 			return
 		}
-		fmt.Printf("Remote client enabled: %s\n", cfg.URL)
+		fmt.Printf("Remote client enabled in legacy config: %s\n", cfg.URL)
+		fmt.Println("Browser actions still use local by default; pass --remote to use this server")
 
 	case "disable":
 		cfg, err := client.ReadRemoteConfig()
@@ -98,7 +95,7 @@ func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			printJSON(clientStatusPayload(cfg))
 			return
 		}
-		fmt.Println("Remote client disabled")
+		fmt.Println("Remote client disabled in legacy config")
 
 	case "status":
 		cfg, err := client.ReadRemoteConfig()
@@ -126,7 +123,12 @@ func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 		if cfg.Enabled {
 			state = "enabled"
 		}
-		fmt.Printf("Remote client: %s\n", state)
+		fmt.Printf("Remote client config: %s (legacy global flag)\n", state)
+		if client.RemoteRoutingEnabled() {
+			fmt.Println("Remote routing: active for this command")
+		} else {
+			fmt.Println("Remote routing: inactive; use --remote before the command to activate")
+		}
 		fmt.Printf("Server: %s\n", cfg.URL)
 		if cfg.Token != "" {
 			fmt.Println("Token: configured")
@@ -144,6 +146,7 @@ func clientStatusPayload(cfg *client.RemoteConfig) map[string]interface{} {
 	payload := map[string]interface{}{
 		"configured":      cfg != nil && cfg.URL != "",
 		"enabled":         false,
+		"remoteActive":    client.RemoteRoutingEnabled(),
 		"url":             "",
 		"tokenConfigured": false,
 		"path":            config.ClientJSONPath(),

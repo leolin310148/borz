@@ -196,27 +196,33 @@ bb-browser server shutdown
 
 ### Use a remote server from the CLI
 
-Configure the CLI once, then enable remote client mode:
+Configure the CLI once, then pass `--remote` for commands that should use the
+configured server:
 
 ```bash
 bb-browser client setup http://server-host:19824 --token "$BB_BROWSER_TOKEN"
-bb-browser client enable
+bb-browser --remote open https://example.com
 ```
 
-After `client enable`, browser actions such as `open`, `snapshot`, `click`,
-`eval`, `tab`, `network`, and `cookies` are sent to the configured server
-instead of a local daemon/CDP connection. Disable remote routing when you want
-the CLI to control a local browser again:
+Without `--remote`, browser actions such as `open`, `snapshot`, `click`,
+`eval`, `tab`, `network`, and `cookies` always use the local daemon/CDP
+connection:
 
 ```bash
-bb-browser client disable
+bb-browser open https://example.com
+```
+
+To make only the current shell default to remote while other shells stay local,
+define an alias in that shell:
+
+```bash
+alias bb-browser='bb-browser --remote'
 ```
 
 The client config is stored at `~/.bb-browser/client.json` with 0600
-permissions because it may contain the bearer token. `client setup` and
-`client enable` probe the server's authenticated `/status` endpoint by default;
-pass `--no-check` only when you need to save config before the server is
-reachable.
+permissions because it may contain the bearer token. `client setup` probes the
+server's authenticated `/status` endpoint by default; pass `--no-check` only
+when you need to save config before the server is reachable.
 
 ### REST endpoints
 

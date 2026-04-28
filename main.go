@@ -41,6 +41,8 @@ func main() {
 	}
 
 	// Parse global flags
+	remoteRouting := hasFlag(args, "--remote")
+	client.SetRemoteRouting(remoteRouting)
 	globalTabID := getArgValue(args, "--tab")
 	jqExpression = getArgValue(args, "--jq")
 	jsonOutput := hasFlag(args, "--json") || jqExpression != ""
@@ -48,7 +50,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check"})
+	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote"})
 
 	if len(cleanArgs) == 0 {
 		printHelp()
@@ -1345,10 +1347,11 @@ Utility:
                                 Start remote-accessible HTTP server
                                 (--token required on non-loopback binds)
   client setup <url> [--token T]
-  client enable / disable       Route browser actions to the configured server
+  --remote <command>            Route one command to configured server
   update [--check] [--force]    Download latest release and replace self
 
 Global Flags:
+  --remote                      Send browser actions/status to configured server
   --tab <id>                    Target tab
   --json                        JSON output
   --jq <expr>                   Filter with jq expression (implies --json)

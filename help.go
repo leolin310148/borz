@@ -24,6 +24,7 @@ or any DOM change before interacting.`
 
 // globalFlagsNote is the short summary of global flags shown in per-command help.
 const globalFlagsNote = `Global flags (available on every command):
+  --remote                Route browser commands/status to configured server
   --tab <id>              Target a specific tab (from 'bb-browser tab')
   --json                  Emit the raw JSON response instead of pretty output
   --jq <expr>             Filter JSON output with a jq expression (implies --json)
@@ -417,25 +418,23 @@ var commandHelp = map[string]cmdHelp{
 			"Swagger UI is served at /docs and the OpenAPI spec at /openapi.yaml.",
 	},
 	"client": {
-		Summary: "Configure the CLI to send browser actions to a remote bb-browser server.",
-		Usage:   "bb-browser client [setup|enable|disable|status]",
+		Summary: "Configure the remote bb-browser server used by the global --remote flag.",
+		Usage:   "bb-browser client [setup|status|enable|disable]",
 		Flags: []string{
 			"  setup <url>            Store the remote server URL",
 			"  setup --url <url>      Same as positional URL",
 			"  --token <t>            Bearer token for the remote server",
 			"  --no-check             Store/toggle config without probing /status",
-			"  enable                 Route browser actions to the configured server",
-			"  disable                Return browser actions to the local daemon/CDP",
-			"  status                 Show current remote-client state",
+			"  status                 Show current remote-client config",
+			"  enable|disable         Legacy config toggle; normal commands still need --remote",
 		},
 		Examples: []string{
 			"  bb-browser client setup http://server:19824 --token \"$BB_BROWSER_TOKEN\"",
-			"  bb-browser client enable",
-			"  bb-browser open https://example.com",
-			"  bb-browser client disable",
+			"  bb-browser --remote open https://example.com",
+			"  alias bb-browser='bb-browser --remote'  # remote by default in this shell",
 		},
-		Notes: "When enabled, commands that talk to the browser use the configured server " +
-			"instead of launching or contacting the local daemon. The token is stored in " +
+		Notes: "Commands that talk to the browser use the local daemon unless --remote is " +
+			"passed for that invocation. The token is stored in " +
 			"~/.bb-browser/client.json with 0600 permissions and is never printed by status.",
 	},
 	"mcp": {
@@ -629,20 +628,21 @@ var commandHelp = map[string]cmdHelp{
 			"  bb-browser client setup https://browser.example.com --token \"$BB_BROWSER_TOKEN\"",
 		},
 		Notes: "The setup command probes the server's authenticated /status endpoint before " +
-			"saving unless --no-check is set. If the URL has no scheme, http:// is assumed.",
+			"saving unless --no-check is set. If the URL has no scheme, http:// is assumed. " +
+			"Use --remote on individual browser commands to route them to this server.",
 	},
 	"client.enable": {
-		Summary: "Enable remote client mode for browser actions.",
+		Summary: "Set the legacy remote-client enabled field in client.json.",
 		Usage:   "bb-browser client enable [--no-check]",
-		Notes:   "The configured server is checked before enabling unless --no-check is set.",
+		Notes:   "The configured server is checked unless --no-check is set. Browser actions still use local by default; pass --remote to route one invocation to the configured server.",
 	},
 	"client.disable": {
-		Summary:  "Disable remote client mode and return to the local daemon/CDP.",
+		Summary:  "Clear the legacy remote-client enabled field in client.json.",
 		Usage:    "bb-browser client disable",
 		Examples: []string{"  bb-browser client disable"},
 	},
 	"client.status": {
-		Summary: "Show whether remote client mode is configured and enabled.",
+		Summary: "Show the remote client config used by --remote.",
 		Usage:   "bb-browser client status [--json]",
 	},
 

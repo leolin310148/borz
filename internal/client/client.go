@@ -24,13 +24,14 @@ import (
 var (
 	cachedInfo  *protocol.DaemonInfo
 	daemonReady bool
+	useRemote   bool
 
 	// discoverCDPPort is indirected so tests can bypass real CDP discovery.
 	discoverCDPPort = DiscoverCDPPort
 )
 
-// RemoteConfig is persisted by `bb-browser client setup` and controls whether
-// CLI actions are sent to a remote bb-browser server instead of a local daemon.
+// RemoteConfig is persisted by `bb-browser client setup` and stores the server
+// used when a CLI invocation opts into remote routing with --remote.
 type RemoteConfig struct {
 	URL     string `json:"url"`
 	Token   string `json:"token,omitempty"`
@@ -42,6 +43,20 @@ type RemoteConfig struct {
 func ResetForTests() {
 	cachedInfo = nil
 	daemonReady = false
+	useRemote = false
+}
+
+// SetRemoteRouting controls whether this process sends browser actions to the
+// configured remote server. Normal CLI invocations stay local unless main
+// enables this after seeing the global --remote flag.
+func SetRemoteRouting(enabled bool) {
+	useRemote = enabled
+}
+
+// RemoteRoutingEnabled reports whether this process is currently in explicit
+// remote routing mode.
+func RemoteRoutingEnabled() bool {
+	return useRemote
 }
 
 // ReadRemoteConfig reads ~/.bb-browser/client.json.
@@ -126,19 +141,20 @@ func SetRemoteEnabled(enabled bool) (*RemoteConfig, error) {
 	return cfg, nil
 }
 
-// EnabledRemoteConfig returns the active remote config. A missing client.json
-// means remote mode is simply disabled; a malformed file is returned as an
-// error so callers don't silently fall back to the local browser.
+// EnabledRemoteConfig returns the active remote config for this process. Remote
+// routing is opt-in per invocation (bb-browser --remote ...); the persisted
+// Enabled field is retained only for compatibility with older client.json files
+// and client enable/disable commands.
 func EnabledRemoteConfig() (*RemoteConfig, bool, error) {
+	if !useRemote {
+		return nil, false, nil
+	}
 	cfg, err := ReadRemoteConfig()
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, false, nil
+			return nil, false, fmt.Errorf("remote client is not configured; run 'bb-browser client setup <server-url> [--token <token>]'")
 		}
 		return nil, false, err
-	}
-	if !cfg.Enabled {
-		return nil, false, nil
 	}
 	return cfg, true, nil
 }

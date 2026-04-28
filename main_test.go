@@ -30,11 +30,11 @@ func TestIsRemoteBind(t *testing.T) {
 
 func TestNormalizeRef(t *testing.T) {
 	for in, want := range map[string]string{
-		"":         "",
-		"e1":       "e1",
-		"@e1":      "e1",
-		"@@e1":     "@e1", // only leading @ stripped
-		"e@1":      "e@1",
+		"":     "",
+		"e1":   "e1",
+		"@e1":  "e1",
+		"@@e1": "@e1", // only leading @ stripped
+		"e@1":  "e@1",
 	} {
 		if got := normalizeRef(in); got != want {
 			t.Errorf("normalizeRef(%q) = %q, want %q", in, got, want)
@@ -107,6 +107,12 @@ func TestStripFlags(t *testing.T) {
 	got = stripFlags(in, nil, []string{"--bool"})
 	if !reflect.DeepEqual(got, []string{"cmd", "keep"}) {
 		t.Errorf("custom bool flag: %v", got)
+	}
+
+	in = []string{"--remote", "open", "https://x"}
+	got = stripFlags(in, nil, []string{"--remote"})
+	if !reflect.DeepEqual(got, []string{"open", "https://x"}) {
+		t.Errorf("--remote global flag: %v", got)
 	}
 }
 
