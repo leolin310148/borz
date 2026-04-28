@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/leolin310148/bb-browser-go/internal/daemon/extbridge"
 )
 
 func newTestServer(t *testing.T, token string) *Server {
@@ -16,8 +18,9 @@ func newTestServer(t *testing.T, token string) *Server {
 	tabs := NewTabStateManager()
 	cdp := NewCdpConnection("127.0.0.1", 9222, tabs)
 	return &Server{
-		opts: ServerOptions{Host: "127.0.0.1", Port: 0, Token: token},
-		cdp:  cdp,
+		opts:   ServerOptions{Host: "127.0.0.1", Port: 0, Token: token},
+		cdp:    cdp,
+		extHub: extbridge.NewHub(),
 	}
 }
 
@@ -152,6 +155,24 @@ func TestAuthMiddleware_TokenRequired(t *testing.T) {
 	s.authMiddleware(inner).ServeHTTP(rec, req)
 	if !called {
 		t.Fatal("handler should be called with correct token")
+	}
+
+	// Token via ?token= query (browser WebSocket can't set headers).
+	called = false
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/foo?token=secret", nil)
+	s.authMiddleware(inner).ServeHTTP(rec, req)
+	if !called {
+		t.Fatal("handler should be called with correct token via query")
+	}
+
+	// Wrong query token.
+	called = false
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/foo?token=nope", nil)
+	s.authMiddleware(inner).ServeHTTP(rec, req)
+	if called || rec.Code != 401 {
+		t.Fatalf("wrong query token should 401, got %d called=%v", rec.Code, called)
 	}
 }
 

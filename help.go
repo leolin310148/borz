@@ -282,6 +282,7 @@ var commandHelp = map[string]cmdHelp{
 			"  select --id <id>      Switch to the tab with the given short id",
 			"  select <n>            Switch to the tab at index <n>",
 			"  close [n|--id <id>]   Close a tab by index or short id (default: active)",
+			"  events [--tail]       Browser-level tab events (created/removed/updated/activated)",
 		},
 		Examples: []string{
 			"  bb-browser tab",
@@ -289,7 +290,23 @@ var commandHelp = map[string]cmdHelp{
 			"  bb-browser tab 2",
 			"  bb-browser tab select --id abc123",
 			"  bb-browser tab close 3",
+			"  bb-browser tab events --tail",
 		},
+		Notes: "'events' requires the bb-browser Chrome extension to be installed and connected. " +
+			"It surfaces browser-level events (Chrome tab/window lifecycle) that CDP cannot observe.",
+	},
+	"cookies": {
+		Summary: "Read cookies the browser has stored, across every domain.",
+		Usage:   "bb-browser cookies [all]",
+		Flags: []string{
+			"  all                   Dump cookies for every domain (default)",
+		},
+		Examples: []string{
+			"  bb-browser cookies all",
+			"  bb-browser cookies all --json",
+		},
+		Notes: "Requires the bb-browser Chrome extension. CDP can only return cookies " +
+			"scoped to the active page; the extension exposes cookies across all domains.",
 	},
 	"frame": {
 		Summary: "Switch the interaction context to a child iframe, or back to the main frame.",

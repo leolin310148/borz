@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/leolin310148/bb-browser-go/internal/config"
+	"github.com/leolin310148/bb-browser-go/internal/daemon/extbridge"
 	"github.com/leolin310148/bb-browser-go/internal/protocol"
 )
 
@@ -39,6 +40,7 @@ type ServerOptions struct {
 type Server struct {
 	opts         ServerOptions
 	cdp          *CdpConnection
+	extHub       *extbridge.Hub
 	httpSrv      *http.Server
 	startTime    time.Time
 	mu           sync.Mutex
@@ -57,10 +59,14 @@ func NewServer(opts ServerOptions) *Server {
 	cdp := NewCdpConnection(opts.CDPHost, opts.CDPPort, tabManager)
 
 	return &Server{
-		opts: opts,
-		cdp:  cdp,
+		opts:   opts,
+		cdp:    cdp,
+		extHub: extbridge.NewHub(),
 	}
 }
+
+// ExtHub exposes the extension WS hub for tests and integration.
+func (s *Server) ExtHub() *extbridge.Hub { return s.extHub }
 
 // Run starts the daemon server (blocks until shutdown).
 func (s *Server) Run() error {
@@ -70,6 +76,7 @@ func (s *Server) Run() error {
 	protectedMux.HandleFunc("/shutdown", s.handleShutdown)
 	s.registerRESTRoutes(protectedMux)
 	s.registerSiteRoutes(protectedMux)
+	s.registerExtRoutes(protectedMux)
 
 	root := http.NewServeMux()
 	root.HandleFunc("/healthz", s.handleHealthz)
@@ -188,6 +195,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.opts.Token != "" {
 			auth := r.Header.Get("Authorization")
+			// Browser WebSocket clients (the Chrome extension) cannot set
+			// custom headers, so also accept ?token= on the query.
+			if auth == "" {
+				if q := r.URL.Query().Get("token"); q != "" {
+					auth = "Bearer " + q
+				}
+			}
 			if auth != "Bearer "+s.opts.Token {
 				sendJSON(w, 401, map[string]string{"error": "Unauthorized"})
 				return

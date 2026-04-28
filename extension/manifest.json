@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "bb-browser bridge",
+  "version": "0.1.0",
+  "description": "Extends bb-browser-go with capabilities CDP cannot provide (cross-domain cookies, browser-level events).",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "bb-browser bridge"
+  },
+  "permissions": [
+    "cookies",
+    "tabs",
+    "alarms",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "ws://127.0.0.1/*",
+    "ws://localhost/*"
+  ]
+}

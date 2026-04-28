@@ -28,6 +28,13 @@ var (
 	discoverCDPPort = DiscoverCDPPort
 )
 
+// ResetForTests clears the package's cached daemon info. Test-only —
+// used by callers in other packages that swap the daemon out per-test.
+func ResetForTests() {
+	cachedInfo = nil
+	daemonReady = false
+}
+
 // ReadDaemonJSON reads ~/.bb-browser/daemon.json.
 func ReadDaemonJSON() (*protocol.DaemonInfo, error) {
 	data, err := os.ReadFile(config.DaemonJSONPath())
@@ -229,6 +236,23 @@ func StopDaemon() error {
 	daemonReady = false
 	cachedInfo = nil
 	return err
+}
+
+// GetJSON calls a GET endpoint on the daemon and returns the raw response body.
+// Used by REST endpoints that don't fit the /command protocol (e.g. /v1/cookies/all
+// served by the extension bridge).
+func GetJSON(path string, timeout time.Duration) (json.RawMessage, error) {
+	if err := EnsureDaemon(); err != nil {
+		return nil, err
+	}
+	if cachedInfo == nil {
+		info, err := ReadDaemonJSON()
+		if err != nil {
+			return nil, fmt.Errorf("no daemon.json found. Is the daemon running?")
+		}
+		cachedInfo = info
+	}
+	return httpJSON("GET", path, cachedInfo, nil, timeout)
 }
 
 // GetDaemonStatus returns the daemon status.

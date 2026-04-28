@@ -306,6 +306,53 @@ func TestGetDaemonStatus_NoDaemon(t *testing.T) {
 	}
 }
 
+// --- GetJSON ---
+
+func TestGetJSON_PassesPathAndAuth(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+
+	var sawPath, sawAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			w.Write([]byte(`{"running":true}`))
+			return
+		}
+		sawPath = r.URL.Path
+		sawAuth = r.Header.Get("Authorization")
+		w.Write([]byte(`{"x":1}`))
+	}))
+	defer ts.Close()
+
+	cachedInfo = infoForServer(t, ts, "secret")
+	daemonReady = true
+
+	raw, err := GetJSON("/v1/cookies/all", time.Second)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if string(raw) != `{"x":1}` {
+		t.Errorf("body = %s", raw)
+	}
+	if sawPath != "/v1/cookies/all" {
+		t.Errorf("path = %q", sawPath)
+	}
+	if sawAuth != "Bearer secret" {
+		t.Errorf("auth = %q", sawAuth)
+	}
+}
+
+func TestGetJSON_NoDaemon(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	failingDiscover(t)
+
+	if _, err := GetJSON("/v1/x", time.Second); err == nil {
+		t.Error("expected error when daemon unavailable")
+	}
+}
+
 // --- canConnect ---
 
 func TestCanConnect_OK(t *testing.T) {

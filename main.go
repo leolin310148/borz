@@ -357,6 +357,10 @@ func main() {
 	case "tab":
 		handleTab(cmdArgs, jsonOutput, globalTabID, args)
 
+	// --- Cookies (extension-backed: cross-domain) ---
+	case "cookies":
+		handleCookies(cmdArgs, jsonOutput)
+
 	// --- Frame ---
 	case "frame":
 		if len(cmdArgs) == 0 || cmdArgs[0] == "main" {
@@ -544,6 +548,9 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 
 	sub := cmdArgs[0]
 	switch sub {
+	case "events":
+		handleTabEvents(rawArgs, jsonOutput)
+		return
 	case "new":
 		url := "about:blank"
 		if len(cmdArgs) > 1 {
@@ -1307,6 +1314,11 @@ Tab Management:
   tab <n>                       Switch to tab
   tab close [n]                 Close tab
   tab select --id <id>          Select by ID
+  tab events [--tail]           Browser-level tab events (extension required)
+
+Browser-level (Chrome extension):
+  cookies all                   Cookies across every domain
+  tab events [--tail]           Tab create/remove/update/activate stream
 
 Site Adapters:
   site list / search / info / update     Discover and refresh adapters
