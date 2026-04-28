@@ -1,10 +1,12 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/leolin310148/bb-browser-go/internal/client"
 	"github.com/leolin310148/bb-browser-go/internal/protocol"
 )
 
@@ -90,5 +92,48 @@ func TestParseTailInterval_BadValue(t *testing.T) {
 		if got != defaultTailInterval {
 			t.Errorf("bad %q: got %v, want default", bad, got)
 		}
+	}
+}
+
+func TestRunTailPollsAndStopsOnSignal(t *testing.T) {
+	newFakeDaemon(t)
+	defer client.ResetForTests()
+
+	req := &protocol.Request{ID: "tail-1", Action: protocol.ActionNetwork}
+	emitted := make(chan *protocol.Response, 1)
+	done := make(chan struct{})
+
+	go func() {
+		runTail(req, false, time.Hour, func(resp *protocol.Response, jsonOutput bool) int {
+			emitted <- resp
+			proc, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				t.Errorf("FindProcess: %v", err)
+				return 0
+			}
+			if err := proc.Signal(os.Interrupt); err != nil {
+				t.Errorf("signal interrupt: %v", err)
+			}
+			return 1
+		})
+		close(done)
+	}()
+
+	select {
+	case resp := <-emitted:
+		if resp == nil || !resp.Success {
+			t.Fatalf("unexpected tail response: %+v", resp)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("tail did not emit")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tail did not stop after interrupt")
+	}
+	if req.Since == nil {
+		t.Fatal("tail did not maintain a cursor")
 	}
 }

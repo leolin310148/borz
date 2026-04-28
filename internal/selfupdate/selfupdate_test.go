@@ -394,6 +394,89 @@ func TestRunMissingAsset(t *testing.T) {
 	}
 }
 
+func TestLatestReleaseFromErrors(t *testing.T) {
+	t.Run("non-200", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "rate limited", http.StatusForbidden)
+		}))
+		defer srv.Close()
+
+		_, err := latestReleaseFrom(context.Background(), srv.URL, "owner/repo", http.DefaultClient)
+		if err == nil || !strings.Contains(err.Error(), "github api 403") {
+			t.Fatalf("expected 403 error, got %v", err)
+		}
+	})
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(`not-json`))
+		}))
+		defer srv.Close()
+
+		_, err := latestReleaseFrom(context.Background(), srv.URL, "owner/repo", http.DefaultClient)
+		if err == nil {
+			t.Fatal("expected JSON decode error")
+		}
+	})
+}
+
+func TestFetchChecksumsErrors(t *testing.T) {
+	t.Run("missing checksums asset", func(t *testing.T) {
+		_, err := fetchChecksums(context.Background(), &Release{TagName: "v1.0.0"}, http.DefaultClient)
+		if err == nil || !strings.Contains(err.Error(), "no checksums.txt") {
+			t.Fatalf("expected missing checksums error, got %v", err)
+		}
+	})
+
+	t.Run("http error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+		}))
+		defer srv.Close()
+
+		rel := &Release{TagName: "v1.0.0", Assets: []Asset{{Name: "checksums.txt", DownloadURL: srv.URL}}}
+		_, err := fetchChecksums(context.Background(), rel, http.DefaultClient)
+		if err == nil || !strings.Contains(err.Error(), "http 502") {
+			t.Fatalf("expected checksum HTTP error, got %v", err)
+		}
+	})
+}
+
+func TestRunMissingChecksumEntry(t *testing.T) {
+	assetName := AssetName(runtime.GOOS, runtime.GOARCH)
+	srv := newFakeReleaseServer(t, "v2.0.0", "abc123", []byte("payload"), "other-name")
+	defer srv.Close()
+
+	// Override the release endpoint to publish the current platform asset while
+	// checksums.txt names a different file.
+	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/releases/latest"):
+			fmt.Fprintf(w, `{"tag_name":"v2.0.0","assets":[
+				{"name":%q,"browser_download_url":%q,"size":7},
+				{"name":"checksums.txt","browser_download_url":%q,"size":1}
+			]}`, assetName, srv.URL+"/bin", srv.URL+"/checksums.txt")
+		case r.URL.Path == "/bin":
+			w.Write([]byte("payload"))
+		case r.URL.Path == "/checksums.txt":
+			fmt.Fprintf(w, "abc123  other-name\n")
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	err := Run(context.Background(), Options{
+		CurrentVersion: "1.0.0",
+		Repo:           "owner/repo",
+		APIBaseURL:     srv.URL,
+		ExecutablePath: filepath.Join(t.TempDir(), "bb-browser"),
+		Stderr:         io.Discard,
+	})
+	if err == nil || !strings.Contains(err.Error(), "no checksum entry") {
+		t.Fatalf("expected missing checksum entry error, got %v", err)
+	}
+}
+
 // newFakeReleaseServer stands up a GitHub-API-compatible server exposing one
 // release with the given tag. If assetName is non-empty, it also publishes a
 // platform binary + a matching checksums.txt.
@@ -439,5 +522,17 @@ func TestDownloadVerifiedChecksumMismatch(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Errorf("expected empty dir, got %v", entries)
+	}
+}
+
+func TestDownloadVerifiedHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, err := downloadVerified(context.Background(), http.DefaultClient, srv.URL, filepath.Join(t.TempDir(), "bb-browser"), "abc")
+	if err == nil || !strings.Contains(err.Error(), "http 404") {
+		t.Fatalf("expected download HTTP error, got %v", err)
 	}
 }

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"sync"
@@ -132,5 +133,54 @@ func TestRecordAction_StampsLastActionAt(t *testing.T) {
 	got := tab.IdleSince()
 	if got.Before(before) || got.After(after) {
 		t.Fatalf("IdleSince after RecordAction: got %v, want in [%v, %v]", got, before, after)
+	}
+}
+
+func TestRunIdleTabReaperLoop(t *testing.T) {
+	tm := NewTabStateManager()
+	tab := tm.AddTab("loop-tab")
+	now := time.Now()
+	tab.CreatedAt = now.Add(-time.Hour)
+
+	closer := &fakeCloser{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		runIdleTabReaper(ctx, tm, closer, 30*time.Minute, time.Millisecond, func() string { return "" }, func() time.Time { return now })
+		close(done)
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		if len(closer.closedSnapshot()) > 0 {
+			cancel()
+			break
+		}
+		select {
+		case <-deadline:
+			cancel()
+			t.Fatal("reaper did not close idle tab")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reaper did not stop after cancellation")
+	}
+}
+
+func TestRunIdleTabReaperDisabled(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		runIdleTabReaper(context.Background(), NewTabStateManager(), &fakeCloser{}, 0, time.Millisecond, func() string { return "" }, nil)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("disabled reaper should return immediately")
 	}
 }

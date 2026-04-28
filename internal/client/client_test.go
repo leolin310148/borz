@@ -468,6 +468,161 @@ func TestSetDetached(t *testing.T) {
 	}
 }
 
+func TestResetForTestsClearsCachedState(t *testing.T) {
+	cachedInfo = &protocol.DaemonInfo{PID: os.Getpid(), Host: "127.0.0.1", Port: 1}
+	daemonReady = true
+	ResetForTests()
+	if cachedInfo != nil || daemonReady {
+		t.Fatalf("state not reset: cachedInfo=%+v daemonReady=%v", cachedInfo, daemonReady)
+	}
+}
+
+func TestEnsureDaemon_UsesExistingDaemonJSON(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Write([]byte(`{"running":true}`))
+	}))
+	defer ts.Close()
+
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+	info := infoForServer(t, ts, "")
+	data, _ := json.Marshal(info)
+	os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600)
+
+	if err := EnsureDaemon(); err != nil {
+		t.Fatalf("EnsureDaemon: %v", err)
+	}
+	if cachedInfo == nil || !daemonReady {
+		t.Fatalf("daemon state not cached: cachedInfo=%+v daemonReady=%v", cachedInfo, daemonReady)
+	}
+}
+
+func TestEnsureDaemon_ClearsCachedStoppedDaemon(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	failingDiscover(t)
+	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"running":false}`))
+	}))
+	defer ts.Close()
+	cachedInfo = infoForServer(t, ts, "")
+	daemonReady = true
+
+	if err := EnsureDaemon(); err == nil || !strings.Contains(err.Error(), "Cannot find") {
+		t.Fatalf("expected discovery failure after cache clear, got %v", err)
+	}
+	if cachedInfo != nil || daemonReady {
+		t.Fatalf("stopped cached daemon not cleared: cachedInfo=%+v daemonReady=%v", cachedInfo, daemonReady)
+	}
+}
+
+func TestEnsureDaemon_RemovesStaleDaemonJSON(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	failingDiscover(t)
+
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+	data, _ := json.Marshal(protocol.DaemonInfo{PID: 999999, Host: "127.0.0.1", Port: 19824})
+	path := filepath.Join(home, "daemon.json")
+	os.WriteFile(path, data, 0o600)
+
+	if err := EnsureDaemon(); err == nil || !strings.Contains(err.Error(), "Cannot find") {
+		t.Fatalf("expected discovery failure, got %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("stale daemon.json was not removed, stat err=%v", err)
+	}
+}
+
+func TestEnsureDaemon_ExistingDaemonStatusNotRunning(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	failingDiscover(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Write([]byte(`{"running":false}`))
+	}))
+	defer ts.Close()
+
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+	info := infoForServer(t, ts, "")
+	data, _ := json.Marshal(info)
+	os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600)
+
+	if err := EnsureDaemon(); err == nil || !strings.Contains(err.Error(), "Cannot find") {
+		t.Fatalf("expected discovery failure, got %v", err)
+	}
+	if cachedInfo != nil || daemonReady {
+		t.Fatalf("daemon should not be marked ready: cachedInfo=%+v ready=%v", cachedInfo, daemonReady)
+	}
+}
+
+func TestGetDaemonStatus_ReadsDaemonJSONWhenCacheEmpty(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Write([]byte(`{"running":true,"uptime":9}`))
+	}))
+	defer ts.Close()
+
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+	data, _ := json.Marshal(infoForServer(t, ts, ""))
+	os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600)
+
+	raw, err := GetDaemonStatus()
+	if err != nil {
+		t.Fatalf("GetDaemonStatus: %v", err)
+	}
+	if !strings.Contains(string(raw), `"uptime":9`) {
+		t.Fatalf("status raw = %s", raw)
+	}
+}
+
+func TestStopDaemon_ReadsDaemonJSONWhenCacheEmpty(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+
+	hitShutdown := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/shutdown" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		hitShutdown = true
+		w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+	data, _ := json.Marshal(infoForServer(t, ts, ""))
+	os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600)
+
+	if err := StopDaemon(); err != nil {
+		t.Fatalf("StopDaemon: %v", err)
+	}
+	if !hitShutdown {
+		t.Fatal("shutdown endpoint was not called")
+	}
+}
+
 // --- EnsureDaemon cached-but-stale path ---
 
 func TestEnsureDaemon_CachedAndStillRunning(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/leolin310148/bb-browser-go/internal/client"
 	"github.com/leolin310148/bb-browser-go/internal/protocol"
@@ -131,6 +132,75 @@ func TestHandleTabEvents_NoTail(t *testing.T) {
 	})
 	if !strings.Contains(out, "tabs.created") {
 		t.Errorf("missing event in output: %q", out)
+	}
+}
+
+func TestHandleTabEvents_TailStopsOnSignal(t *testing.T) {
+	requests := 0
+	extDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			w.Write([]byte(`{"running":true}`))
+			return
+		}
+		if r.URL.Path != "/v1/tabs/events" {
+			w.WriteHeader(404)
+			return
+		}
+		requests++
+		if requests >= 2 {
+			proc, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				t.Errorf("FindProcess: %v", err)
+			} else if err := proc.Signal(os.Interrupt); err != nil {
+				t.Errorf("signal interrupt: %v", err)
+			}
+		}
+		w.Write([]byte(`{"events":[{"seq":8,"name":"tabs.updated","data":{"id":1}}],"latest_seq":8,"connected":true}`))
+	})
+
+	done := make(chan string, 1)
+	go func() {
+		done <- withCapturedStdout(t, func() {
+			handleTabEvents([]string{"events", "--tail", "--interval", "1"}, false)
+		})
+	}()
+
+	select {
+	case out := <-done:
+		if !strings.Contains(out, "tabs.updated") {
+			t.Fatalf("tail output = %q", out)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("tail mode did not stop")
+	}
+}
+
+func TestHandleCookies_All_InvalidJSONFallsBackToRaw(t *testing.T) {
+	extDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			w.Write([]byte(`{"running":true}`))
+			return
+		}
+		w.Write([]byte(`not-json`))
+	})
+	out := withCapturedStdout(t, func() {
+		handleCookies([]string{"all"}, false)
+	})
+	if !strings.Contains(out, "not-json") {
+		t.Fatalf("expected raw fallback, got %q", out)
+	}
+}
+
+func TestFetchTabEvents_InvalidJSON(t *testing.T) {
+	extDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			w.Write([]byte(`{"running":true}`))
+			return
+		}
+		w.Write([]byte(`not-json`))
+	})
+	if _, _, err := fetchTabEvents(1); err == nil {
+		t.Fatal("expected JSON decode error")
 	}
 }
 

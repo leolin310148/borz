@@ -238,5 +238,56 @@ func TestRegisterRESTRoutes_NoPanic(t *testing.T) {
 	s.registerRESTRoutes(mux)
 }
 
+func TestRESTRoutes_RequestBuilders(t *testing.T) {
+	s, _ := serverWithFakeCDP(t)
+	mux := http.NewServeMux()
+	s.registerRESTRoutes(mux)
+
+	cases := []struct {
+		path string
+		body string
+	}{
+		{"/v1/open", `{"url":"https://example.test","new":true,"tab":"tab-1"}`},
+		{"/v1/forward", `{}`},
+		{"/v1/refresh", `{}`},
+		{"/v1/close", `{"activate":true}`},
+		{"/v1/hover", `{"ref":"e1"}`},
+		{"/v1/fill", `{"ref":"e1","text":"hello"}`},
+		{"/v1/type", `{"ref":"e1","text":"hello"}`},
+		{"/v1/check", `{"ref":"e1"}`},
+		{"/v1/uncheck", `{"ref":"e1"}`},
+		{"/v1/select", `{"ref":"e1","value":"x"}`},
+		{"/v1/press", `{"key":"Enter","modifiers":["shift"]}`},
+		{"/v1/key", `{"keyType":"press","key":"A","code":"KeyA","text":"a","modifiers":["ctrl"],"activate":true}`},
+		{"/v1/mouse", `{"mouseType":"click","x":1,"y":2,"button":"left","clickCount":1,"activate":true}`},
+		{"/v1/clipboard-read", `{"activate":true}`},
+		{"/v1/scroll", `{"direction":"down","pixels":10}`},
+		{"/v1/eval", `{"script":"1+1"}`},
+		{"/v1/wait", `{"ms":1,"activate":true}`},
+		{"/v1/snapshot", `{"interactive":true,"compact":true,"maxDepth":2,"selector":"main","role":"button","mode":"text","activate":true}`},
+		{"/v1/screenshot", `{"path":"/tmp/shot.png","activate":true}`},
+		{"/v1/get", `{"attribute":"text","ref":"e1","activate":true}`},
+		{"/v1/network", `{"command":"requests","filter":"api","withBody":true,"method":"GET","status":"200","since":"last_action","activate":true}`},
+		{"/v1/console", `{"command":"clear","filter":"x","since":3,"activate":true}`},
+		{"/v1/errors", `{"command":"clear","filter":"x","since":"4","activate":true}`},
+		{"/v1/fetch", `{"url":"https://api.test","method":"post","activate":true}`},
+		{"/v1/tabs/select", `{"index":0}`},
+		{"/v1/tabs/select", `{"tabId":"T1"}`},
+		{"/v1/tabs/close", `{"index":0}`},
+		{"/v1/tabs/close", `{"tabId":"T1"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path+" "+tc.body, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+			mux.ServeHTTP(rec, req)
+			if rec.Code < 200 || rec.Code >= 500 {
+				t.Fatalf("%s returned %d: %s", tc.path, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 // Smoke the read loop didn't accidentally close the body reader.
 var _ io.Reader = (*errReader)(nil)

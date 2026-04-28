@@ -1,11 +1,15 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -288,5 +292,55 @@ func TestNewServer_Defaults(t *testing.T) {
 	}
 	if s.cdp == nil {
 		t.Fatal("cdp not initialized")
+	}
+}
+
+func TestServerExtHub(t *testing.T) {
+	s := NewServer(ServerOptions{})
+	if s.ExtHub() == nil {
+		t.Fatal("ExtHub returned nil")
+	}
+}
+
+func TestServerRunReportsAddressInUse(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	addr := ln.Addr().(*net.TCPAddr)
+	s := NewServer(ServerOptions{Host: "127.0.0.1", Port: addr.Port})
+	err = s.Run()
+	if err == nil {
+		t.Fatal("expected address-in-use error")
+	}
+	if !strings.Contains(err.Error(), "address already in use") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServerShutdownCleansState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "daemon.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("write daemon.json: %v", err)
+	}
+
+	s := newTestServer(t, "")
+	s.httpSrv = &http.Server{}
+	reaperCtx, cancel := context.WithCancel(context.Background())
+	s.cancelReaper = cancel
+
+	if err := s.shutdown(); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "daemon.json")); !os.IsNotExist(err) {
+		t.Fatalf("daemon.json still exists or stat failed differently: %v", err)
+	}
+	select {
+	case <-reaperCtx.Done():
+	default:
+		t.Fatal("reaper context was not cancelled")
 	}
 }

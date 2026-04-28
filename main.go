@@ -25,6 +25,14 @@ var version = "0.1.0"
 
 var jqExpression string
 
+type daemonRunner interface {
+	Run() error
+}
+
+var newDaemonServer = func(opts daemon.ServerOptions) daemonRunner {
+	return daemon.NewServer(opts)
+}
+
 func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -818,7 +826,7 @@ func startDaemonForeground(rawArgs []string) {
 	rand.Read(tokenBytes)
 	token := hex.EncodeToString(tokenBytes)
 
-	srv := daemon.NewServer(daemon.ServerOptions{
+	srv := newDaemonServer(daemon.ServerOptions{
 		Host:                host,
 		Port:                port,
 		Token:               token,
@@ -900,7 +908,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 		os.Exit(1)
 	}
 
-	srv := daemon.NewServer(daemon.ServerOptions{
+	srv := newDaemonServer(daemon.ServerOptions{
 		Host:                host,
 		Port:                port,
 		Token:               token,
