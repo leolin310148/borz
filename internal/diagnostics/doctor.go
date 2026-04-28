@@ -32,6 +32,21 @@ func Run(version string) ([]Check, bool) {
 		checkHomeDir(),
 	}
 
+	if remoteCfg, enabled, err := client.EnabledRemoteConfig(); err != nil {
+		checks = append(checks, Check{Name: "Remote client", Status: "fail", Detail: err.Error()})
+		return checks, false
+	} else if enabled {
+		checks = append(checks, Check{Name: "Remote client", Status: "ok", Detail: remoteCfg.URL + " enabled"})
+		statusRaw, statusCheck := checkDaemonHTTP()
+		statusCheck.Name = "Remote HTTP"
+		checks = append(checks, statusCheck)
+		if statusRaw != nil {
+			checks = append(checks, checkCDPConnected(statusRaw))
+			checks = append(checks, checkTabs())
+		}
+		return checks, checksOK(checks)
+	}
+
 	info, infoCheck := checkDaemonJSON()
 	checks = append(checks, infoCheck)
 	if info != nil {
@@ -45,14 +60,16 @@ func Run(version string) ([]Check, bool) {
 	}
 	checks = append(checks, checkCDPDiscovery())
 
-	ok := true
+	return checks, checksOK(checks)
+}
+
+func checksOK(checks []Check) bool {
 	for _, c := range checks {
 		if c.Status == "fail" {
-			ok = false
-			break
+			return false
 		}
 	}
-	return checks, ok
+	return true
 }
 
 func checkHomeDir() Check {

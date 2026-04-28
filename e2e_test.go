@@ -206,6 +206,51 @@ func TestE2ECLICommandsAgainstVerifySite(t *testing.T) {
 	runE2EJSON(t, env, "close", "--tab", tab, "--json")
 }
 
+func TestE2EClientModeAgainstServer(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	token := "e2e-remote-token"
+	env, serverURL := startE2EServer(t, home, token)
+	runE2ECLI(t, env, "client", "setup", serverURL, "--token", token)
+	runE2ECLI(t, env, "client", "enable")
+
+	statusOut := runE2ECLI(t, env, "status")
+	requireContains(t, statusOut, `"cdpConnected": true`, "remote status")
+
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	if openResp.Data == nil || openResp.Data.Tab == "" {
+		t.Fatalf("remote open response did not include tab: %+v", openResp.Data)
+	}
+	requireEvalString(t, env, "document.title", "E2E Verify Home")
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+	clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
+	runE2EJSON(t, env, "click", clickRef, "--json")
+	requireEvalString(t, env, `document.querySelector("#clicked-result").textContent`, "clicked 1")
+
+	tabs := runE2EJSON(t, env, "tab", "list", "--json")
+	if len(tabs.Data.Tabs) == 0 {
+		t.Fatalf("remote tab list returned no tabs: %+v", tabs.Data)
+	}
+
+	runE2ECLI(t, env, "client", "disable")
+}
+
 type e2eDaemonEnv struct {
 	home string
 }
@@ -288,6 +333,78 @@ func startE2EDaemon(t *testing.T, home string) e2eDaemonEnv {
 	}
 	t.Fatalf("daemon did not become ready; stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	return e2eDaemonEnv{home: home}
+}
+
+func startE2EServer(t *testing.T, home, token string) (e2eDaemonEnv, string) {
+	t.Helper()
+
+	ep, err := client.DiscoverCDPPort()
+	if err != nil {
+		t.Fatalf("discover Chrome CDP endpoint: %v", err)
+	}
+	port := freeTCPPort(t)
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command(os.Args[0],
+		"-test.run=TestE2ECLIHelper",
+		"--",
+		"server",
+		"--host", "127.0.0.1",
+		"--port", strconv.Itoa(port),
+		"--token", token,
+		"--cdp-host", ep.Host,
+		"--cdp-port", strconv.Itoa(ep.Port),
+		"--idle-tab-timeout", "0",
+	)
+	cmd.Env = append(os.Environ(),
+		"BB_BROWSER_E2E_HELPER=1",
+		"BB_BROWSER_HOME="+home,
+	)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start bb-browser server helper: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Signal(os.Interrupt)
+		}
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			<-done
+		}
+		if t.Failed() {
+			t.Logf("server stdout:\n%s", stdout.String())
+			t.Logf("server stderr:\n%s", stderr.String())
+		}
+	})
+
+	deadline := time.Now().Add(15 * time.Second)
+	healthURL := fmt.Sprintf("http://127.0.0.1:%d/healthz", port)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(healthURL)
+		if err == nil {
+			var health struct {
+				OK           bool `json:"ok"`
+				CDPConnected bool `json:"cdpConnected"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&health) == nil && health.OK && health.CDPConnected {
+				_ = resp.Body.Close()
+				return e2eDaemonEnv{home: home}, fmt.Sprintf("http://127.0.0.1:%d", port)
+			}
+			_ = resp.Body.Close()
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	t.Fatalf("server did not become ready; stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	return e2eDaemonEnv{home: home}, ""
 }
 
 func freeTCPPort(t *testing.T) int {

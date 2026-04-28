@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,11 +29,157 @@ var (
 	discoverCDPPort = DiscoverCDPPort
 )
 
+// RemoteConfig is persisted by `bb-browser client setup` and controls whether
+// CLI actions are sent to a remote bb-browser server instead of a local daemon.
+type RemoteConfig struct {
+	URL     string `json:"url"`
+	Token   string `json:"token,omitempty"`
+	Enabled bool   `json:"enabled"`
+}
+
 // ResetForTests clears the package's cached daemon info. Test-only —
 // used by callers in other packages that swap the daemon out per-test.
 func ResetForTests() {
 	cachedInfo = nil
 	daemonReady = false
+}
+
+// ReadRemoteConfig reads ~/.bb-browser/client.json.
+func ReadRemoteConfig() (*RemoteConfig, error) {
+	data, err := os.ReadFile(config.ClientJSONPath())
+	if err != nil {
+		return nil, err
+	}
+	var cfg RemoteConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	if cfg.URL == "" {
+		return nil, fmt.Errorf("invalid client.json: missing url")
+	}
+	normalized, err := normalizeServerURL(cfg.URL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid client.json: %w", err)
+	}
+	cfg.URL = normalized
+	return &cfg, nil
+}
+
+// WriteRemoteConfig writes ~/.bb-browser/client.json with restrictive
+// permissions because it may contain a bearer token.
+func WriteRemoteConfig(cfg *RemoteConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("missing remote client config")
+	}
+	normalized, err := normalizeServerURL(cfg.URL)
+	if err != nil {
+		return err
+	}
+	out := *cfg
+	out.URL = normalized
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(config.HomeDir(), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(config.ClientJSONPath(), append(data, '\n'), 0600)
+}
+
+// NewRemoteConfig builds a server URL/token pair while preserving the previous
+// enabled state when a config already exists.
+func NewRemoteConfig(serverURL, token string) (*RemoteConfig, error) {
+	normalized, err := normalizeServerURL(serverURL)
+	if err != nil {
+		return nil, err
+	}
+	enabled := false
+	if existing, err := ReadRemoteConfig(); err == nil && existing != nil {
+		enabled = existing.Enabled
+	}
+	return &RemoteConfig{URL: normalized, Token: token, Enabled: enabled}, nil
+}
+
+// ConfigureRemote stores a server URL/token pair.
+func ConfigureRemote(serverURL, token string) (*RemoteConfig, error) {
+	cfg, err := NewRemoteConfig(serverURL, token)
+	if err != nil {
+		return nil, err
+	}
+	if err := WriteRemoteConfig(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// SetRemoteEnabled toggles remote client mode in the persisted config.
+func SetRemoteEnabled(enabled bool) (*RemoteConfig, error) {
+	cfg, err := ReadRemoteConfig()
+	if err != nil {
+		return nil, err
+	}
+	cfg.Enabled = enabled
+	if err := WriteRemoteConfig(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// EnabledRemoteConfig returns the active remote config. A missing client.json
+// means remote mode is simply disabled; a malformed file is returned as an
+// error so callers don't silently fall back to the local browser.
+func EnabledRemoteConfig() (*RemoteConfig, bool, error) {
+	cfg, err := ReadRemoteConfig()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	if !cfg.Enabled {
+		return nil, false, nil
+	}
+	return cfg, true, nil
+}
+
+// CheckRemoteConfig verifies the configured server is reachable and that the
+// token (if any) is accepted by an authenticated endpoint.
+func CheckRemoteConfig(cfg *RemoteConfig, timeout time.Duration) error {
+	if cfg == nil {
+		return fmt.Errorf("missing remote client config")
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	if _, err := httpJSONEndpoint("GET", cfg.URL, cfg.Token, "/status", nil, timeout); err != nil {
+		return fmt.Errorf("cannot reach bb-browser server %s: %w", cfg.URL, err)
+	}
+	return nil
+}
+
+func normalizeServerURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("server URL is required")
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid server URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("server URL must use http or https")
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("server URL must include a host")
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.Path = strings.TrimRight(u.Path, "/")
+	return u.String(), nil
 }
 
 // ReadDaemonJSON reads ~/.bb-browser/daemon.json.
@@ -61,22 +208,25 @@ func IsProcessAlive(pid int) bool {
 	return err == nil
 }
 
-// httpJSON sends an HTTP request to the daemon and returns the parsed response.
-func httpJSON(method, urlPath string, info *protocol.DaemonInfo, body interface{}, timeout time.Duration) (json.RawMessage, error) {
-	url := fmt.Sprintf("http://%s:%d%s", info.Host, info.Port, urlPath)
-
+// httpJSONEndpoint sends an HTTP request to a bb-browser HTTP endpoint and
+// returns the raw JSON response.
+func httpJSONEndpoint(method, baseURL, token, urlPath string, body interface{}, timeout time.Duration) (json.RawMessage, error) {
 	var bodyReader io.Reader
 	if body != nil {
-		data, _ := json.Marshal(body)
+		data, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
 		bodyReader = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, url, bodyReader)
+	reqURL := strings.TrimRight(baseURL, "/") + urlPath
+	req, err := http.NewRequest(method, reqURL, bodyReader)
 	if err != nil {
 		return nil, err
 	}
-	if info.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+info.Token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -95,10 +245,16 @@ func httpJSON(method, urlPath string, info *protocol.DaemonInfo, body interface{
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("daemon HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("bb-browser HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	return json.RawMessage(respBody), nil
+}
+
+// httpJSON sends an HTTP request to the local daemon and returns the raw JSON
+// response.
+func httpJSON(method, urlPath string, info *protocol.DaemonInfo, body interface{}, timeout time.Duration) (json.RawMessage, error) {
+	return httpJSONEndpoint(method, fmt.Sprintf("http://%s:%d", info.Host, info.Port), info.Token, urlPath, body, timeout)
 }
 
 // EnsureDaemon makes sure the daemon is running and ready.
@@ -199,6 +355,20 @@ func EnsureDaemon() error {
 
 // SendCommand sends a command to the daemon.
 func SendCommand(req *protocol.Request) (*protocol.Response, error) {
+	if cfg, enabled, err := EnabledRemoteConfig(); err != nil {
+		return nil, err
+	} else if enabled {
+		raw, err := httpJSONEndpoint("POST", cfg.URL, cfg.Token, "/command", req, time.Duration(config.CommandTimeout)*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		var resp protocol.Response
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			return nil, fmt.Errorf("invalid response from remote server: %w", err)
+		}
+		return &resp, nil
+	}
+
 	if err := EnsureDaemon(); err != nil {
 		return nil, err
 	}
@@ -242,6 +412,12 @@ func StopDaemon() error {
 // Used by REST endpoints that don't fit the /command protocol (e.g. /v1/cookies/all
 // served by the extension bridge).
 func GetJSON(path string, timeout time.Duration) (json.RawMessage, error) {
+	if cfg, enabled, err := EnabledRemoteConfig(); err != nil {
+		return nil, err
+	} else if enabled {
+		return httpJSONEndpoint("GET", cfg.URL, cfg.Token, path, nil, timeout)
+	}
+
 	if err := EnsureDaemon(); err != nil {
 		return nil, err
 	}
@@ -257,6 +433,18 @@ func GetJSON(path string, timeout time.Duration) (json.RawMessage, error) {
 
 // GetDaemonStatus returns the daemon status.
 func GetDaemonStatus() (json.RawMessage, error) {
+	if cfg, enabled, err := EnabledRemoteConfig(); err != nil {
+		return nil, err
+	} else if enabled {
+		return httpJSONEndpoint("GET", cfg.URL, cfg.Token, "/status", nil, 2*time.Second)
+	}
+	return GetLocalDaemonStatus()
+}
+
+// GetLocalDaemonStatus returns the local daemon/server status, ignoring remote
+// client mode. Lifecycle commands use this so client mode never controls the
+// remote server process by accident.
+func GetLocalDaemonStatus() (json.RawMessage, error) {
 	info := cachedInfo
 	if info == nil {
 		var err error

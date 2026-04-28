@@ -31,6 +31,11 @@ func DaemonJSONPath() string {
 	return filepath.Join(HomeDir(), "daemon.json")
 }
 
+// ClientJSONPath returns the path to the remote client configuration.
+func ClientJSONPath() string {
+	return filepath.Join(HomeDir(), "client.json")
+}
+
 // SitesDir returns the local site adapters directory.
 func SitesDir() string {
 	return filepath.Join(HomeDir(), "sites")

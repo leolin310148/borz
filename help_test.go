@@ -79,7 +79,7 @@ func TestCommandHelpCoversDispatch(t *testing.T) {
 		"click", "hover", "fill", "type", "check", "uncheck", "select",
 		"eval", "get", "screenshot", "press", "scroll", "wait",
 		"snapshot", "tab", "frame", "dialog", "network", "console", "errors", "trace",
-		"fetch", "mcp", "daemon", "server", "status", "site", "update", "history",
+		"fetch", "mcp", "daemon", "server", "client", "status", "site", "update", "history",
 		"help", "version",
 	}
 	for _, name := range expected {
@@ -103,6 +103,8 @@ func TestCommandHelpCoversSubcommands(t *testing.T) {
 		"daemon.status", "daemon.shutdown", "daemon.stop",
 		// server (handleServer)
 		"server.status", "server.shutdown", "server.stop",
+		// client (handleClient)
+		"client.setup", "client.enable", "client.disable", "client.status",
 		// trace
 		"trace.start", "trace.stop", "trace.status",
 		// network (handleNetwork)

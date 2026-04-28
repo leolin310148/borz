@@ -101,6 +101,51 @@ func TestReadDaemonJSON_ZeroFields(t *testing.T) {
 	}
 }
 
+func TestRemoteConfigReadWriteAndToggle(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+
+	cfg, err := ConfigureRemote("127.0.0.1:19824/", "secret")
+	if err != nil {
+		t.Fatalf("ConfigureRemote: %v", err)
+	}
+	if cfg.URL != "http://127.0.0.1:19824" || cfg.Token != "secret" || cfg.Enabled {
+		t.Fatalf("configured cfg = %+v", cfg)
+	}
+	st, err := os.Stat(filepath.Join(home, "client.json"))
+	if err != nil {
+		t.Fatalf("client.json stat: %v", err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("client.json perms = %o, want 600", st.Mode().Perm())
+	}
+
+	cfg, err = SetRemoteEnabled(true)
+	if err != nil {
+		t.Fatalf("enable remote: %v", err)
+	}
+	if !cfg.Enabled {
+		t.Fatal("expected enabled config")
+	}
+	cfg, enabled, err := EnabledRemoteConfig()
+	if err != nil {
+		t.Fatalf("EnabledRemoteConfig: %v", err)
+	}
+	if !enabled || cfg.URL != "http://127.0.0.1:19824" {
+		t.Fatalf("enabled=%v cfg=%+v", enabled, cfg)
+	}
+}
+
+func TestRemoteConfigValidation(t *testing.T) {
+	for _, raw := range []string{"", "ftp://example.test", "http:///missing-host"} {
+		if _, err := ConfigureRemote(raw, ""); err == nil {
+			t.Fatalf("ConfigureRemote(%q) expected error", raw)
+		}
+	}
+}
+
 // --- IsProcessAlive ---
 
 func TestIsProcessAlive_Self(t *testing.T) {
@@ -233,6 +278,87 @@ func TestSendCommand_InvalidResponse(t *testing.T) {
 	_, err := SendCommand(&protocol.Request{ID: "1"})
 	if err == nil || !strings.Contains(err.Error(), "invalid response") {
 		t.Errorf("expected invalid response, got %v", err)
+	}
+}
+
+func TestSendCommand_RemoteEnabled(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+
+	var sawCommand bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
+			t.Errorf("Authorization = %q", got)
+		}
+		switch r.URL.Path {
+		case "/command":
+			sawCommand = true
+			var req protocol.Request
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("decode command: %v", err)
+				w.WriteHeader(400)
+				return
+			}
+			json.NewEncoder(w).Encode(protocol.Response{ID: req.ID, Success: true, Data: &protocol.ResponseData{Value: "remote"}})
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	if err := WriteRemoteConfig(&RemoteConfig{URL: ts.URL, Token: "secret", Enabled: true}); err != nil {
+		t.Fatalf("write remote config: %v", err)
+	}
+	resp, err := SendCommand(&protocol.Request{ID: "r1", Action: protocol.ActionGet})
+	if err != nil {
+		t.Fatalf("SendCommand: %v", err)
+	}
+	if !sawCommand || resp.Data == nil || resp.Data.Value != "remote" {
+		t.Fatalf("resp=%+v sawCommand=%v", resp, sawCommand)
+	}
+}
+
+func TestGetJSONAndStatus_RemoteEnabled(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
+			t.Errorf("Authorization = %q", got)
+		}
+		switch r.URL.Path {
+		case "/status":
+			w.Write([]byte(`{"running":true}`))
+		case "/v1/tabs/events":
+			w.Write([]byte(`{"events":[],"latest_seq":0}`))
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+
+	if err := WriteRemoteConfig(&RemoteConfig{URL: ts.URL, Token: "secret", Enabled: true}); err != nil {
+		t.Fatalf("write remote config: %v", err)
+	}
+	status, err := GetDaemonStatus()
+	if err != nil {
+		t.Fatalf("GetDaemonStatus: %v", err)
+	}
+	if !strings.Contains(string(status), `"running":true`) {
+		t.Fatalf("status = %s", status)
+	}
+	raw, err := GetJSON("/v1/tabs/events", time.Second)
+	if err != nil {
+		t.Fatalf("GetJSON: %v", err)
+	}
+	if !strings.Contains(string(raw), `"events"`) {
+		t.Fatalf("raw = %s", raw)
 	}
 }
 

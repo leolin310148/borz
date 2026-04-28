@@ -48,7 +48,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail"})
+	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check"})
 
 	if len(cleanArgs) == 0 {
 		printHelp()
@@ -479,6 +479,10 @@ func main() {
 	case "server":
 		handleServer(cmdArgs, args)
 
+	// --- Client (remote server mode) ---
+	case "client":
+		handleClient(cmdArgs, args, jsonOutput)
+
 	// --- Status ---
 	case "status":
 		raw, err := client.GetDaemonStatus()
@@ -583,12 +587,9 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 			tabID = globalTabID
 		}
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionTabSelect}
-		// Try as index
-		if idx, err := strconv.Atoi(tabID); err == nil {
-			req.Index = &idx
-		} else {
-			req.TabID = tabID
-		}
+		// Let the daemon resolve short IDs first, then fall back to numeric
+		// indexes. Short tab IDs are hex suffixes and can be all digits.
+		req.TabID = tabID
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
 			if resp.Data != nil {
 				fmt.Printf("Selected: %s - %s\n", resp.Data.URL, resp.Data.Title)
@@ -600,9 +601,7 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 			tabID = cmdArgs[1]
 		}
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionTabClose}
-		if idx, err := strconv.Atoi(tabID); err == nil {
-			req.Index = &idx
-		} else if tabID != "" {
+		if tabID != "" {
 			req.TabID = tabID
 		}
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
@@ -740,7 +739,7 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 
 	switch cmdArgs[0] {
 	case "status":
-		raw, err := client.GetDaemonStatus()
+		raw, err := client.GetLocalDaemonStatus()
 		if err != nil {
 			fmt.Println("Daemon is not running")
 			return
@@ -818,7 +817,7 @@ func startDaemonForeground(rawArgs []string) {
 	// clobber daemon.json and then fail with "address already in use").
 	if existing, err := client.ReadDaemonJSON(); err == nil && existing != nil && existing.Port == port && existing.Host == host {
 		if client.IsProcessAlive(existing.PID) {
-			if _, err := client.GetDaemonStatus(); err == nil {
+			if _, err := client.GetLocalDaemonStatus(); err == nil {
 				fmt.Fprintf(os.Stderr, "bb-browser daemon already running on %s:%d (pid %d)\n", existing.Host, existing.Port, existing.PID)
 				return
 			}
@@ -852,7 +851,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 	if len(cmdArgs) > 0 {
 		switch cmdArgs[0] {
 		case "status":
-			raw, err := client.GetDaemonStatus()
+			raw, err := client.GetLocalDaemonStatus()
 			if err != nil {
 				fmt.Println("Server is not running")
 				return
@@ -1345,6 +1344,8 @@ Utility:
   server --host H --port P --token T [shutdown]
                                 Start remote-accessible HTTP server
                                 (--token required on non-loopback binds)
+  client setup <url> [--token T]
+  client enable / disable       Route browser actions to the configured server
   update [--check] [--force]    Download latest release and replace self
 
 Global Flags:

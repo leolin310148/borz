@@ -414,7 +414,29 @@ var commandHelp = map[string]cmdHelp{
 			"  bb-browser server shutdown",
 		},
 		Notes: "Clients authenticate with 'Authorization: Bearer <token>'. " +
-			"Swagger UI is served at /docs and the OpenAPI spec at /openapi.json.",
+			"Swagger UI is served at /docs and the OpenAPI spec at /openapi.yaml.",
+	},
+	"client": {
+		Summary: "Configure the CLI to send browser actions to a remote bb-browser server.",
+		Usage:   "bb-browser client [setup|enable|disable|status]",
+		Flags: []string{
+			"  setup <url>            Store the remote server URL",
+			"  setup --url <url>      Same as positional URL",
+			"  --token <t>            Bearer token for the remote server",
+			"  --no-check             Store/toggle config without probing /status",
+			"  enable                 Route browser actions to the configured server",
+			"  disable                Return browser actions to the local daemon/CDP",
+			"  status                 Show current remote-client state",
+		},
+		Examples: []string{
+			"  bb-browser client setup http://server:19824 --token \"$BB_BROWSER_TOKEN\"",
+			"  bb-browser client enable",
+			"  bb-browser open https://example.com",
+			"  bb-browser client disable",
+		},
+		Notes: "When enabled, commands that talk to the browser use the configured server " +
+			"instead of launching or contacting the local daemon. The token is stored in " +
+			"~/.bb-browser/client.json with 0600 permissions and is never printed by status.",
 	},
 	"mcp": {
 		Summary: "Speak MCP over stdio — intended to be spawned by an MCP-aware client.",
@@ -596,6 +618,32 @@ var commandHelp = map[string]cmdHelp{
 		Summary:  "Alias for 'server shutdown'. Asks the running server to exit cleanly.",
 		Usage:    "bb-browser server stop",
 		Examples: []string{"  bb-browser server stop"},
+	},
+
+	// --- Subcommand pages: client.* ---
+	"client.setup": {
+		Summary: "Store the remote server URL and optional bearer token.",
+		Usage:   "bb-browser client setup <server-url> [--token <token>] [--no-check]",
+		Examples: []string{
+			"  bb-browser client setup http://127.0.0.1:19824",
+			"  bb-browser client setup https://browser.example.com --token \"$BB_BROWSER_TOKEN\"",
+		},
+		Notes: "The setup command probes the server's authenticated /status endpoint before " +
+			"saving unless --no-check is set. If the URL has no scheme, http:// is assumed.",
+	},
+	"client.enable": {
+		Summary: "Enable remote client mode for browser actions.",
+		Usage:   "bb-browser client enable [--no-check]",
+		Notes:   "The configured server is checked before enabling unless --no-check is set.",
+	},
+	"client.disable": {
+		Summary:  "Disable remote client mode and return to the local daemon/CDP.",
+		Usage:    "bb-browser client disable",
+		Examples: []string{"  bb-browser client disable"},
+	},
+	"client.status": {
+		Summary: "Show whether remote client mode is configured and enabled.",
+		Usage:   "bb-browser client status [--json]",
 	},
 
 	// --- Subcommand pages: trace.* ---

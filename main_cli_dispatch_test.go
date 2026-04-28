@@ -307,7 +307,7 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			}
 		}},
 		{name: "tab select index", args: []string{"tab", "select", "2"}, action: protocol.ActionTabSelect, check: func(t *testing.T, req protocol.Request, out string) {
-			if req.Index == nil || *req.Index != 2 {
+			if req.TabID != "2" {
 				t.Fatalf("tab select request = %+v", req)
 			}
 			if !strings.Contains(out, "Selected: https://example.test") {
@@ -490,6 +490,90 @@ func TestMainStatusAndHelpCommands(t *testing.T) {
 	})
 	if !strings.Contains(out, "tab new") {
 		t.Fatalf("help output = %q", out)
+	}
+}
+
+func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BB_BROWSER_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	var commands []protocol.Request
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer remote-token" {
+			t.Errorf("Authorization = %q", got)
+		}
+		switch r.URL.Path {
+		case "/status":
+			writeJSON(t, w, map[string]any{"running": true, "cdpConnected": true})
+		case "/command":
+			var req protocol.Request
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("decode command: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			commands = append(commands, req)
+			writeJSON(t, w, protocol.Response{ID: req.ID, Success: true, Data: responseDataFor(req)})
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	out := captureStdout(t, func() {
+		oldArgs := os.Args
+		os.Args = []string{"bb-browser", "client", "setup", "--url", ts.URL, "--token", "remote-token"}
+		defer func() { os.Args = oldArgs }()
+		main()
+	})
+	if !strings.Contains(out, "Remote client configured") {
+		t.Fatalf("setup output = %q", out)
+	}
+
+	out = captureStdout(t, func() {
+		oldArgs := os.Args
+		os.Args = []string{"bb-browser", "client", "enable"}
+		defer func() { os.Args = oldArgs }()
+		main()
+	})
+	if !strings.Contains(out, "Remote client enabled") {
+		t.Fatalf("enable output = %q", out)
+	}
+
+	out = captureStdout(t, func() {
+		oldArgs := os.Args
+		os.Args = []string{"bb-browser", "open", "https://remote.test", "--json"}
+		defer func() { os.Args = oldArgs }()
+		main()
+	})
+	if !strings.Contains(out, `"success": true`) {
+		t.Fatalf("open output = %q", out)
+	}
+	if len(commands) != 1 || commands[0].Action != protocol.ActionOpen || commands[0].URL != "https://remote.test" {
+		t.Fatalf("commands = %+v", commands)
+	}
+
+	out = captureStdout(t, func() {
+		oldArgs := os.Args
+		os.Args = []string{"bb-browser", "client", "status", "--json"}
+		defer func() { os.Args = oldArgs }()
+		main()
+	})
+	if !strings.Contains(out, `"enabled": true`) || strings.Contains(out, "remote-token") {
+		t.Fatalf("status output = %q", out)
+	}
+
+	out = captureStdout(t, func() {
+		oldArgs := os.Args
+		os.Args = []string{"bb-browser", "client", "disable"}
+		defer func() { os.Args = oldArgs }()
+		main()
+	})
+	if !strings.Contains(out, "Remote client disabled") {
+		t.Fatalf("disable output = %q", out)
 	}
 }
 
