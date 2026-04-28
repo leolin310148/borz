@@ -74,6 +74,25 @@ Or point to a remote browser via environment variable:
 export BB_BROWSER_CDP_URL=http://127.0.0.1:19825
 ```
 
+## Browser Extension (optional)
+
+A small Chrome extension extends `bb-browser` with capabilities CDP cannot provide on its own — cross-domain cookies (`bb-browser cookies all`) and browser-level tab events (`bb-browser tab events`). Install it once per Chrome profile:
+
+```bash
+# Download the extension that matches your installed bb-browser binary
+bb-browser extension download
+```
+
+This fetches `bb-browser-extension.zip` from the latest GitHub release, verifies its SHA-256, and extracts it into `~/.bb-browser/extension/` (the previous install is removed). The command then prints the directory and the load steps:
+
+1. Open `chrome://extensions`
+2. Enable **Developer mode** (top-right toggle)
+3. Click **Load unpacked** and pick `~/.bb-browser/extension/`
+
+Re-run `bb-browser extension update` after upgrading the binary to keep the extension in lockstep. The extension version mirrors the bb-browser release tag.
+
+Commands that *don't* require the extension keep working without it. The ones that do (`cookies all`, `tab events`) will tell you when it's missing.
+
 ## How It Works
 
 ```

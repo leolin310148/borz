@@ -88,6 +88,20 @@ jobs:
             GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" -o "$OUTPUT" .
           done
 
+      - name: Bundle Chrome extension
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Rewrite manifest.json "version" to match the release tag so the
+          # extension version stays in lockstep with the binary.
+          python3 - <<EOF
+          import json, pathlib
+          p = pathlib.Path("extension/manifest.json")
+          m = json.loads(p.read_text())
+          m["version"] = "${VERSION}"
+          p.write_text(json.dumps(m, indent=2) + "\n")
+          EOF
+          ( cd extension && zip -r "../dist/bb-browser-extension.zip" . )
+
       - name: Generate checksums
         run: |
           cd dist

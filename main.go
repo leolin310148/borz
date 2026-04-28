@@ -510,6 +510,10 @@ func main() {
 			fatal(err.Error())
 		}
 
+	// --- Extension ---
+	case "extension":
+		handleExtension(cmdArgs)
+
 	// --- History ---
 	case "history":
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionHistory}

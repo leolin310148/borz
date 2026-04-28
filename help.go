@@ -421,6 +421,44 @@ var commandHelp = map[string]cmdHelp{
 		Usage:   "bb-browser mcp",
 		Notes:   "Humans rarely run this directly; configure it in your MCP client instead.",
 	},
+	"extension": {
+		Summary: "Download or locate the bb-browser Chrome extension.",
+		Usage:   "bb-browser extension [download|update|path]",
+		Flags: []string{
+			"  download              Download the latest extension zip and extract it (default)",
+			"  update                Alias for 'download' — overwrites the current install",
+			"  path                  Print the local install directory and exit",
+		},
+		Examples: []string{
+			"  bb-browser extension download",
+			"  bb-browser extension path",
+		},
+		Notes: "Extracts to ~/.bb-browser/extension (override with $BB_BROWSER_HOME). " +
+			"After download, load it in Chrome via chrome://extensions → enable Developer " +
+			"mode → 'Load unpacked' → select the printed directory. The extension provides " +
+			"capabilities CDP cannot (cross-domain cookies, browser-level tab events).",
+	},
+	"extension.download": {
+		Summary: "Download the latest extension zip and extract it (replacing any prior install).",
+		Usage:   "bb-browser extension download",
+		Notes: "Downloads bb-browser-extension.zip from the latest GitHub release, verifies " +
+			"its SHA-256 from checksums.txt, then nukes ~/.bb-browser/extension and extracts " +
+			"the new contents. After it finishes, follow the printed steps to load it via " +
+			"chrome://extensions → 'Load unpacked'.",
+	},
+	"extension.update": {
+		Summary: "Alias for 'extension download'. Overwrites the current install with the latest release.",
+		Usage:   "bb-browser extension update",
+	},
+	"extension.install": {
+		Summary: "Alias for 'extension download'.",
+		Usage:   "bb-browser extension install",
+	},
+	"extension.path": {
+		Summary: "Print the local extension install directory.",
+		Usage:   "bb-browser extension path",
+		Notes:   "Useful for scripting or for pasting the path into chrome://extensions.",
+	},
 	"update": {
 		Summary: "Download the latest release from GitHub and replace the running binary.",
 		Usage:   "bb-browser update [--check] [--force]",
