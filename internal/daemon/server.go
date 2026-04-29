@@ -45,6 +45,8 @@ type Server struct {
 	startTime    time.Time
 	mu           sync.Mutex
 	cancelReaper context.CancelFunc
+	shutdownOnce sync.Once
+	shutdownErr  error
 }
 
 // NewServer creates a daemon server.
@@ -70,6 +72,17 @@ func (s *Server) ExtHub() *extbridge.Hub { return s.extHub }
 
 // Run starts the daemon server (blocks until shutdown).
 func (s *Server) Run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	return s.RunContext(ctx)
+}
+
+// RunContext starts the daemon server and blocks until ctx is cancelled,
+// /shutdown is called, or the HTTP server fails.
+func (s *Server) RunContext(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	protectedMux := http.NewServeMux()
 	protectedMux.HandleFunc("/command", s.handleCommand)
 	protectedMux.HandleFunc("/status", s.handleStatus)
@@ -138,10 +151,6 @@ func (s *Server) Run() error {
 	}
 	os.WriteFile(config.DaemonJSONPath(), infoJSON, 0600)
 
-	// Handle graceful shutdown
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-
 	fmt.Fprintf(os.Stderr, "borz daemon listening on %s\n", addr)
 	errCh := make(chan error, 1)
 	go func() {
@@ -151,7 +160,7 @@ func (s *Server) Run() error {
 	}()
 
 	select {
-	case <-stop:
+	case <-ctx.Done():
 	case err := <-errCh:
 		return err
 	}
@@ -160,15 +169,21 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) shutdown() error {
-	// Clean up daemon.json
-	os.Remove(config.DaemonJSONPath())
-	if s.cancelReaper != nil {
-		s.cancelReaper()
-	}
-	s.cdp.Disconnect()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return s.httpSrv.Shutdown(ctx)
+	s.shutdownOnce.Do(func() {
+		// Clean up daemon.json
+		os.Remove(config.DaemonJSONPath())
+		if s.cancelReaper != nil {
+			s.cancelReaper()
+		}
+		s.cdp.Disconnect()
+		if s.httpSrv == nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		s.shutdownErr = s.httpSrv.Shutdown(ctx)
+	})
+	return s.shutdownErr
 }
 
 func (s *Server) uptime() int {

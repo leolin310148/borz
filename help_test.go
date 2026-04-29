@@ -79,7 +79,7 @@ func TestCommandHelpCoversDispatch(t *testing.T) {
 		"click", "hover", "fill", "type", "check", "uncheck", "select",
 		"eval", "get", "screenshot", "press", "scroll", "wait",
 		"snapshot", "tab", "frame", "dialog", "network", "console", "errors", "trace",
-		"fetch", "mcp", "daemon", "server", "client", "status", "site", "update", "history",
+		"fetch", "mcp", "daemon", "server", "service", "client", "status", "site", "update", "history",
 		"cookies", "bookmarks", "browser-history", "downloads", "window", "windows", "extension",
 		"help", "version",
 	}
@@ -104,6 +104,8 @@ func TestCommandHelpCoversSubcommands(t *testing.T) {
 		"daemon.status", "daemon.shutdown", "daemon.stop",
 		// server (handleServer)
 		"server.status", "server.shutdown", "server.stop",
+		// service (handleService)
+		"service.install", "service.uninstall", "service.remove", "service.start", "service.stop", "service.status",
 		// client (handleClient)
 		"client.setup", "client.enable", "client.disable", "client.status",
 		// trace

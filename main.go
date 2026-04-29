@@ -21,6 +21,7 @@ import (
 	"github.com/leolin310148/borz/internal/protocol"
 	"github.com/leolin310148/borz/internal/selfupdate"
 	"github.com/leolin310148/borz/internal/site"
+	"github.com/leolin310148/borz/internal/winservice"
 )
 
 var version = "0.1.0"
@@ -52,7 +53,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval", "--limit", "--id", "--title", "--parent", "--filename", "--state"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused"})
+	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval", "--limit", "--id", "--title", "--parent", "--filename", "--state", "--name", "--display-name", "--description"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused"})
 
 	if len(cleanArgs) == 0 {
 		printHelp()
@@ -502,6 +503,10 @@ func main() {
 	case "server":
 		handleServer(cmdArgs, args)
 
+	// --- Windows service ---
+	case "service":
+		handleService(cmdArgs, args)
+
 	// --- Client (remote server mode) ---
 	case "client":
 		handleClient(cmdArgs, args, jsonOutput)
@@ -892,6 +897,28 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 		}
 	}
 
+	opts, err := serverOptionsFromArgs(rawArgs, "0.0.0.0")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	srv := newDaemonServer(opts)
+
+	fmt.Fprintf(os.Stderr, "borz server starting on %s:%d\n", opts.Host, opts.Port)
+	if opts.Token != "" {
+		fmt.Fprintln(os.Stderr, "Authorization required: Authorization: Bearer <token>")
+	} else {
+		fmt.Fprintln(os.Stderr, "Authorization disabled (loopback bind, no token set)")
+	}
+
+	if err := srv.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerOptions, error) {
 	cdpHost := getArgValue(rawArgs, "--cdp-host")
 	if cdpHost == "" {
 		cdpHost = "127.0.0.1"
@@ -908,7 +935,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 		host = config.Env("BORZ_SERVER_HOST", "BB_BROWSER_SERVER_HOST")
 	}
 	if host == "" {
-		host = "0.0.0.0"
+		host = defaultHost
 	}
 
 	port := 19824
@@ -928,13 +955,10 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 	}
 
 	if isRemoteBind(host) && token == "" {
-		fmt.Fprintf(os.Stderr,
-			"Error: --host=%s is non-loopback; refusing to start without a token.\n"+
-				"       Pass --token <secret> or set BORZ_TOKEN.\n", host)
-		os.Exit(1)
+		return daemon.ServerOptions{}, fmt.Errorf("--host=%s is non-loopback; refusing to start without a token. Pass --token <secret> or set BORZ_TOKEN", host)
 	}
 
-	srv := newDaemonServer(daemon.ServerOptions{
+	return daemon.ServerOptions{
 		Host:                host,
 		Port:                port,
 		Token:               token,
@@ -942,19 +966,98 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 		CDPPort:             cdpPort,
 		IdleTabCloseMinutes: resolveIdleTabTimeout(rawArgs),
 		Version:             version,
-	})
+	}, nil
+}
 
-	fmt.Fprintf(os.Stderr, "borz server starting on %s:%d\n", host, port)
-	if token != "" {
-		fmt.Fprintln(os.Stderr, "Authorization required: Authorization: Bearer <token>")
-	} else {
-		fmt.Fprintln(os.Stderr, "Authorization disabled (loopback bind, no token set)")
+// --- Windows service handling ---
+
+func handleService(cmdArgs []string, rawArgs []string) {
+	sub := "status"
+	if len(cmdArgs) > 0 {
+		sub = cmdArgs[0]
+	}
+	name := getArgValue(rawArgs, "--name")
+	if name == "" {
+		name = winservice.DefaultName
 	}
 
-	if err := srv.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
-		os.Exit(1)
+	switch sub {
+	case "install":
+		opts, err := serverOptionsFromArgs(rawArgs, "127.0.0.1")
+		if err != nil {
+			fatal(err.Error())
+		}
+		cfg := winservice.Config{
+			Name:        name,
+			DisplayName: firstNonEmpty(getArgValue(rawArgs, "--display-name"), winservice.DefaultDisplayName),
+			Description: firstNonEmpty(getArgValue(rawArgs, "--description"), winservice.DefaultDescription),
+			Args:        serviceRunArgs(name, opts),
+		}
+		if err := winservice.Install(cfg); err != nil {
+			fatal(err.Error())
+		}
+		fmt.Printf("Windows service %q installed\n", name)
+		fmt.Printf("Run 'borz service start --name %s' to start it.\n", name)
+	case "uninstall", "remove":
+		if err := winservice.Uninstall(name); err != nil {
+			fatal(err.Error())
+		}
+		fmt.Printf("Windows service %q uninstalled\n", name)
+	case "start":
+		if err := winservice.Start(name); err != nil {
+			fatal(err.Error())
+		}
+		fmt.Printf("Windows service %q started\n", name)
+	case "stop":
+		if err := winservice.Stop(name); err != nil {
+			fatal(err.Error())
+		}
+		fmt.Printf("Windows service %q stopped\n", name)
+	case "status":
+		status, err := winservice.Status(name)
+		if err != nil {
+			fatal(err.Error())
+		}
+		fmt.Printf("Windows service %q is %s\n", name, status)
+	case "run":
+		if err := winservice.Run(name, func(ctx context.Context) error {
+			opts, err := serverOptionsFromArgs(rawArgs, "127.0.0.1")
+			if err != nil {
+				return err
+			}
+			srv := daemon.NewServer(opts)
+			return srv.RunContext(ctx)
+		}); err != nil {
+			fatal(err.Error())
+		}
+	default:
+		fatal("Usage: borz service [install|uninstall|start|stop|status] [--name <name>] [server flags]")
 	}
+}
+
+func serviceRunArgs(name string, opts daemon.ServerOptions) []string {
+	args := []string{
+		"service", "run",
+		"--name", name,
+		"--host", opts.Host,
+		"--port", strconv.Itoa(opts.Port),
+		"--cdp-host", opts.CDPHost,
+		"--cdp-port", strconv.Itoa(opts.CDPPort),
+		"--idle-tab-timeout", strconv.Itoa(opts.IdleTabCloseMinutes),
+	}
+	if opts.Token != "" {
+		args = append(args, "--token", opts.Token)
+	}
+	return args
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func isRemoteBind(host string) bool {
@@ -1414,6 +1517,7 @@ Utility:
   server --host H --port P --token T [shutdown]
                                 Start remote-accessible HTTP server
                                 (--token required on non-loopback binds)
+  service install|start|stop    Install/control Windows service mode
   client setup <url> [--token T]
   --remote <command>            Route one command to configured server
   update [--check] [--force]    Download latest release and replace self

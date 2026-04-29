@@ -6,6 +6,40 @@
 
 ## Installation
 
+### One-line install (macOS/Linux)
+
+Install the latest release binary to `/usr/local/bin/borz`:
+
+```bash
+curl -fsSL https://github.com/leolin310148/borz/raw/main/scripts/install.sh | bash
+```
+
+Install somewhere else, or pin a release:
+
+```bash
+curl -fsSL https://github.com/leolin310148/borz/raw/main/scripts/install.sh | BORZ_INSTALL_DIR="$HOME/.local/bin" bash
+curl -fsSL https://github.com/leolin310148/borz/raw/main/scripts/install.sh | BORZ_VERSION=v0.1.0 bash
+```
+
+The installer detects `linux/darwin` + `amd64/arm64`, downloads the matching GitHub Release asset, verifies `checksums.txt`, and installs the executable as `borz`.
+
+### Windows PowerShell install
+
+Run PowerShell, then install the latest `borz.exe` into `%LOCALAPPDATA%\Programs\borz\bin`:
+
+```powershell
+irm https://github.com/leolin310148/borz/raw/main/scripts/install.ps1 | iex
+```
+
+To pin a version or choose another directory:
+
+```powershell
+irm https://github.com/leolin310148/borz/raw/main/scripts/install.ps1 -OutFile install.ps1
+.\install.ps1 -Version v0.1.0 -InstallDir "$env:USERPROFILE\bin"
+```
+
+The PowerShell installer verifies the release checksum and adds the install directory to the user `PATH` unless `-NoPath` is passed.
+
 ### Rename transition
 
 The primary binary is now `borz`. Release artifacts also include a temporary
@@ -14,7 +48,7 @@ forwards to `borz`; update scripts and aliases to call `borz` directly. On first
 write, an existing `~/.bb-browser` config directory is migrated to `~/.borz`
 unless `~/.borz` already exists.
 
-### Download prebuilt binary
+### Manual download
 
 Grab the latest release for your platform from [GitHub Releases](https://github.com/leolin310148/borz/releases):
 
@@ -38,6 +72,13 @@ sudo mv borz-linux-amd64 /usr/local/bin/borz
 curl -LO https://github.com/leolin310148/borz/releases/latest/download/borz-linux-arm64
 chmod +x borz-linux-arm64
 sudo mv borz-linux-arm64 /usr/local/bin/borz
+```
+
+Windows manual install:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing https://github.com/leolin310148/borz/releases/latest/download/borz-windows-amd64.exe -OutFile borz.exe
+.\borz.exe version
 ```
 
 ### Build from source
@@ -207,6 +248,38 @@ The server refuses to bind a non-loopback address without a token. Clients authe
 | `--token` | `BORZ_TOKEN` | *(none)* | Required for non-loopback host |
 | `--cdp-host` | — | `127.0.0.1` | Chrome CDP host |
 | `--cdp-port` | — | `19825` | Chrome CDP port |
+
+### Windows service
+
+On Windows, install `borz server` as a native Windows Service from an elevated PowerShell or Command Prompt:
+
+```powershell
+# Install latest borz.exe, register the service, and start it
+irm https://github.com/leolin310148/borz/raw/main/scripts/install.ps1 -OutFile install.ps1
+.\install.ps1 -Service -StartService
+
+# Or, after borz.exe is already installed
+borz service install
+borz service start
+borz service status
+```
+
+By default the service listens only on `127.0.0.1:19824`. To expose it remotely, bind a non-loopback host and provide a bearer token:
+
+```powershell
+borz service install --host 0.0.0.0 --port 19824 --token "$env:BORZ_TOKEN"
+borz service start
+```
+
+The service command supports:
+
+```powershell
+borz service install [--name borz] [--host 127.0.0.1] [--port 19824] [--token TOKEN]
+borz service start|stop|status [--name borz]
+borz service uninstall [--name borz]
+```
+
+Service installation writes the server flags into the Windows Service Control Manager registration. If you pass `--token`, administrators on the machine can inspect it in the service configuration; rotate the token if you later change exposure.
 
 Stop the server:
 

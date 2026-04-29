@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/leolin310148/borz/internal/config"
@@ -24,6 +25,56 @@ func TestIsRemoteBind(t *testing.T) {
 	} {
 		if got := isRemoteBind(tc.in); got != tc.want {
 			t.Errorf("isRemoteBind(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestServerOptionsFromArgs(t *testing.T) {
+	t.Setenv("BORZ_SERVER_HOST", "")
+	t.Setenv("BB_BROWSER_SERVER_HOST", "")
+	t.Setenv("BORZ_SERVER_PORT", "")
+	t.Setenv("BB_BROWSER_SERVER_PORT", "")
+	t.Setenv("BORZ_TOKEN", "")
+	t.Setenv("BB_BROWSER_TOKEN", "")
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
+
+	opts, err := serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1", "--port", "19999", "--cdp-host", "chrome", "--cdp-port", "9222", "--idle-tab-timeout", "7"}, "0.0.0.0")
+	if err != nil {
+		t.Fatalf("serverOptionsFromArgs returned error: %v", err)
+	}
+	if opts.Host != "127.0.0.1" || opts.Port != 19999 || opts.CDPHost != "chrome" || opts.CDPPort != 9222 || opts.IdleTabCloseMinutes != 7 || opts.Version != version {
+		t.Fatalf("unexpected options: %+v", opts)
+	}
+
+	if _, err := serverOptionsFromArgs([]string{"server", "--host", "0.0.0.0"}, "0.0.0.0"); err == nil {
+		t.Fatal("expected non-loopback host without token to fail")
+	}
+
+	opts, err = serverOptionsFromArgs([]string{"service", "install"}, "127.0.0.1")
+	if err != nil {
+		t.Fatalf("service default should be loopback without token: %v", err)
+	}
+	if opts.Host != "127.0.0.1" {
+		t.Fatalf("service default host = %q, want loopback", opts.Host)
+	}
+}
+
+func TestServiceRunArgs(t *testing.T) {
+	opts, err := serverOptionsFromArgs([]string{"service", "install", "--host", "127.0.0.1", "--port", "19824", "--token", "secret"}, "127.0.0.1")
+	if err != nil {
+		t.Fatalf("serverOptionsFromArgs returned error: %v", err)
+	}
+	got := strings.Join(serviceRunArgs("borz-test", opts), " ")
+	for _, want := range []string{
+		"service run",
+		"--name borz-test",
+		"--host 127.0.0.1",
+		"--port 19824",
+		"--token secret",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("service args %q missing %q", got, want)
 		}
 	}
 }

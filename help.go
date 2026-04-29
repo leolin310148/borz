@@ -487,6 +487,34 @@ var commandHelp = map[string]cmdHelp{
 		Notes: "Clients authenticate with 'Authorization: Bearer <token>'. " +
 			"Swagger UI is served at /docs and the OpenAPI spec at /openapi.yaml.",
 	},
+	"service": {
+		Summary: "Install or control borz as a Windows service.",
+		Usage:   "borz service [install|uninstall|start|stop|status] [--name N] [server flags]",
+		Flags: []string{
+			"  install                Register a Windows service that runs 'borz server'",
+			"  uninstall|remove       Delete the registered service",
+			"  start|stop|status      Control or inspect the service",
+			"  --name <n>             Service name (default borz)",
+			"  --display-name <text>  Display name for install",
+			"  --description <text>   Service description for install",
+			"  --host <h>             Server bind address (default 127.0.0.1 for service)",
+			"  --port <p>             Listen port (default 19824)",
+			"  --token <t>            Bearer token; required with non-loopback --host",
+			"  --cdp-host <h>         Chrome DevTools host (default 127.0.0.1)",
+			"  --cdp-port <p>         Chrome DevTools port (default 19825)",
+			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
+		},
+		Examples: []string{
+			"  borz service install",
+			"  borz service start",
+			"  borz service install --host 0.0.0.0 --token \"$env:BORZ_TOKEN\"",
+			"  borz service status",
+			"  borz service uninstall",
+		},
+		Notes: "Windows service management requires an elevated shell. The service entry " +
+			"runs the REST server in the foreground under the Windows Service Control Manager. " +
+			"Non-Windows platforms should use launchd, systemd, or a process manager instead.",
+	},
 	"client": {
 		Summary: "Configure the remote borz server used by the global --remote flag.",
 		Usage:   "borz client [setup|status|enable|disable]",
@@ -710,6 +738,32 @@ var commandHelp = map[string]cmdHelp{
 		Summary:  "Alias for 'server shutdown'. Asks the running server to exit cleanly.",
 		Usage:    "borz server stop",
 		Examples: []string{"  borz server stop"},
+	},
+	"service.install": {
+		Summary: "Register borz as a Windows service that runs the REST server.",
+		Usage:   "borz service install [--name N] [--host H --port P --token T]",
+		Notes:   "Defaults to a loopback-only service on 127.0.0.1:19824. Use an elevated PowerShell or Command Prompt.",
+	},
+	"service.uninstall": {
+		Summary:  "Delete the borz Windows service registration.",
+		Usage:    "borz service uninstall [--name N]",
+		Examples: []string{"  borz service uninstall", "  borz service remove --name borz"},
+	},
+	"service.remove": {
+		Summary: "Alias for 'service uninstall'.",
+		Usage:   "borz service remove [--name N]",
+	},
+	"service.start": {
+		Summary: "Start the borz Windows service.",
+		Usage:   "borz service start [--name N]",
+	},
+	"service.stop": {
+		Summary: "Stop the borz Windows service.",
+		Usage:   "borz service stop [--name N]",
+	},
+	"service.status": {
+		Summary: "Print the borz Windows service state.",
+		Usage:   "borz service status [--name N]",
 	},
 
 	// --- Subcommand pages: client.* ---
