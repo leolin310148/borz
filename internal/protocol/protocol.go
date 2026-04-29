@@ -261,18 +261,18 @@ type TraceStatus struct {
 
 // ResponseData is the data field of a successful response.
 type ResponseData struct {
-	Title    string      `json:"title,omitempty"`
-	URL      string      `json:"url,omitempty"`
-	TabID    interface{} `json:"tabId,omitempty"`
-	Tab      string      `json:"tab,omitempty"`
-	Seq      *int        `json:"seq,omitempty"`
-	Cursor   *int        `json:"cursor,omitempty"`
+	Title  string      `json:"title,omitempty"`
+	URL    string      `json:"url,omitempty"`
+	TabID  interface{} `json:"tabId,omitempty"`
+	Tab    string      `json:"tab,omitempty"`
+	Seq    *int        `json:"seq,omitempty"`
+	Cursor *int        `json:"cursor,omitempty"`
 
-	SnapshotData   *SnapshotData   `json:"snapshotData,omitempty"`
-	Value          string          `json:"value,omitempty"`
-	ScreenshotPath string          `json:"screenshotPath,omitempty"`
-	DataURL        string          `json:"dataUrl,omitempty"`
-	Result         interface{}     `json:"result,omitempty"`
+	SnapshotData   *SnapshotData `json:"snapshotData,omitempty"`
+	Value          string        `json:"value,omitempty"`
+	ScreenshotPath string        `json:"screenshotPath,omitempty"`
+	DataURL        string        `json:"dataUrl,omitempty"`
+	Result         interface{}   `json:"result,omitempty"`
 
 	Tabs        []TabInfo `json:"tabs,omitempty"`
 	ActiveIndex *int      `json:"activeIndex,omitempty"`
@@ -300,7 +300,7 @@ type Response struct {
 	Error   string        `json:"error,omitempty"`
 }
 
-// DaemonInfo is persisted in ~/.bb-browser/daemon.json.
+// DaemonInfo is persisted in ~/.borz/daemon.json.
 type DaemonInfo struct {
 	PID   int    `json:"pid"`
 	Host  string `json:"host"`

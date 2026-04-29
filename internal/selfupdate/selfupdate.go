@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-const DefaultRepo = "leolin310148/bb-browser-go"
+const DefaultRepo = "leolin310148/borz"
 
 type Release struct {
 	TagName string  `json:"tag_name"`
@@ -170,7 +170,7 @@ func latestReleaseFrom(ctx context.Context, baseURL, repo string, client *http.C
 }
 
 func AssetName(goos, goarch string) string {
-	name := fmt.Sprintf("bb-browser-%s-%s", goos, goarch)
+	name := fmt.Sprintf("borz-%s-%s", goos, goarch)
 	if goos == "windows" {
 		name += ".exe"
 	}
@@ -299,7 +299,7 @@ func downloadVerified(ctx context.Context, client *http.Client, url, destPath, e
 		return "", fmt.Errorf("download %s: http %d", url, resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(destPath), ".bb-browser-update-*")
+	tmp, err := os.CreateTemp(filepath.Dir(destPath), ".borz-update-*")
 	if err != nil {
 		return "", err
 	}

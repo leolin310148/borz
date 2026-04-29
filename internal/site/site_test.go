@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 func writeSite(t *testing.T, dir, rel, body string) string {
@@ -181,7 +181,7 @@ func TestScanSites_NonexistentDir(t *testing.T) {
 
 func TestAllSites_LocalOverridesCommunity(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 
 	// Local and community both have "shared"; local should win.
 	writeSite(t, home, "sites/shared.js", strings.Replace(sampleJS, `"name": "example"`, `"name": "shared"`, 1))
@@ -206,7 +206,7 @@ func TestAllSites_LocalOverridesCommunity(t *testing.T) {
 
 func TestFindSite(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	writeSite(t, home, "sites/example.js", sampleJS)
 
 	if s := FindSite("example"); s == nil || s.Name != "example" {
@@ -219,7 +219,7 @@ func TestFindSite(t *testing.T) {
 
 func TestSearchSites(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	writeSite(t, home, "sites/example.js", sampleJS)
 	otherJS := strings.Replace(sampleJS, `"name": "example"`, `"name": "other"`, 1)
 	otherJS = strings.Replace(otherJS, `"domain": "example.com"`, `"domain": "other.net"`, 1)

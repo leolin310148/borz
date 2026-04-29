@@ -1,4 +1,4 @@
-// Package diagnostics runs end-to-end health checks across the bb-browser
+// Package diagnostics runs end-to-end health checks across the borz
 // stack (binary, daemon, CDP, tabs) so CLI / MCP / REST surfaces can share
 // one implementation.
 package diagnostics
@@ -11,9 +11,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/config"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // Check is one row of doctor output.
@@ -28,7 +28,7 @@ type Check struct {
 // Warn rows do not flip ok.
 func Run(version string) ([]Check, bool) {
 	checks := []Check{
-		{Name: "Binary", Status: "ok", Detail: fmt.Sprintf("bb-browser-go %s", version)},
+		{Name: "Binary", Status: "ok", Detail: fmt.Sprintf("borz %s", version)},
 		checkHomeDir(),
 	}
 
@@ -107,7 +107,7 @@ func checkDaemonProcess(info *protocol.DaemonInfo) Check {
 		return Check{
 			Name:   "Daemon process",
 			Status: "fail",
-			Detail: fmt.Sprintf("pid %d is gone — stale daemon.json (run 'bb-browser daemon stop' or delete %s)", info.PID, config.DaemonJSONPath()),
+			Detail: fmt.Sprintf("pid %d is gone — stale daemon.json (run 'borz daemon stop' or delete %s)", info.PID, config.DaemonJSONPath()),
 		}
 	}
 	return Check{Name: "Daemon process", Status: "ok", Detail: fmt.Sprintf("pid %d alive", info.PID)}
@@ -130,7 +130,7 @@ func checkCDPConnected(raw json.RawMessage) Check {
 		return Check{
 			Name:   "CDP connected",
 			Status: "fail",
-			Detail: "daemon is up but not attached to Chrome — start the browser or check BB_BROWSER_CDP_URL",
+			Detail: "daemon is up but not attached to Chrome — start the browser or check BORZ_CDP_URL",
 		}
 	}
 	return Check{Name: "CDP connected", Status: "ok", Detail: "daemon attached to Chrome"}
@@ -162,7 +162,7 @@ func checkTabs() Check {
 		return Check{Name: "Tabs", Status: "warn", Detail: resp.Error}
 	}
 	if resp.Data == nil || len(resp.Data.Tabs) == 0 {
-		return Check{Name: "Tabs", Status: "warn", Detail: "no open tabs (open one with 'bb-browser open <url>')"}
+		return Check{Name: "Tabs", Status: "warn", Detail: "no open tabs (open one with 'borz open <url>')"}
 	}
 	return Check{Name: "Tabs", Status: "ok", Detail: fmt.Sprintf("%d open", len(resp.Data.Tabs))}
 }

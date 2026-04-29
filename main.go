@@ -12,15 +12,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/config"
-	"github.com/leolin310148/bb-browser-go/internal/daemon"
-	"github.com/leolin310148/bb-browser-go/internal/jq"
-	"github.com/leolin310148/bb-browser-go/internal/jseval"
-	mcpserver "github.com/leolin310148/bb-browser-go/internal/mcp"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
-	"github.com/leolin310148/bb-browser-go/internal/selfupdate"
-	"github.com/leolin310148/bb-browser-go/internal/site"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/daemon"
+	"github.com/leolin310148/borz/internal/jq"
+	"github.com/leolin310148/borz/internal/jseval"
+	mcpserver "github.com/leolin310148/borz/internal/mcp"
+	"github.com/leolin310148/borz/internal/protocol"
+	"github.com/leolin310148/borz/internal/selfupdate"
+	"github.com/leolin310148/borz/internal/site"
 )
 
 var version = "0.1.0"
@@ -63,7 +63,7 @@ func main() {
 	cmdArgs := cleanArgs[1:]
 
 	// Intercept '<command> [sub] --help' / '<command> [sub] -h' before dispatch
-	// so a help request never executes the command (e.g. 'bb-browser update
+	// so a help request never executes the command (e.g. 'borz update
 	// --help' used to perform a real self-update). The top-level 'help
 	// [command [sub]]' form is handled explicitly below.
 	if command != "help" && helpRequested(args, cmdArgs) {
@@ -102,12 +102,12 @@ func main() {
 		}
 		printHelp()
 	case "version", "--version", "-v":
-		fmt.Println("bb-browser-go", version)
+		fmt.Println("borz", version)
 
 	// --- Navigation ---
 	case "open":
 		if len(cmdArgs) == 0 {
-			fatal("Usage: bb-browser open <url> [--tab <tabId>] [--new] [--wait-for <selector>] [--timeout <ms>]")
+			fatal("Usage: borz open <url> [--tab <tabId>] [--new] [--wait-for <selector>] [--timeout <ms>]")
 		}
 		url := cmdArgs[0]
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionOpen, URL: url}
@@ -180,7 +180,7 @@ func main() {
 
 	case "fill":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser fill <ref> <text>")
+			fatal("Usage: borz fill <ref> <text>")
 		}
 		ref := normalizeRef(cmdArgs[0])
 		text := strings.Join(cmdArgs[1:], " ")
@@ -193,7 +193,7 @@ func main() {
 
 	case "type":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser type <ref> <text>")
+			fatal("Usage: borz type <ref> <text>")
 		}
 		ref := normalizeRef(cmdArgs[0])
 		text := strings.Join(cmdArgs[1:], " ")
@@ -224,7 +224,7 @@ func main() {
 
 	case "select":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser select <ref> <value>")
+			fatal("Usage: borz select <ref> <value>")
 		}
 		ref := normalizeRef(cmdArgs[0])
 		value := cmdArgs[1]
@@ -249,7 +249,7 @@ func main() {
 			}
 		} else {
 			if len(cmdArgs) == 0 {
-				fatal("Usage: bb-browser eval <script> | --file <path>")
+				fatal("Usage: borz eval <script> | --file <path>")
 			}
 			script = strings.Join(cmdArgs, " ")
 		}
@@ -270,7 +270,7 @@ func main() {
 
 	case "get":
 		if len(cmdArgs) == 0 {
-			fatal("Usage: bb-browser get <attribute> [ref]")
+			fatal("Usage: borz get <attribute> [ref]")
 		}
 		attribute := cmdArgs[0]
 		var ref string
@@ -332,7 +332,7 @@ func main() {
 
 	case "press":
 		if len(cmdArgs) == 0 {
-			fatal("Usage: bb-browser press <key>")
+			fatal("Usage: borz press <key>")
 		}
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionPress, Key: cmdArgs[0]}
 		setTab(req, globalTabID)
@@ -486,7 +486,7 @@ func main() {
 	// --- Fetch ---
 	case "fetch":
 		if len(cmdArgs) == 0 {
-			fatal("Usage: bb-browser fetch <url>")
+			fatal("Usage: borz fetch <url>")
 		}
 		handleFetch(cmdArgs, jsonOutput, globalTabID, args)
 
@@ -547,7 +547,7 @@ func main() {
 		sendAndPrint(req, jsonOutput, nil)
 
 	default:
-		// Try as site command: bb-browser twitter/search "AI"
+		// Try as site command: borz twitter/search "AI"
 		if strings.Contains(command, "/") {
 			handleSiteRun(command, cmdArgs, jsonOutput, globalTabID)
 		} else {
@@ -555,7 +555,7 @@ func main() {
 			if suggestions := suggestCommands(command, 3); len(suggestions) > 0 {
 				fmt.Fprintf(os.Stderr, "Did you mean: %s?\n", strings.Join(suggestions, ", "))
 			}
-			fmt.Fprintln(os.Stderr, "Run 'bb-browser help' for the full command list.")
+			fmt.Fprintln(os.Stderr, "Run 'borz help' for the full command list.")
 			os.Exit(1)
 		}
 	}
@@ -728,7 +728,7 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 }
 
 // resolveIdleTabTimeout returns the idle-tab-close threshold in minutes.
-// Precedence: --idle-tab-timeout flag > BB_BROWSER_TAB_IDLE_TIMEOUT env >
+// Precedence: --idle-tab-timeout flag > BORZ_TAB_IDLE_TIMEOUT env >
 // config.DefaultIdleTabCloseMinutes. 0 disables the reaper. Negative values
 // are clamped to 0. Non-numeric inputs fall back to the next source.
 func resolveIdleTabTimeout(rawArgs []string) int {
@@ -740,7 +740,7 @@ func resolveIdleTabTimeout(rawArgs []string) int {
 			return n
 		}
 	}
-	if v := os.Getenv("BB_BROWSER_TAB_IDLE_TIMEOUT"); v != "" {
+	if v := config.Env("BORZ_TAB_IDLE_TIMEOUT", "BB_BROWSER_TAB_IDLE_TIMEOUT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			if n < 0 {
 				n = 0
@@ -798,15 +798,15 @@ func stopDaemonAfterUpdate() {
 		return
 	}
 	if isRemoteBind(info.Host) {
-		fmt.Fprintf(os.Stderr, "Note: bb-browser server running on %s:%d (pid %d) is still on the old binary.\n", info.Host, info.Port, info.PID)
+		fmt.Fprintf(os.Stderr, "Note: borz server running on %s:%d (pid %d) is still on the old binary.\n", info.Host, info.Port, info.PID)
 		fmt.Fprintln(os.Stderr, "      Restart it with your original flags so the new binary takes effect:")
-		fmt.Fprintln(os.Stderr, "          bb-browser server shutdown")
-		fmt.Fprintln(os.Stderr, "          bb-browser server --host <host> --port <port> --token <token> [other flags]")
+		fmt.Fprintln(os.Stderr, "          borz server shutdown")
+		fmt.Fprintln(os.Stderr, "          borz server --host <host> --port <port> --token <token> [other flags]")
 		return
 	}
 	if err := client.StopDaemon(); err != nil {
 		fmt.Fprintf(os.Stderr, "Note: could not stop running daemon (pid %d): %v\n", info.PID, err)
-		fmt.Fprintln(os.Stderr, "      Restart it manually so the new binary is in effect: bb-browser daemon shutdown")
+		fmt.Fprintln(os.Stderr, "      Restart it manually so the new binary is in effect: borz daemon shutdown")
 		return
 	}
 	fmt.Fprintf(os.Stderr, "Stopped running daemon (pid %d); next command will relaunch it from the new binary.\n", info.PID)
@@ -841,7 +841,7 @@ func startDaemonForeground(rawArgs []string) {
 	if existing, err := client.ReadDaemonJSON(); err == nil && existing != nil && existing.Port == port && existing.Host == host {
 		if client.IsProcessAlive(existing.PID) {
 			if _, err := client.GetLocalDaemonStatus(); err == nil {
-				fmt.Fprintf(os.Stderr, "bb-browser daemon already running on %s:%d (pid %d)\n", existing.Host, existing.Port, existing.PID)
+				fmt.Fprintf(os.Stderr, "borz daemon already running on %s:%d (pid %d)\n", existing.Host, existing.Port, existing.PID)
 				return
 			}
 		}
@@ -905,7 +905,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 
 	host := getArgValue(rawArgs, "--host")
 	if host == "" {
-		host = os.Getenv("BB_BROWSER_SERVER_HOST")
+		host = config.Env("BORZ_SERVER_HOST", "BB_BROWSER_SERVER_HOST")
 	}
 	if host == "" {
 		host = "0.0.0.0"
@@ -916,7 +916,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 		if p, err := strconv.Atoi(v); err == nil {
 			port = p
 		}
-	} else if v := os.Getenv("BB_BROWSER_SERVER_PORT"); v != "" {
+	} else if v := config.Env("BORZ_SERVER_PORT", "BB_BROWSER_SERVER_PORT"); v != "" {
 		if p, err := strconv.Atoi(v); err == nil {
 			port = p
 		}
@@ -924,13 +924,13 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 
 	token := getArgValue(rawArgs, "--token")
 	if token == "" {
-		token = os.Getenv("BB_BROWSER_TOKEN")
+		token = config.Env("BORZ_TOKEN", "BB_BROWSER_TOKEN")
 	}
 
 	if isRemoteBind(host) && token == "" {
 		fmt.Fprintf(os.Stderr,
 			"Error: --host=%s is non-loopback; refusing to start without a token.\n"+
-				"       Pass --token <secret> or set BB_BROWSER_TOKEN.\n", host)
+				"       Pass --token <secret> or set BORZ_TOKEN.\n", host)
 		os.Exit(1)
 	}
 
@@ -944,7 +944,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 		Version:             version,
 	})
 
-	fmt.Fprintf(os.Stderr, "bb-browser server starting on %s:%d\n", host, port)
+	fmt.Fprintf(os.Stderr, "borz server starting on %s:%d\n", host, port)
 	if token != "" {
 		fmt.Fprintln(os.Stderr, "Authorization required: Authorization: Bearer <token>")
 	} else {
@@ -1000,7 +1000,7 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 
 	case "search":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser site search <query>")
+			fatal("Usage: borz site search <query>")
 		}
 		results := site.SearchSites(strings.Join(cmdArgs[1:], " "))
 		if jsonOutput {
@@ -1014,7 +1014,7 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 
 	case "info":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser site info <name>")
+			fatal("Usage: borz site info <name>")
 		}
 		s := site.FindSite(cmdArgs[1])
 		if s == nil {
@@ -1050,12 +1050,12 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 
 	case "run":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser site run <name> [args...]")
+			fatal("Usage: borz site run <name> [args...]")
 		}
 		handleSiteRun(cmdArgs[1], cmdArgs[2:], jsonOutput, globalTabID)
 
 	default:
-		// Try as site name: "bb-browser site twitter/search AI"
+		// Try as site name: "borz site twitter/search AI"
 		if strings.Contains(sub, "/") {
 			handleSiteRun(sub, cmdArgs[1:], jsonOutput, globalTabID)
 		} else {
@@ -1068,7 +1068,7 @@ func handleSiteRun(name string, cmdArgs []string, jsonOutput bool, globalTabID s
 	meta := site.FindSite(name)
 	if meta == nil {
 		fmt.Fprintf(os.Stderr, "Adapter not found: %s\n", name)
-		fmt.Fprintf(os.Stderr, "Run 'bb-browser site update' to pull community adapters.\n")
+		fmt.Fprintf(os.Stderr, "Run 'borz site update' to pull community adapters.\n")
 		os.Exit(1)
 	}
 
@@ -1338,15 +1338,15 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 }
 
 func printHelp() {
-	fmt.Println(`bb-browser-go - Your browser is the API
+	fmt.Println(`borz - Your browser is the API
 
-Usage: bb-browser <command> [options]
+Usage: borz <command> [options]
 
 Per-command help (most useful flags only show up here):
-  bb-browser <command> --help        Detailed usage, flags, examples
-  bb-browser help <command>          Same, via the 'help' subcommand
-  bb-browser help <command> <sub>    Drill into subcommands (e.g. 'tab new')
-  bb-browser help --all              Dump every command's help (pipe to a pager)
+  borz <command> --help        Detailed usage, flags, examples
+  borz help <command>          Same, via the 'help' subcommand
+  borz help <command> <sub>    Drill into subcommands (e.g. 'tab new')
+  borz help --all              Dump every command's help (pipe to a pager)
 
 Navigation:
   open <url> [--new] [--wait-for <sel>] [--timeout <ms>]
@@ -1440,5 +1440,5 @@ Tips:
 
 Agents & automation:
   See skill.md / llm.txt in this repo for end-to-end guidance on driving
-  bb-browser from an agent (MCP, CLI, and HTTP modes).`)
+  borz from an agent (MCP, CLI, and HTTP modes).`)
 }

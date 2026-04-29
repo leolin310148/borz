@@ -3,7 +3,7 @@ package daemon
 import (
 	"testing"
 
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 func intP(v int) *int { return &v }

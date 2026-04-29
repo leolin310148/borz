@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/leolin310148/bb-browser-go/internal/config"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // SiteMeta holds adapter metadata parsed from @meta blocks.
@@ -284,6 +284,9 @@ func generateID() string {
 
 // UpdateCommunityRepo pulls or clones the community adapter repo.
 func UpdateCommunityRepo() error {
+	if _, err := config.EnsureHomeDir(); err != nil {
+		return err
+	}
 	dir := config.CommunitySitesDir()
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 		// Git pull

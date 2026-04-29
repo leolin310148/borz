@@ -15,7 +15,7 @@ const docsHTML = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>bb-browser daemon API</title>
+<title>borz daemon API</title>
 <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
 </head>
 <body>

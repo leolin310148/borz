@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -17,13 +18,69 @@ const (
 	DefaultIdleTabCloseMinutes = 30
 )
 
-// HomeDir returns the bb-browser home directory (~/.bb-browser).
+const (
+	HomeEnv        = "BORZ_HOME"
+	LegacyHomeEnv  = "BB_BROWSER_HOME"
+	HomeName       = ".borz"
+	LegacyHomeName = ".bb-browser"
+)
+
+// Env returns the current env var when set, falling back to the legacy name.
+func Env(name, legacyName string) string {
+	if env := os.Getenv(name); env != "" {
+		return env
+	}
+	return os.Getenv(legacyName)
+}
+
+// HomeDir returns the borz home directory. For read paths, it prefers ~/.borz
+// when present, otherwise falls back to an existing legacy ~/.bb-browser.
 func HomeDir() string {
-	if env := os.Getenv("BB_BROWSER_HOME"); env != "" {
+	if env := os.Getenv(HomeEnv); env != "" {
+		return env
+	}
+	if env := os.Getenv(LegacyHomeEnv); env != "" {
 		return env
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".bb-browser")
+	current := filepath.Join(home, HomeName)
+	if pathExists(current) {
+		return current
+	}
+	legacy := filepath.Join(home, LegacyHomeName)
+	if pathExists(legacy) {
+		return legacy
+	}
+	return current
+}
+
+// EnsureHomeDir returns a writable home directory, migrating ~/.bb-browser to
+// ~/.borz when the new directory does not already exist.
+func EnsureHomeDir() (string, error) {
+	if env := os.Getenv(HomeEnv); env != "" {
+		return env, os.MkdirAll(env, 0o755)
+	}
+	if env := os.Getenv(LegacyHomeEnv); env != "" {
+		return env, os.MkdirAll(env, 0o755)
+	}
+	home, _ := os.UserHomeDir()
+	current := filepath.Join(home, HomeName)
+	legacy := filepath.Join(home, LegacyHomeName)
+	if !pathExists(current) && pathExists(legacy) {
+		if err := os.Rename(legacy, current); err != nil {
+			return "", fmt.Errorf("migrate %s to %s: %w", legacy, current, err)
+		}
+		return current, nil
+	}
+	if err := os.MkdirAll(current, 0o755); err != nil {
+		return "", err
+	}
+	return current, nil
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // DaemonJSONPath returns the path to daemon.json.

@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/config"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/config"
 )
 
 func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
@@ -23,15 +23,15 @@ func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			serverURL = cmdArgs[1]
 		}
 		if serverURL == "" {
-			serverURL = os.Getenv("BB_BROWSER_SERVER_URL")
+			serverURL = config.Env("BORZ_SERVER_URL", "BB_BROWSER_SERVER_URL")
 		}
 		if serverURL == "" {
-			fatal("Usage: bb-browser client setup <server-url> [--token <token>] [--no-check]")
+			fatal("Usage: borz client setup <server-url> [--token <token>] [--no-check]")
 		}
 
 		token := getArgValue(rawArgs, "--token")
 		if token == "" {
-			token = os.Getenv("BB_BROWSER_TOKEN")
+			token = config.Env("BORZ_TOKEN", "BB_BROWSER_TOKEN")
 		}
 
 		cfg, err := client.NewRemoteConfig(serverURL, token)
@@ -51,13 +51,13 @@ func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			return
 		}
 		fmt.Printf("Remote client configured: %s\n", cfg.URL)
-		fmt.Println("Use 'bb-browser --remote <command>' to send a command to this server")
+		fmt.Println("Use 'borz --remote <command>' to send a command to this server")
 
 	case "enable":
 		cfg, err := client.ReadRemoteConfig()
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				fatal("client is not configured; run 'bb-browser client setup <server-url> [--token <token>]'")
+				fatal("client is not configured; run 'borz client setup <server-url> [--token <token>]'")
 			}
 			fatal(err.Error())
 		}

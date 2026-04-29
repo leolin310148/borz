@@ -51,7 +51,7 @@ func TestUpdateCommunityRepo_ClonePath(t *testing.T) {
 	// path is taken. The real remote URL will (likely) fail during clone — we
 	// just want coverage of the branch.
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	// Allow a short network attempt; skip if clone unexpectedly succeeds.
 	_ = UpdateCommunityRepo()
 

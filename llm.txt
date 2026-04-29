@@ -1,4 +1,4 @@
-# bb-browser-go
+# borz
 
 > A single-binary Go CLI that drives any Chromium browser via the Chrome DevTools Protocol. It ships a daemon, a stdio MCP server, and a remote-accessible HTTP/REST server, so humans, shell scripts, workflow tools, and AI agents can all share the same live browser session (cookies, logins, extensions, JS state).
 
@@ -12,9 +12,9 @@
 
 ```bash
 # macOS (Apple Silicon)
-curl -LO https://github.com/leolin310148/bb-browser-go/releases/latest/download/bb-browser-darwin-arm64
-chmod +x bb-browser-darwin-arm64 && sudo mv bb-browser-darwin-arm64 /usr/local/bin/bb-browser
-# Or: go install github.com/leolin310148/bb-browser-go@latest
+curl -LO https://github.com/leolin310148/borz/releases/latest/download/borz-darwin-arm64
+chmod +x borz-darwin-arm64 && sudo mv borz-darwin-arm64 /usr/local/bin/borz
+# Or: go install github.com/leolin310148/borz@latest
 ```
 
 ## Core model
@@ -28,43 +28,43 @@ Every response carries a short `tab` id (e.g. `ab1c`); pass it as `--tab <id>` (
 ## CLI cheat sheet
 
 ```bash
-bb-browser open <url>                              # reuses tab with same URL; --new forces fresh
-bb-browser open <url> --wait-for '<selector>' [--timeout <ms>]  # block until selector found (10s default)
-bb-browser snapshot [-i] [-c] [-d N]               # accessibility tree with refs
-bb-browser snapshot --text-only                    # reader-mode plain text (no refs)
-bb-browser click <ref>                             # refs come from snapshot
-bb-browser fill <ref> <text>                       # clear + fill
-bb-browser type <ref> <text>                       # append
-bb-browser press <key>                             # Enter, Tab, ArrowDown, Escape, ...
-bb-browser eval <script>                           # JS in page context, returns JSON
-bb-browser eval --unwrap <script>                  # print result raw (strings unquoted)
-bb-browser eval --file <path>                      # read script from disk
-bb-browser eval --file ./x.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSON args as top-level consts
-bb-browser eval "await fetch('/x').then(...)"      # top-level await auto-wraps in async IIFE
-bb-browser screenshot                              # base64 PNG in JSON
-bb-browser get <url|title|text|href|value|class> [ref]
-bb-browser network [requests|clear] [--filter] [--method] [--status] [--with-body]
-bb-browser network requests --tail [--interval ms]   # live stream of new requests (Ctrl+C to stop)
-bb-browser console [--clear] [--filter]
-bb-browser errors [--clear] [--filter]
-bb-browser fetch <url> [--method POST]             # authenticated HTTP via page
-bb-browser tab                                     # list; "tab new", "tab 2", "tab close 1"
-bb-browser frame <selector> | main                 # iframe switching
-bb-browser dialog accept|dismiss [text]
-bb-browser trace start|stop|status
-bb-browser extension status                      # optional Chrome extension capabilities
-bb-browser cookies all [domain]                  # all-domain cookie store (extension)
-bb-browser bookmarks tree|search|create|update|remove
-bb-browser browser-history search [query] [--limit N]
-bb-browser downloads list|search|start|erase|cancel|pause|resume
-bb-browser window list|new|focus|close           # browser windows (extension)
-bb-browser site list|search|info|run|update       # site adapters
-bb-browser <platform>/<adapter> [args]            # shorthand for "site run"
-bb-browser status | daemon [shutdown]
-bb-browser doctor [--json]                         # diagnose CLI/daemon/CDP/tabs end-to-end
-bb-browser server --host 0.0.0.0 --token ... [shutdown]
-bb-browser help [command [sub]]                    # per-command help
-bb-browser <command> --help                        # same, inline form
+borz open <url>                              # reuses tab with same URL; --new forces fresh
+borz open <url> --wait-for '<selector>' [--timeout <ms>]  # block until selector found (10s default)
+borz snapshot [-i] [-c] [-d N]               # accessibility tree with refs
+borz snapshot --text-only                    # reader-mode plain text (no refs)
+borz click <ref>                             # refs come from snapshot
+borz fill <ref> <text>                       # clear + fill
+borz type <ref> <text>                       # append
+borz press <key>                             # Enter, Tab, ArrowDown, Escape, ...
+borz eval <script>                           # JS in page context, returns JSON
+borz eval --unwrap <script>                  # print result raw (strings unquoted)
+borz eval --file <path>                      # read script from disk
+borz eval --file ./x.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSON args as top-level consts
+borz eval "await fetch('/x').then(...)"      # top-level await auto-wraps in async IIFE
+borz screenshot                              # base64 PNG in JSON
+borz get <url|title|text|href|value|class> [ref]
+borz network [requests|clear] [--filter] [--method] [--status] [--with-body]
+borz network requests --tail [--interval ms]   # live stream of new requests (Ctrl+C to stop)
+borz console [--clear] [--filter]
+borz errors [--clear] [--filter]
+borz fetch <url> [--method POST]             # authenticated HTTP via page
+borz tab                                     # list; "tab new", "tab 2", "tab close 1"
+borz frame <selector> | main                 # iframe switching
+borz dialog accept|dismiss [text]
+borz trace start|stop|status
+borz extension status                      # optional Chrome extension capabilities
+borz cookies all [domain]                  # all-domain cookie store (extension)
+borz bookmarks tree|search|create|update|remove
+borz browser-history search [query] [--limit N]
+borz downloads list|search|start|erase|cancel|pause|resume
+borz window list|new|focus|close           # browser windows (extension)
+borz site list|search|info|run|update       # site adapters
+borz <platform>/<adapter> [args]            # shorthand for "site run"
+borz status | daemon [shutdown]
+borz doctor [--json]                         # diagnose CLI/daemon/CDP/tabs end-to-end
+borz server --host 0.0.0.0 --token ... [shutdown]
+borz help [command [sub]]                    # per-command help
+borz <command> --help                        # same, inline form
 ```
 
 Global flags: `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only), `--since <seq|last_action>`.
@@ -72,13 +72,13 @@ Global flags: `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only)
 ## MCP (for AI agents)
 
 ```bash
-bb-browser mcp   # stdio MCP server
+borz mcp   # stdio MCP server
 ```
 
 MCP client config (e.g. Claude Code `.claude/settings.json`):
 
 ```json
-{ "mcpServers": { "bb-browser": { "command": "bb-browser", "args": ["mcp"] } } }
+{ "mcpServers": { "borz": { "command": "borz", "args": ["mcp"] } } }
 ```
 
 Tools (36 total):
@@ -96,7 +96,7 @@ Recommended agent flow: `browser_tab_list` → `browser_navigate` (reuses tab wi
 ## HTTP / REST (for remote integrations)
 
 ```bash
-bb-browser server --host 0.0.0.0 --port 19824 --token "$(openssl rand -hex 16)"
+borz server --host 0.0.0.0 --port 19824 --token "$(openssl rand -hex 16)"
 # refuses to bind non-loopback without --token
 ```
 
@@ -142,9 +142,10 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 
 ## Environment
 
-- `BB_BROWSER_CDP_URL` — override CDP endpoint
-- `BB_BROWSER_HOME` — config dir (default `~/.bb-browser`)
-- `BB_BROWSER_TOKEN`, `BB_BROWSER_SERVER_HOST`, `BB_BROWSER_SERVER_PORT` — server mode
+- `BORZ_CDP_URL` — override CDP endpoint
+- `BORZ_HOME` — config dir (default `~/.borz`)
+- `BORZ_TOKEN`, `BORZ_SERVER_HOST`, `BORZ_SERVER_PORT` — server mode
+- Legacy `BB_BROWSER_*` env vars are still accepted during the rename transition.
 
 ## Key behaviors to remember
 
@@ -153,21 +154,21 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 - **`eval` auto-wraps top-level `await`** in `(async () => { return (<script>) })()` so `await fetch(...).then(...)` works without manual IIFE boilerplate. Disable with `--no-auto-await`. Already-async-IIFE scripts are not double-wrapped.
 - **`eval --unwrap`** prints `resp.data.result` raw — strings without surrounding quotes, everything else JSON-pretty. `--jq` and `--json` still take precedence when set.
 - **Non-loopback bind requires a token.** The server refuses to start otherwise.
-- **Site adapters run on the daemon's filesystem**, not the client's. A remote client invoking `/v1/sites/*` or `browser_site_run` gets whatever adapters the server has in `~/.bb-browser/sites` or `~/.bb-browser/bb-sites` (community, pulled via `bb-browser site update`).
+- **Site adapters run on the daemon's filesystem**, not the client's. A remote client invoking `/v1/sites/*` or `browser_site_run` gets whatever adapters the server has in `~/.borz/sites` or `~/.borz/bb-sites` (community, pulled via `borz site update`).
 - **Network/console/error buffers are per-tab rings.** Use `--since last_action` for incremental queries.
 - **The optional Chrome extension unlocks browser-level APIs CDP cannot see.** Use it for all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser-level event streams. Commands and MCP tools report a clear "no extension connected" error when it is missing.
 
 ## Minimal end-to-end example
 
 ```bash
-bb-browser open https://news.ycombinator.com
-bb-browser snapshot -i -c
-bb-browser click 5
-bb-browser eval "document.querySelector('.title').textContent"
+borz open https://news.ycombinator.com
+borz snapshot -i -c
+borz click 5
+borz eval "document.querySelector('.title').textContent"
 ```
 
 ## Links
 
-- Source: https://github.com/leolin310148/bb-browser-go
+- Source: https://github.com/leolin310148/borz
 - Upstream (Node): https://github.com/nicepkg/bb-browser
 - Community site adapters: https://github.com/epiral/bb-sites

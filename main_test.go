@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/leolin310148/bb-browser-go/internal/config"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 func TestIsRemoteBind(t *testing.T) {
@@ -160,15 +160,23 @@ func TestSetSince(t *testing.T) {
 
 func TestResolveIdleTabTimeout(t *testing.T) {
 	// Default when neither flag nor env present.
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
 	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
 	if got := resolveIdleTabTimeout(nil); got != config.DefaultIdleTabCloseMinutes {
 		t.Errorf("default: got %d, want %d", got, config.DefaultIdleTabCloseMinutes)
 	}
 
-	// Env wins over default.
+	// Current env wins over default.
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "20")
+	if got := resolveIdleTabTimeout(nil); got != 20 {
+		t.Errorf("current env: got %d, want 20", got)
+	}
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+
+	// Legacy env wins over default.
 	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "15")
 	if got := resolveIdleTabTimeout(nil); got != 15 {
-		t.Errorf("env: got %d, want 15", got)
+		t.Errorf("legacy env: got %d, want 15", got)
 	}
 
 	// Flag wins over env.

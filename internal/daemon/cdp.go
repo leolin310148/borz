@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // CdpTargetInfo describes a CDP target (browser tab).
@@ -47,10 +47,10 @@ type CdpConnection struct {
 
 	LastError string
 
-	readyMu    sync.Mutex
-	readyCh    chan struct{}
-	readyErr   error
-	readyOnce  sync.Once
+	readyMu   sync.Mutex
+	readyCh   chan struct{}
+	readyErr  error
+	readyOnce sync.Once
 
 	// sessionListeners for flat-mode session events
 	sessionMu        sync.Mutex
@@ -299,7 +299,9 @@ func (c *CdpConnection) handleSessionResponse(raw []byte, msg map[string]json.Ra
 	}
 
 	if errRaw, hasErr := msg["error"]; hasErr {
-		var cdpErr struct{ Message string `json:"message"` }
+		var cdpErr struct {
+			Message string `json:"message"`
+		}
 		json.Unmarshal(errRaw, &cdpErr)
 		listener.errCh <- fmt.Errorf("%s", cdpErr.Message)
 	} else if result, hasResult := msg["result"]; hasResult {
@@ -462,8 +464,8 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 
 	case "Runtime.consoleAPICalled":
 		var params struct {
-			Type       string `json:"type"`
-			Args       []struct {
+			Type string `json:"type"`
+			Args []struct {
 				Value       interface{} `json:"value"`
 				Description string      `json:"description"`
 			} `json:"args"`
@@ -513,11 +515,11 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 	case "Runtime.exceptionThrown":
 		var params struct {
 			ExceptionDetails struct {
-				Text      string `json:"text"`
-				URL       string `json:"url"`
-				LineNumber   int `json:"lineNumber"`
-				ColumnNumber int `json:"columnNumber"`
-				Exception struct {
+				Text         string `json:"text"`
+				URL          string `json:"url"`
+				LineNumber   int    `json:"lineNumber"`
+				ColumnNumber int    `json:"columnNumber"`
+				Exception    struct {
 					Description string `json:"description"`
 				} `json:"exception"`
 				StackTrace *struct {

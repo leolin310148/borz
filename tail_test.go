@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 func TestEmitNetworkTail_Human(t *testing.T) {

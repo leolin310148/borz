@@ -36,7 +36,7 @@ async function refreshStatus() {
   } catch {
     $("status").textContent = "Daemon unreachable";
     $("status").className = "status bad";
-    $("caps").textContent = "Start bb-browser daemon/server, then save to reconnect.";
+    $("caps").textContent = "Start borz daemon/server, then save to reconnect.";
   }
 }
 

@@ -1,4 +1,4 @@
-// bb-browser bridge — service worker.
+// borz bridge — service worker.
 //
 // Connects to the local daemon over WebSocket and exposes capabilities that
 // the Chrome DevTools Protocol cannot reach: cross-domain chrome.cookies,

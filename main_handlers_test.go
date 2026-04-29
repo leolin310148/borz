@@ -42,8 +42,8 @@ func TestPrintHelp(t *testing.T) {
 	out := captureStdout(t, func() {
 		printHelp()
 	})
-	if !strings.Contains(out, "bb-browser") {
-		t.Fatalf("printHelp should mention bb-browser: %q", out[:min(200, len(out))])
+	if !strings.Contains(out, "borz") {
+		t.Fatalf("printHelp should mention borz: %q", out[:min(200, len(out))])
 	}
 	// Spot-check a few sections.
 	for _, want := range []string{"Navigation:", "Interaction:", "Observation:"} {

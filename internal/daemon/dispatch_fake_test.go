@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // setupOnePage configures the fake to advertise one page target and attach it.

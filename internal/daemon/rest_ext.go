@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/daemon/extbridge"
+	"github.com/leolin310148/borz/internal/daemon/extbridge"
 )
 
 // registerExtRoutes wires endpoints backed by the optional Chrome extension.

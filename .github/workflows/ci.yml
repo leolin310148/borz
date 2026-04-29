@@ -83,9 +83,12 @@ jobs:
             GOARCH="${target#*/}"
             EXT=""
             if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
-            OUTPUT="dist/bb-browser-${GOOS}-${GOARCH}${EXT}"
-            echo "Building ${OUTPUT}..."
-            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" -o "$OUTPUT" .
+            BORZ_OUTPUT="dist/borz-${GOOS}-${GOARCH}${EXT}"
+            SHIM_OUTPUT="dist/bb-browser-${GOOS}-${GOARCH}${EXT}"
+            echo "Building ${BORZ_OUTPUT}..."
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME#v}" -o "$BORZ_OUTPUT" .
+            echo "Building ${SHIM_OUTPUT}..."
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w" -o "$SHIM_OUTPUT" ./cmd/bb-browser-shim
           done
 
       - name: Bundle Chrome extension
@@ -100,12 +103,12 @@ jobs:
           m["version"] = "${VERSION}"
           p.write_text(json.dumps(m, indent=2) + "\n")
           EOF
-          ( cd extension && zip -r "../dist/bb-browser-extension.zip" . )
+          ( cd extension && zip -r "../dist/borz-extension.zip" . )
 
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum bb-browser-* > checksums.txt
+          sha256sum * > checksums.txt
           cat checksums.txt
 
       - name: Create release

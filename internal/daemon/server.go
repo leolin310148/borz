@@ -14,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/config"
-	"github.com/leolin310148/bb-browser-go/internal/daemon/extbridge"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/daemon/extbridge"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // ServerOptions configures the daemon HTTP server.
@@ -32,11 +32,11 @@ type ServerOptions struct {
 	IdleTabCloseMinutes int
 
 	// Version is reported by /v1/doctor so REST clients can see which
-	// bb-browser binary is serving them. Optional.
+	// borz binary is serving them. Optional.
 	Version string
 }
 
-// Server is the bb-browser daemon HTTP server.
+// Server is the borz daemon HTTP server.
 type Server struct {
 	opts         ServerOptions
 	cdp          *CdpConnection
@@ -94,7 +94,7 @@ func (s *Server) Run() error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		if isAddrInUse(err) {
-			return fmt.Errorf("a daemon may already be running on %s (try `bb-browser daemon status` or `bb-browser daemon shutdown`): %w", addr, err)
+			return fmt.Errorf("a daemon may already be running on %s (try `borz daemon status` or `borz daemon shutdown`): %w", addr, err)
 		}
 		return err
 	}
@@ -113,7 +113,7 @@ func (s *Server) Run() error {
 	s.cancelReaper = cancelReaper
 	if s.opts.IdleTabCloseMinutes > 0 {
 		threshold := time.Duration(s.opts.IdleTabCloseMinutes) * time.Minute
-		fmt.Fprintf(os.Stderr, "bb-browser idle-tab reaper enabled (threshold=%s)\n", threshold)
+		fmt.Fprintf(os.Stderr, "borz idle-tab reaper enabled (threshold=%s)\n", threshold)
 		go runIdleTabReaper(
 			reaperCtx,
 			s.cdp.TabManager,
@@ -133,14 +133,16 @@ func (s *Server) Run() error {
 		Token: s.opts.Token,
 	}
 	infoJSON, _ := json.Marshal(info)
-	os.MkdirAll(config.HomeDir(), 0755)
+	if _, err := config.EnsureHomeDir(); err != nil {
+		return err
+	}
 	os.WriteFile(config.DaemonJSONPath(), infoJSON, 0600)
 
 	// Handle graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
-	fmt.Fprintf(os.Stderr, "bb-browser daemon listening on %s\n", addr)
+	fmt.Fprintf(os.Stderr, "borz daemon listening on %s\n", addr)
 	errCh := make(chan error, 1)
 	go func() {
 		if err := s.httpSrv.Serve(ln); err != http.ErrServerClosed {
@@ -240,7 +242,7 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 				"success": false,
 				"error":   fmt.Sprintf("Chrome not connected (CDP at %s)", cdpTarget),
 				"reason":  s.cdp.LastError,
-				"hint":    "Make sure Chrome is running. Try: bb-browser daemon shutdown && bb-browser tab list",
+				"hint":    "Make sure Chrome is running. Try: borz daemon shutdown && borz tab list",
 			})
 			return
 		}

@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // defaultTailInterval is how often the CLI re-polls the daemon for new
@@ -68,7 +68,7 @@ func runTail(req *protocol.Request, jsonOutput bool, interval time.Duration, emi
 }
 
 // emitNetworkTail prints one line per newly-observed network request. The
-// human format mirrors the one used by 'bb-browser network requests' so a
+// human format mirrors the one used by 'borz network requests' so a
 // user piping output can grep without reformatting. JSON mode emits one
 // JSON object per line (JSONL) for easy `jq -c` consumption.
 func emitNetworkTail(resp *protocol.Response, jsonOutput bool) int {

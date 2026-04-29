@@ -1,6 +1,8 @@
 # Binaries
-bb-browser-go
+borz
 bb-browser
+bb-browser-go
+dist/
 *.exe
 
 # IDE

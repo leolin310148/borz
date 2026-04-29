@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // resetState zeros package-level globals so each test is independent.
@@ -62,7 +62,7 @@ func infoForServer(t *testing.T, ts *httptest.Server, token string) *protocol.Da
 
 func TestReadDaemonJSON_Success(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	info := protocol.DaemonInfo{PID: 123, Host: "127.0.0.1", Port: 19824, Token: "tok"}
 	b, _ := json.Marshal(info)
 	os.WriteFile(filepath.Join(home, "daemon.json"), b, 0o644)
@@ -77,7 +77,7 @@ func TestReadDaemonJSON_Success(t *testing.T) {
 }
 
 func TestReadDaemonJSON_MissingFile(t *testing.T) {
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 	if _, err := ReadDaemonJSON(); err == nil {
 		t.Error("expected error for missing file")
 	}
@@ -85,7 +85,7 @@ func TestReadDaemonJSON_MissingFile(t *testing.T) {
 
 func TestReadDaemonJSON_InvalidJSON(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	os.WriteFile(filepath.Join(home, "daemon.json"), []byte("not json"), 0o644)
 	if _, err := ReadDaemonJSON(); err == nil {
 		t.Error("expected json parse error")
@@ -94,7 +94,7 @@ func TestReadDaemonJSON_InvalidJSON(t *testing.T) {
 
 func TestReadDaemonJSON_ZeroFields(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	// PID=0 → treated as invalid
 	os.WriteFile(filepath.Join(home, "daemon.json"), []byte(`{"pid":0,"host":"","port":0}`), 0o644)
 	if _, err := ReadDaemonJSON(); err == nil || !strings.Contains(err.Error(), "invalid") {
@@ -106,7 +106,7 @@ func TestRemoteConfigReadWriteAndToggle(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 
 	cfg, err := ConfigureRemote("127.0.0.1:19824/", "secret")
 	if err != nil {
@@ -294,7 +294,7 @@ func TestSendCommand_InvalidResponse(t *testing.T) {
 func TestEnabledRemoteConfigRequiresSetupWhenRemoteRequested(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 	SetRemoteRouting(true)
 
 	if _, enabled, err := EnabledRemoteConfig(); err == nil || enabled {
@@ -306,7 +306,7 @@ func TestSendCommand_RemoteFlag(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 
 	var sawCommand bool
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -347,7 +347,7 @@ func TestGetJSONAndStatus_RemoteFlag(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
@@ -415,7 +415,7 @@ func TestStopDaemon_Success(t *testing.T) {
 func TestStopDaemon_NoDaemonJSON(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	if err := StopDaemon(); err == nil || !strings.Contains(err.Error(), "not running") {
 		t.Errorf("expected 'not running', got %v", err)
@@ -448,7 +448,7 @@ func TestGetDaemonStatus_Success(t *testing.T) {
 func TestGetDaemonStatus_NoDaemon(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	if _, err := GetDaemonStatus(); err == nil {
 		t.Error("expected error")
@@ -494,7 +494,7 @@ func TestGetJSON_PassesPathAndAuth(t *testing.T) {
 func TestGetJSON_NoDaemon(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 	failingDiscover(t)
 
 	if _, err := GetJSON("/v1/x", time.Second); err == nil {
@@ -550,8 +550,8 @@ func TestDiscoverCDPPort_EnvVar(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	t.Setenv("BB_BROWSER_CDP_URL", ts.URL)
-	t.Setenv("BB_BROWSER_HOME", t.TempDir()) // isolate managed-port fallback
+	t.Setenv("BORZ_CDP_URL", ts.URL)
+	t.Setenv("BORZ_HOME", t.TempDir()) // isolate managed-port fallback
 
 	ep, err := DiscoverCDPPort()
 	if err != nil {
@@ -577,8 +577,8 @@ func TestDiscoverCDPPort_ManagedPortFile(t *testing.T) {
 	}
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
-	t.Setenv("BB_BROWSER_CDP_URL", "")
+	t.Setenv("BORZ_HOME", home)
+	t.Setenv("BORZ_CDP_URL", "")
 
 	browserDir := filepath.Join(home, "browser")
 	os.MkdirAll(browserDir, 0o755)
@@ -639,7 +639,7 @@ func TestEnsureDaemon_UsesExistingDaemonJSON(t *testing.T) {
 	defer ts.Close()
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	info := infoForServer(t, ts, "")
 	data, _ := json.Marshal(info)
 	os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600)
@@ -656,7 +656,7 @@ func TestEnsureDaemon_ClearsCachedStoppedDaemon(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
 	failingDiscover(t)
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"running":false}`))
@@ -679,7 +679,7 @@ func TestEnsureDaemon_RemovesStaleDaemonJSON(t *testing.T) {
 	failingDiscover(t)
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	data, _ := json.Marshal(protocol.DaemonInfo{PID: 999999, Host: "127.0.0.1", Port: 19824})
 	path := filepath.Join(home, "daemon.json")
 	os.WriteFile(path, data, 0o600)
@@ -706,7 +706,7 @@ func TestEnsureDaemon_ExistingDaemonStatusNotRunning(t *testing.T) {
 	defer ts.Close()
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	info := infoForServer(t, ts, "")
 	data, _ := json.Marshal(info)
 	os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600)
@@ -732,7 +732,7 @@ func TestGetDaemonStatus_ReadsDaemonJSONWhenCacheEmpty(t *testing.T) {
 	defer ts.Close()
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	data, _ := json.Marshal(infoForServer(t, ts, ""))
 	os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600)
 
@@ -760,7 +760,7 @@ func TestStopDaemon_ReadsDaemonJSONWhenCacheEmpty(t *testing.T) {
 	defer ts.Close()
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	data, _ := json.Marshal(infoForServer(t, ts, ""))
 	os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600)
 
@@ -800,7 +800,7 @@ func TestEnsureDaemon_CachedButStatusFails(t *testing.T) {
 	// Point cachedInfo at a port nothing listens on so /status call fails → daemon considered stale.
 	cachedInfo = &protocol.DaemonInfo{PID: os.Getpid(), Host: "127.0.0.1", Port: 1}
 	daemonReady = true
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	if err := EnsureDaemon(); err == nil {
 		t.Error("expected error — no CDP endpoint")
@@ -819,7 +819,7 @@ func TestEnsureDaemon_FromDaemonJSON(t *testing.T) {
 	defer ts.Close()
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	info := infoForServer(t, ts, "")
 	b, _ := json.Marshal(info)
 	os.WriteFile(filepath.Join(home, "daemon.json"), b, 0o644)
@@ -838,7 +838,7 @@ func TestEnsureDaemon_StaleDaemonJSON_DeadPID(t *testing.T) {
 	failingDiscover(t)
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	// Impossible PID so IsProcessAlive returns false.
 	info := protocol.DaemonInfo{PID: 999999, Host: "127.0.0.1", Port: 65001}
 	b, _ := json.Marshal(info)
@@ -855,7 +855,7 @@ func TestSendCommand_EnsureDaemonFails(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
 	failingDiscover(t)
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	_, err := SendCommand(&protocol.Request{ID: "x"})
 	if err == nil {

@@ -1,9 +1,9 @@
 ---
-name: bb-browser
+name: borz
 description: Drive the user's real Chrome session (cookies, logins, JS state) to inspect or automate web pages. Use when the user asks to open, click, fill, scrape, screenshot, or monitor a live website — especially anything that needs authentication, JavaScript rendering, or multi-step interaction. Prefer over generic fetch/web tools when a real browser is needed.
 ---
 
-# bb-browser
+# borz
 
 A Go CLI + MCP + HTTP server that controls any Chromium browser over CDP. Three front-ends share one daemon and one live Chrome session.
 
@@ -27,7 +27,7 @@ Three equivalent front-ends — pick based on the runtime:
 
 ### 1. MCP (preferred for AI agents)
 
-If `bb-browser` is configured as an MCP server, call tools directly. Workflow:
+If `borz` is configured as an MCP server, call tools directly. Workflow:
 
 1. `browser_tab_list` — the user may already be on the page, logged in, mid-flow. Reusing a tab preserves scroll/form state.
 2. `browser_navigate {url}` — reuses a tab with the exact same URL unless you pass `new: true`.
@@ -42,44 +42,44 @@ Tool categories (36 total): navigation, interaction, observation (includes `brow
 ### 2. Shell / CLI
 
 ```bash
-bb-browser open <url>                            # reuses tab with same URL; --new forces fresh
-bb-browser open <url> --wait-for '<selector>'    # block until selector exists (default 10s)
-bb-browser click <ref> --wait-for '.modal'       # --wait-for works on most actions, not just open
-bb-browser snapshot -i -c                        # -i: interactive only, -c: compact
-bb-browser snapshot --text-only                  # reader-mode plain text (no refs); good for LLM context
-bb-browser click <ref>
-bb-browser fill <ref> <text>
-bb-browser press <key>
-bb-browser eval "<js>"                           # JS in page context → JSON
-bb-browser eval --unwrap "document.title"        # print result raw (strings unquoted)
-bb-browser eval --file ./extract.js              # read script from file
-bb-browser eval --file ./greet.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSON args as top-level consts
-bb-browser eval "await fetch('/api/me').then(r=>r.json())"  # top-level await auto-wraps
-bb-browser get <url|title|text|href|value> [ref]
-bb-browser screenshot                            # base64 PNG
-bb-browser network requests --since last_action
-bb-browser network requests --tail --filter /api/    # live stream until Ctrl+C
-bb-browser console --filter error
-bb-browser fetch <url>                           # authenticated HTTP via page session
-bb-browser tab                                   # list tabs
-bb-browser extension status                      # extension connection + capabilities
-bb-browser bookmarks search github               # Chrome bookmarks (extension)
-bb-browser browser-history search github --limit 20
-bb-browser downloads list --limit 20
-bb-browser window list                           # Chrome windows (extension)
-bb-browser <platform>/<adapter> [args]           # run a site adapter
+borz open <url>                            # reuses tab with same URL; --new forces fresh
+borz open <url> --wait-for '<selector>'    # block until selector exists (default 10s)
+borz click <ref> --wait-for '.modal'       # --wait-for works on most actions, not just open
+borz snapshot -i -c                        # -i: interactive only, -c: compact
+borz snapshot --text-only                  # reader-mode plain text (no refs); good for LLM context
+borz click <ref>
+borz fill <ref> <text>
+borz press <key>
+borz eval "<js>"                           # JS in page context → JSON
+borz eval --unwrap "document.title"        # print result raw (strings unquoted)
+borz eval --file ./extract.js              # read script from file
+borz eval --file ./greet.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSON args as top-level consts
+borz eval "await fetch('/api/me').then(r=>r.json())"  # top-level await auto-wraps
+borz get <url|title|text|href|value> [ref]
+borz screenshot                            # base64 PNG
+borz network requests --since last_action
+borz network requests --tail --filter /api/    # live stream until Ctrl+C
+borz console --filter error
+borz fetch <url>                           # authenticated HTTP via page session
+borz tab                                   # list tabs
+borz extension status                      # extension connection + capabilities
+borz bookmarks search github               # Chrome bookmarks (extension)
+borz browser-history search github --limit 20
+borz downloads list --limit 20
+borz window list                           # Chrome windows (extension)
+borz <platform>/<adapter> [args]           # run a site adapter
 ```
 
 Global flags: `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only), `--since <seq|last_action>`.
 
-Per-command help: `bb-browser <cmd> --help` or `bb-browser help <cmd>`.
+Per-command help: `borz <cmd> --help` or `borz help <cmd>`.
 
 ### 3. HTTP / REST (for n8n, Make, external services)
 
 Server-mode exposes `/v1/*` JSON endpoints. Start it with:
 
 ```bash
-bb-browser server --host 0.0.0.0 --token "$TOKEN"   # token required for non-loopback
+borz server --host 0.0.0.0 --token "$TOKEN"   # token required for non-loopback
 ```
 
 Requests: `POST /v1/{snapshot,open,click,fill,...}` with JSON body. Auth header: `Authorization: Bearer <token>`. Responses: `{id, success, data?, error?}`.
@@ -97,24 +97,24 @@ Site adapters over HTTP: `GET /v1/sites`, `POST /v1/sites/info {name}`, `POST /v
 7. **Diagnose failures with `browser_console` + `browser_errors`** before assuming the automation is broken. Pages often log hints.
 8. **Prefer `--wait-for '<selector>'` over `wait <ms>`** for any DOM change. Works on `open`, `click`, `fill`, `press`, `eval`, etc. — the action runs, then the daemon polls `document.querySelector(...)` until non-null or timeout (default 10s, override with `--timeout <ms>`).
 9. **Use `eval --unwrap` to strip `{success, data, result, ...}` envelopes** when you only want the value — strings are emitted unquoted, other shapes as JSON. Combine with `--file <path>` for non-trivial scripts.
-10. **Use extension-backed tools for browser-level state CDP cannot see**: all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser events. Check `browser_extension_status` / `bb-browser extension status` first if one of these reports that no extension is connected.
+10. **Use extension-backed tools for browser-level state CDP cannot see**: all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser events. Check `browser_extension_status` / `borz extension status` first if one of these reports that no extension is connected.
 
 ## Site adapters
 
-Site adapters are JS plugins that automate specific sites (e.g. twitter/search). They run on the server/daemon's filesystem (`~/.bb-browser/sites` for local, `~/.bb-browser/bb-sites` for community). Discover with `browser_site_list` or `bb-browser site list`; inspect with `browser_site_info`. Run with `browser_site_run {name, args}` or CLI shorthand `bb-browser <name> <args>`.
+Site adapters are JS plugins that automate specific sites (e.g. twitter/search). They run on the server/daemon's filesystem (`~/.borz/sites` for local, `~/.borz/bb-sites` for community). Discover with `browser_site_list` or `borz site list`; inspect with `browser_site_info`. Run with `browser_site_run {name, args}` or CLI shorthand `borz <name> <args>`.
 
-Pull community adapters: `bb-browser site update` (CLI only — triggers a git pull, intentionally not exposed over HTTP/MCP).
+Pull community adapters: `borz site update` (CLI only — triggers a git pull, intentionally not exposed over HTTP/MCP).
 
 ## Troubleshooting
 
-- "Chrome not connected" → the daemon is up but CDP is down. Start Chrome, or let the daemon auto-launch: check `bb-browser status`.
-- "a daemon may already be running" → `bb-browser daemon status`, `bb-browser daemon shutdown` if stale.
-- When unsure where the stack is broken, run `bb-browser doctor` — it walks through home dir, daemon JSON, daemon process, daemon HTTP, CDP attach, tabs, and direct CDP discovery, and reports the first failing layer.
+- "Chrome not connected" → the daemon is up but CDP is down. Start Chrome, or let the daemon auto-launch: check `borz status`.
+- "a daemon may already be running" → `borz daemon status`, `borz daemon shutdown` if stale.
+- When unsure where the stack is broken, run `borz doctor` — it walks through home dir, daemon JSON, daemon process, daemon HTTP, CDP attach, tabs, and direct CDP discovery, and reports the first failing layer.
 - Element ref not found → page changed between snapshot and action. Re-snapshot.
-- Remote `server` refuses to start → non-loopback bind without `--token`. Set `BB_BROWSER_TOKEN` or pass `--token`.
+- Remote `server` refuses to start → non-loopback bind without `--token`. Set `BORZ_TOKEN` or pass `--token`.
 
 ## Further reading
 
 - `llm.txt` — compressed spec of CLI, MCP, and REST surfaces
 - `README.md` — human-oriented docs with examples
-- Source: https://github.com/leolin310148/bb-browser-go
+- Source: https://github.com/leolin310148/borz

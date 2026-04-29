@@ -14,20 +14,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	e2everify "github.com/leolin310148/bb-browser-go/internal/e2e_verify_site"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/client"
+	e2everify "github.com/leolin310148/borz/internal/e2e_verify_site"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
-const e2eEnabledEnv = "BB_BROWSER_E2E"
+const (
+	e2eEnabledEnv       = "BORZ_E2E"
+	e2eLegacyEnabledEnv = "BB_BROWSER_E2E"
+)
 
 func TestE2ECLIHelper(t *testing.T) {
-	if os.Getenv("BB_BROWSER_E2E_HELPER") != "1" {
+	if os.Getenv("BORZ_E2E_HELPER") != "1" {
 		return
 	}
 	for i, arg := range os.Args {
 		if arg == "--" {
-			os.Args = append([]string{"bb-browser"}, os.Args[i+1:]...)
+			os.Args = append([]string{"borz"}, os.Args[i+1:]...)
 			main()
 			os.Exit(0)
 		}
@@ -40,7 +43,7 @@ func TestE2ECLICommandsAgainstVerifySite(t *testing.T) {
 	skipUnlessE2E(t)
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	client.ResetForTests()
 	t.Cleanup(client.ResetForTests)
 
@@ -210,7 +213,7 @@ func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	client.ResetForTests()
 	t.Cleanup(client.ResetForTests)
 
@@ -257,7 +260,7 @@ func skipUnlessE2E(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		t.Skip("local Chrome e2e tests are disabled in GitHub Actions")
 	}
-	if os.Getenv(e2eEnabledEnv) != "1" {
+	if os.Getenv(e2eEnabledEnv) != "1" && os.Getenv(e2eLegacyEnabledEnv) != "1" {
 		t.Skipf("set %s=1 to run local Chrome e2e tests", e2eEnabledEnv)
 	}
 }
@@ -282,13 +285,13 @@ func startE2EDaemon(t *testing.T, home string) e2eDaemonEnv {
 		"--idle-tab-timeout", "0",
 	)
 	cmd.Env = append(os.Environ(),
-		"BB_BROWSER_E2E_HELPER=1",
-		"BB_BROWSER_HOME="+home,
+		"BORZ_E2E_HELPER=1",
+		"BORZ_HOME="+home,
 	)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("start bb-browser daemon helper: %v", err)
+		t.Fatalf("start borz daemon helper: %v", err)
 	}
 
 	done := make(chan error, 1)
@@ -354,13 +357,13 @@ func startE2EServer(t *testing.T, home, token string) (e2eDaemonEnv, string) {
 		"--idle-tab-timeout", "0",
 	)
 	cmd.Env = append(os.Environ(),
-		"BB_BROWSER_E2E_HELPER=1",
-		"BB_BROWSER_HOME="+home,
+		"BORZ_E2E_HELPER=1",
+		"BORZ_HOME="+home,
 	)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("start bb-browser server helper: %v", err)
+		t.Fatalf("start borz server helper: %v", err)
 	}
 
 	done := make(chan error, 1)
@@ -419,12 +422,12 @@ func runE2ECLI(t *testing.T, env e2eDaemonEnv, args ...string) string {
 	cmdArgs := append([]string{"-test.run=TestE2ECLIHelper", "--"}, args...)
 	cmd := exec.Command(os.Args[0], cmdArgs...)
 	cmd.Env = append(os.Environ(),
-		"BB_BROWSER_E2E_HELPER=1",
-		"BB_BROWSER_HOME="+env.home,
+		"BORZ_E2E_HELPER=1",
+		"BORZ_HOME="+env.home,
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("bb-browser %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
+		t.Fatalf("borz %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
 	}
 	return string(out)
 }
@@ -434,13 +437,13 @@ func runE2EJSON(t *testing.T, env e2eDaemonEnv, args ...string) protocol.Respons
 	out := runE2ECLI(t, env, args...)
 	var resp protocol.Response
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
-		t.Fatalf("bb-browser %s returned non-JSON response: %v\n%s", strings.Join(args, " "), err, out)
+		t.Fatalf("borz %s returned non-JSON response: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	if !resp.Success {
-		t.Fatalf("bb-browser %s returned unsuccessful response: %s\n%s", strings.Join(args, " "), resp.Error, out)
+		t.Fatalf("borz %s returned unsuccessful response: %s\n%s", strings.Join(args, " "), resp.Error, out)
 	}
 	if resp.Data == nil {
-		t.Fatalf("bb-browser %s returned empty data: %s", strings.Join(args, " "), out)
+		t.Fatalf("borz %s returned empty data: %s", strings.Join(args, " "), out)
 	}
 	return resp
 }

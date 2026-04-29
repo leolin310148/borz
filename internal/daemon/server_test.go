@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/daemon/extbridge"
+	"github.com/leolin310148/borz/internal/daemon/extbridge"
 )
 
 func newTestServer(t *testing.T, token string) *Server {
@@ -322,7 +322,7 @@ func TestServerRunReportsAddressInUse(t *testing.T) {
 
 func TestServerShutdownCleansState(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	if err := os.WriteFile(filepath.Join(home, "daemon.json"), []byte(`{}`), 0o600); err != nil {
 		t.Fatalf("write daemon.json: %v", err)
 	}

@@ -224,9 +224,9 @@ func TestEl2XPath(t *testing.T) {
 
 func TestConvertBuildDomTreeResult_Nil(t *testing.T) {
 	for name, in := range map[string]*buildDomTreeResult{
-		"nil":      nil,
-		"nil map":  {RootID: "x", Map: nil},
-		"no root":  {RootID: "", Map: map[string]json.RawMessage{}},
+		"nil":     nil,
+		"nil map": {RootID: "x", Map: nil},
+		"no root": {RootID: "", Map: map[string]json.RawMessage{}},
 	} {
 		out := ConvertBuildDomTreeResult(in, false, false, nil, "", "")
 		if out == nil || out.Snapshot != "" || len(out.Refs) != 0 {
@@ -286,9 +286,9 @@ func TestConvertBuildDomTreeResult_InteractiveOnly(t *testing.T) {
 func TestConvertBuildDomTreeResult_FullTree(t *testing.T) {
 	hi := func(i int) *int { return &i }
 	nodeMap := map[string]json.RawMessage{
-		"root":  mustRaw(t, rawDomElementNode{TagName: "section", XPath: "/root", Children: []string{"btn", "txt"}}),
-		"btn":   mustRaw(t, rawDomElementNode{TagName: "button", XPath: "/root/btn", HighlightIndex: hi(1), Attributes: map[string]string{"aria-label": "Go"}}),
-		"txt":   mustRaw(t, rawDomTextNode{Type: "TEXT_NODE", Text: "hello"}),
+		"root": mustRaw(t, rawDomElementNode{TagName: "section", XPath: "/root", Children: []string{"btn", "txt"}}),
+		"btn":  mustRaw(t, rawDomElementNode{TagName: "button", XPath: "/root/btn", HighlightIndex: hi(1), Attributes: map[string]string{"aria-label": "Go"}}),
+		"txt":  mustRaw(t, rawDomTextNode{Type: "TEXT_NODE", Text: "hello"}),
 	}
 	res := &buildDomTreeResult{RootID: "root", Map: nodeMap}
 

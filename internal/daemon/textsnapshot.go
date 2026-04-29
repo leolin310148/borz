@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // textSnapshotScript runs in the page and returns a {title, url, text} object

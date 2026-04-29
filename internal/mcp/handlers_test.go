@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
-	"github.com/leolin310148/bb-browser-go/internal/site"
+	"github.com/leolin310148/borz/internal/protocol"
+	"github.com/leolin310148/borz/internal/site"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

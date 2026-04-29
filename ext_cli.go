@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
+	"github.com/leolin310148/borz/internal/client"
 )
 
 type extBookmark struct {
@@ -61,7 +61,7 @@ type extWindow struct {
 	} `json:"tabs"`
 }
 
-// handleCookies implements `bb-browser cookies <subcmd>`. The "all" subcommand
+// handleCookies implements `borz cookies <subcmd>`. The "all" subcommand
 // returns cookies across every domain the extension can see — a capability CDP
 // cannot provide, since CDP cookie domains are scoped to the active page.
 func handleCookies(cmdArgs []string, jsonOutput bool) {
@@ -117,7 +117,7 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-// handleTabEvents implements `bb-browser tab events [--tail] [--since N]`.
+// handleTabEvents implements `borz tab events [--tail] [--since N]`.
 // Without --tail, prints all currently-buffered events and exits. With --tail,
 // polls the daemon, streaming new events until interrupted.
 func handleTabEvents(rawArgs []string, jsonOutput bool) {
@@ -251,7 +251,7 @@ func handleBookmarks(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		}
 	case "create":
 		if len(cmdArgs) < 3 {
-			fatal("Usage: bb-browser bookmarks create <url> <title> [--parent <id>]")
+			fatal("Usage: borz bookmarks create <url> <title> [--parent <id>]")
 		}
 		body := map[string]any{"url": cmdArgs[1], "title": strings.Join(cmdArgs[2:], " ")}
 		if parent := getArgValue(rawArgs, "--parent"); parent != "" {
@@ -261,7 +261,7 @@ func handleBookmarks(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		emitRawOrMessage(raw, jsonOutput, "Bookmark created")
 	case "update":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser bookmarks update <id> [--title <title>] [--url <url>]")
+			fatal("Usage: borz bookmarks update <id> [--title <title>] [--url <url>]")
 		}
 		changes := map[string]any{}
 		if title := getArgValue(rawArgs, "--title"); title != "" {
@@ -277,7 +277,7 @@ func handleBookmarks(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		emitRawOrMessage(raw, jsonOutput, "Bookmark updated")
 	case "remove":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser bookmarks remove <id> [--recursive]")
+			fatal("Usage: borz bookmarks remove <id> [--recursive]")
 		}
 		raw := extPostJSON("/v1/bookmarks/remove", map[string]any{"id": cmdArgs[1], "recursive": hasFlag(rawArgs, "--recursive")})
 		emitRawOrMessage(raw, jsonOutput, "Bookmark removed")
@@ -312,7 +312,7 @@ func handleBrowserHistory(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		}
 	case "delete-url":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser browser-history delete-url <url>")
+			fatal("Usage: borz browser-history delete-url <url>")
 		}
 		raw := extPostJSON("/v1/browser-history/delete-url", map[string]any{"url": cmdArgs[1]})
 		emitRawOrMessage(raw, jsonOutput, "History URL deleted")
@@ -355,7 +355,7 @@ func handleDownloads(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		}
 	case "start":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser downloads start <url> [--filename <path>] [--save-as]")
+			fatal("Usage: borz downloads start <url> [--filename <path>] [--save-as]")
 		}
 		body := map[string]any{"url": cmdArgs[1], "saveAs": hasFlag(rawArgs, "--save-as")}
 		if filename := getArgValue(rawArgs, "--filename"); filename != "" {
@@ -376,7 +376,7 @@ func handleDownloads(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		emitRawOrMessage(raw, jsonOutput, "Download records erased")
 	case "cancel", "pause", "resume", "show":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser downloads " + sub + " <id>")
+			fatal("Usage: borz downloads " + sub + " <id>")
 		}
 		id, err := strconv.Atoi(cmdArgs[1])
 		if err != nil {
@@ -416,14 +416,14 @@ func handleWindows(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		}
 	case "focus":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser window focus <id>")
+			fatal("Usage: borz window focus <id>")
 		}
 		id := mustAtoi(cmdArgs[1], "window id")
 		raw := extPostJSON("/v1/windows/update", map[string]any{"id": id, "updateInfo": map[string]any{"focused": true}})
 		emitRawOrMessage(raw, jsonOutput, "Window focused")
 	case "close":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser window close <id>")
+			fatal("Usage: borz window close <id>")
 		}
 		id := mustAtoi(cmdArgs[1], "window id")
 		raw := extPostJSON("/v1/windows/close", map[string]any{"id": id})

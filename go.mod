@@ -1,4 +1,4 @@
-module github.com/leolin310148/bb-browser-go
+module github.com/leolin310148/borz
 
 go 1.25.0
 

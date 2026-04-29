@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // extDaemon is fakeDaemon's analogue for the extension-bridge endpoints.
@@ -28,7 +28,7 @@ func extDaemon(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 	t.Cleanup(ts.Close)
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 
 	u := strings.TrimPrefix(ts.URL, "http://")
 	host, portStr, _ := net.SplitHostPort(u)

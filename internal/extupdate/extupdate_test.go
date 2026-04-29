@@ -48,7 +48,7 @@ func fakeRelease(t *testing.T, zipBytes []byte, checksumName string) *httptest.S
 	mux := http.NewServeMux()
 	var server *httptest.Server
 
-	zipURL := "/download/bb-browser-extension.zip"
+	zipURL := "/download/borz-extension.zip"
 	checksumsURL := "/download/checksums.txt"
 	checksums := fmt.Sprintf("%s  %s\n", sha256hex(zipBytes), checksumName)
 
@@ -58,7 +58,7 @@ func fakeRelease(t *testing.T, zipBytes []byte, checksumName string) *httptest.S
 			"name":     "v1.2.3",
 			"assets": []map[string]any{
 				{
-					"name":                 "bb-browser-extension.zip",
+					"name":                 "borz-extension.zip",
 					"browser_download_url": server.URL + zipURL,
 					"size":                 int64(len(zipBytes)),
 				},
@@ -91,7 +91,7 @@ func TestRunHappyPath(t *testing.T) {
 		"background.js":  `console.log("hi");`,
 		"sub/popup.html": `<html></html>`,
 	})
-	srv := fakeRelease(t, zipBytes, "bb-browser-extension.zip")
+	srv := fakeRelease(t, zipBytes, "borz-extension.zip")
 
 	dest := filepath.Join(t.TempDir(), "extension")
 	// Pre-populate to confirm the nuke step erases prior contents.
@@ -157,7 +157,7 @@ func TestRunChecksumActualMismatch(t *testing.T) {
 		rel := map[string]any{
 			"tag_name": "v1.2.3",
 			"assets": []map[string]any{
-				{"name": "bb-browser-extension.zip", "browser_download_url": server.URL + "/zip"},
+				{"name": "borz-extension.zip", "browser_download_url": server.URL + "/zip"},
 				{"name": "checksums.txt", "browser_download_url": server.URL + "/sums"},
 			},
 		}
@@ -165,7 +165,7 @@ func TestRunChecksumActualMismatch(t *testing.T) {
 	})
 	mux.HandleFunc("/zip", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(zipBytes) })
 	mux.HandleFunc("/sums", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, "deadbeef  bb-browser-extension.zip\n")
+		_, _ = io.WriteString(w, "deadbeef  borz-extension.zip\n")
 	})
 	server = httptest.NewServer(mux)
 	defer server.Close()
@@ -196,7 +196,7 @@ func TestRunMissingExtensionAsset(t *testing.T) {
 		Repo: "owner/repo", DestDir: dest, HTTPClient: srv.Client(),
 		APIBaseURL: srv.URL, Stderr: io.Discard,
 	})
-	if err == nil || !strings.Contains(err.Error(), "no bb-browser-extension.zip asset") {
+	if err == nil || !strings.Contains(err.Error(), "no borz-extension.zip asset") {
 		t.Fatalf("want missing-asset error, got %v", err)
 	}
 }
@@ -209,7 +209,7 @@ func TestRunMissingChecksums(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tag_name": "v1.2.3",
 			"assets": []map[string]any{
-				{"name": "bb-browser-extension.zip", "browser_download_url": server.URL + "/zip"},
+				{"name": "borz-extension.zip", "browser_download_url": server.URL + "/zip"},
 			},
 		})
 	})
@@ -285,7 +285,7 @@ func TestRunZipDownloadFails(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tag_name": "v1.2.3",
 			"assets": []map[string]any{
-				{"name": "bb-browser-extension.zip", "browser_download_url": server.URL + "/zip"},
+				{"name": "borz-extension.zip", "browser_download_url": server.URL + "/zip"},
 				{"name": "checksums.txt", "browser_download_url": server.URL + "/sums"},
 			},
 		})
@@ -294,7 +294,7 @@ func TestRunZipDownloadFails(t *testing.T) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	})
 	mux.HandleFunc("/sums", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, "deadbeef  bb-browser-extension.zip\n")
+		_, _ = io.WriteString(w, "deadbeef  borz-extension.zip\n")
 	})
 	server = httptest.NewServer(mux)
 	defer server.Close()
@@ -316,7 +316,7 @@ func TestRunChecksumsDownloadFails(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tag_name": "v1.2.3",
 			"assets": []map[string]any{
-				{"name": "bb-browser-extension.zip", "browser_download_url": server.URL + "/zip"},
+				{"name": "borz-extension.zip", "browser_download_url": server.URL + "/zip"},
 				{"name": "checksums.txt", "browser_download_url": server.URL + "/sums"},
 			},
 		})
@@ -351,7 +351,7 @@ func TestRunHandlesZipDirEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	zipBytes := buf.Bytes()
-	srv := fakeRelease(t, zipBytes, "bb-browser-extension.zip")
+	srv := fakeRelease(t, zipBytes, "borz-extension.zip")
 	dest := t.TempDir() + "/ext"
 	if _, err := Run(context.Background(), Options{
 		Repo: "owner/repo", DestDir: dest, HTTPClient: srv.Client(),
@@ -380,7 +380,7 @@ func TestRunDefaultRepo(t *testing.T) {
 	// returns 404 so we don't actually hit GitHub. We just want to exercise
 	// the assignment path, then bail out on the network error.
 	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/leolin310148/bb-browser-go/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/repos/leolin310148/borz/releases/latest", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "stub", http.StatusNotFound)
 	})
 	srv := httptest.NewServer(mux)

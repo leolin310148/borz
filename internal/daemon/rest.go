@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/config"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // registerRESTRoutes attaches /v1/* handlers to mux. Each handler builds a
@@ -431,7 +431,7 @@ func newReqID() string {
 }
 
 // doctorCheck mirrors diagnostics.Check shape so REST output matches the CLI
-// 'bb-browser doctor' format. The daemon-side variant skips the binary,
+// 'borz doctor' format. The daemon-side variant skips the binary,
 // daemon-process, and daemon-HTTP rows (we are inside the daemon, those would
 // trivially pass) and reports CDP attach + tab presence based on s.cdp.
 type doctorCheck struct {
@@ -448,7 +448,7 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 
 	checks := []doctorCheck{}
 	if s.opts.Version != "" {
-		checks = append(checks, doctorCheck{Name: "Daemon", Status: "ok", Detail: fmt.Sprintf("bb-browser-go %s", s.opts.Version)})
+		checks = append(checks, doctorCheck{Name: "Daemon", Status: "ok", Detail: fmt.Sprintf("borz %s", s.opts.Version)})
 	} else {
 		checks = append(checks, doctorCheck{Name: "Daemon", Status: "ok", Detail: "running"})
 	}

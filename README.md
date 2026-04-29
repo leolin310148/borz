@@ -1,56 +1,64 @@
-# bb-browser-go
+# borz
 
 **Your browser is the API.** A CLI tool that lets you control and observe any Chromium-based browser from the terminal via the Chrome DevTools Protocol (CDP).
 
-`bb-browser-go` is a Go port of [bb-browser](https://github.com/nicepkg/bb-browser) (Node.js). It ships as a single static binary with zero runtime dependencies.
+`borz` is a Go port of the original [bb-browser](https://github.com/nicepkg/bb-browser) (Node.js). It ships as a single static binary with zero runtime dependencies.
 
 ## Installation
 
+### Rename transition
+
+The primary binary is now `borz`. Release artifacts also include a temporary
+`bb-browser-*` compatibility wrapper that prints a deprecation notice and
+forwards to `borz`; update scripts and aliases to call `borz` directly. On first
+write, an existing `~/.bb-browser` config directory is migrated to `~/.borz`
+unless `~/.borz` already exists.
+
 ### Download prebuilt binary
 
-Grab the latest release for your platform from [GitHub Releases](https://github.com/leolin310148/bb-browser-go/releases):
+Grab the latest release for your platform from [GitHub Releases](https://github.com/leolin310148/borz/releases):
 
 ```bash
 # macOS (Apple Silicon)
-curl -LO https://github.com/leolin310148/bb-browser-go/releases/latest/download/bb-browser-darwin-arm64
-chmod +x bb-browser-darwin-arm64
-sudo mv bb-browser-darwin-arm64 /usr/local/bin/bb-browser
+curl -LO https://github.com/leolin310148/borz/releases/latest/download/borz-darwin-arm64
+chmod +x borz-darwin-arm64
+sudo mv borz-darwin-arm64 /usr/local/bin/borz
 
 # macOS (Intel)
-curl -LO https://github.com/leolin310148/bb-browser-go/releases/latest/download/bb-browser-darwin-amd64
-chmod +x bb-browser-darwin-amd64
-sudo mv bb-browser-darwin-amd64 /usr/local/bin/bb-browser
+curl -LO https://github.com/leolin310148/borz/releases/latest/download/borz-darwin-amd64
+chmod +x borz-darwin-amd64
+sudo mv borz-darwin-amd64 /usr/local/bin/borz
 
 # Linux (x86_64)
-curl -LO https://github.com/leolin310148/bb-browser-go/releases/latest/download/bb-browser-linux-amd64
-chmod +x bb-browser-linux-amd64
-sudo mv bb-browser-linux-amd64 /usr/local/bin/bb-browser
+curl -LO https://github.com/leolin310148/borz/releases/latest/download/borz-linux-amd64
+chmod +x borz-linux-amd64
+sudo mv borz-linux-amd64 /usr/local/bin/borz
 
 # Linux (ARM64)
-curl -LO https://github.com/leolin310148/bb-browser-go/releases/latest/download/bb-browser-linux-arm64
-chmod +x bb-browser-linux-arm64
-sudo mv bb-browser-linux-arm64 /usr/local/bin/bb-browser
+curl -LO https://github.com/leolin310148/borz/releases/latest/download/borz-linux-arm64
+chmod +x borz-linux-arm64
+sudo mv borz-linux-arm64 /usr/local/bin/borz
 ```
 
 ### Build from source
 
 ```bash
-go install github.com/leolin310148/bb-browser-go@latest
+go install github.com/leolin310148/borz@latest
 ```
 
 Or clone and build:
 
 ```bash
-git clone https://github.com/leolin310148/bb-browser-go.git
-cd bb-browser-go
-go build -o bb-browser .
+git clone https://github.com/leolin310148/borz.git
+cd borz
+go build -o borz .
 ```
 
 ## Prerequisites
 
 You need a Chromium-based browser (Google Chrome, Microsoft Edge, Brave, Arc, etc.) installed on your machine.
 
-`bb-browser` connects to the browser using CDP. It will automatically:
+`borz` connects to the browser using CDP. It will automatically:
 
 1. Detect a running browser with remote debugging enabled
 2. Or launch a managed browser instance for you
@@ -71,49 +79,49 @@ google-chrome --remote-debugging-port=19825
 Or point to a remote browser via environment variable:
 
 ```bash
-export BB_BROWSER_CDP_URL=http://127.0.0.1:19825
+export BORZ_CDP_URL=http://127.0.0.1:19825
 ```
 
 ## Browser Extension (optional)
 
-A Chrome extension extends `bb-browser` with browser-level capabilities CDP cannot provide on its own — cross-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, raw extension RPC, and browser event streams. Install it once per Chrome profile:
+A Chrome extension extends `borz` with browser-level capabilities CDP cannot provide on its own — cross-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, raw extension RPC, and browser event streams. Install it once per Chrome profile:
 
 ```bash
-# Download the extension that matches your installed bb-browser binary
-bb-browser extension download
+# Download the extension that matches your installed borz binary
+borz extension download
 ```
 
-This fetches `bb-browser-extension.zip` from the latest GitHub release, verifies its SHA-256, and extracts it into `~/.bb-browser/extension/` (the previous install is removed). The command then prints the directory and the load steps:
+This fetches `borz-extension.zip` from the latest GitHub release, verifies its SHA-256, and extracts it into `~/.borz/extension/` (the previous install is removed). The command then prints the directory and the load steps:
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode** (top-right toggle)
-3. Click **Load unpacked** and pick `~/.bb-browser/extension/`
+3. Click **Load unpacked** and pick `~/.borz/extension/`
 
-Re-run `bb-browser extension update` after upgrading the binary to keep the extension in lockstep. The extension version mirrors the bb-browser release tag.
+Re-run `borz extension update` after upgrading the binary to keep the extension in lockstep. The extension version mirrors the borz release tag.
 
 Commands that *don't* require the extension keep working without it. Extension-backed commands tell you when it is missing:
 
 ```bash
-bb-browser extension status             # connected extension capabilities
-bb-browser extension call <method> '{}' # raw extension RPC escape hatch
-bb-browser cookies all [domain]          # all-domain cookie store
-bb-browser bookmarks tree|search|create|update|remove
-bb-browser browser-history search        # Chrome browsing history
-bb-browser downloads list|search|start|erase|cancel|pause|resume
-bb-browser window list|new|focus|close   # browser windows (alias: windows)
-bb-browser tab events --tail             # tabs/windows/bookmarks/history/download event stream
+borz extension status             # connected extension capabilities
+borz extension call <method> '{}' # raw extension RPC escape hatch
+borz cookies all [domain]          # all-domain cookie store
+borz bookmarks tree|search|create|update|remove
+borz browser-history search        # Chrome browsing history
+borz downloads list|search|start|erase|cancel|pause|resume
+borz window list|new|focus|close   # browser windows (alias: windows)
+borz tab events --tail             # tabs/windows/bookmarks/history/download event stream
 ```
 
 ## How It Works
 
 ```
 ┌──────────┐       HTTP        ┌──────────┐     WebSocket/CDP     ┌──────────┐
-│  bb-cli  │  ───────────────> │  daemon   │  ──────────────────>  │  Chrome  │
+│ borz CLI │  ───────────────> │  daemon   │  ──────────────────>  │  Chrome  │
 │ (client) │  <─────────────── │ (server)  │  <──────────────────  │ (browser)│
 └──────────┘    JSON response  └──────────┘     DevTools Protocol  └──────────┘
 ```
 
-When you run any command, `bb-browser`:
+When you run any command, `borz`:
 
 1. **Starts a daemon** (if not already running) that holds a persistent CDP WebSocket connection to Chrome
 2. **Sends the command** as an HTTP request to the daemon
@@ -123,14 +131,14 @@ The daemon runs in the background and auto-discovers your browser. You don't nee
 
 ## MCP Server
 
-`bb-browser` includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, letting AI assistants like Claude control your browser directly.
+`borz` includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, letting AI assistants like Claude control your browser directly.
 
 ### Setup
 
 Start the MCP server:
 
 ```bash
-bb-browser mcp
+borz mcp
 ```
 
 This runs an MCP server over stdio. To use it with an MCP client, add it to your configuration:
@@ -140,8 +148,8 @@ Add to your MCP client configuration (e.g. `.claude/settings.json` for Claude Co
 ```json
 {
   "mcpServers": {
-    "bb-browser": {
-      "command": "bb-browser",
+    "borz": {
+      "command": "borz",
       "args": ["mcp"]
     }
   }
@@ -174,36 +182,36 @@ Other notable params:
 
 ## Server Mode
 
-`bb-browser server` exposes the daemon as a remote-accessible HTTP API with ergonomic `/v1/*` REST routes. It's designed for integrations like n8n, Make, or any workflow tool that can send HTTP requests.
+`borz server` exposes the daemon as a remote-accessible HTTP API with ergonomic `/v1/*` REST routes. It's designed for integrations like n8n, Make, or any workflow tool that can send HTTP requests.
 
 ### Start the server
 
 ```bash
 # Local-only (no auth required)
-bb-browser server --host 127.0.0.1 --port 19824
+borz server --host 127.0.0.1 --port 19824
 
 # Remote-accessible (token required)
-bb-browser server --host 0.0.0.0 --port 19824 --token "$(openssl rand -hex 16)"
+borz server --host 0.0.0.0 --port 19824 --token "$(openssl rand -hex 16)"
 
 # Or via env
-export BB_BROWSER_TOKEN=mysecret
-bb-browser server --host 0.0.0.0
+export BORZ_TOKEN=mysecret
+borz server --host 0.0.0.0
 ```
 
 The server refuses to bind a non-loopback address without a token. Clients authenticate with `Authorization: Bearer <token>`.
 
 | Flag | Env | Default | Description |
 |------|-----|---------|-------------|
-| `--host` | `BB_BROWSER_SERVER_HOST` | `0.0.0.0` | Bind address |
-| `--port` | `BB_BROWSER_SERVER_PORT` | `19824` | Bind port |
-| `--token` | `BB_BROWSER_TOKEN` | *(none)* | Required for non-loopback host |
+| `--host` | `BORZ_SERVER_HOST` | `0.0.0.0` | Bind address |
+| `--port` | `BORZ_SERVER_PORT` | `19824` | Bind port |
+| `--token` | `BORZ_TOKEN` | *(none)* | Required for non-loopback host |
 | `--cdp-host` | — | `127.0.0.1` | Chrome CDP host |
 | `--cdp-port` | — | `19825` | Chrome CDP port |
 
 Stop the server:
 
 ```bash
-bb-browser server shutdown
+borz server shutdown
 ```
 
 ### Use a remote server from the CLI
@@ -212,15 +220,15 @@ Configure the CLI once, then pass `--remote` for commands that should use the
 configured server:
 
 ```bash
-bb-browser client setup http://server-host:19824 --token "$BB_BROWSER_TOKEN"
-bb-browser --remote open https://example.com
+borz client setup http://server-host:19824 --token "$BORZ_TOKEN"
+borz --remote open https://example.com
 ```
 
 When a remote CLI command writes a screenshot path, the file is saved on the
 client machine running the CLI, not on the remote server:
 
 ```bash
-bb-browser --remote screenshot ./out.png
+borz --remote screenshot ./out.png
 ```
 
 Without `--remote`, browser actions such as `open`, `snapshot`, `click`,
@@ -228,17 +236,17 @@ Without `--remote`, browser actions such as `open`, `snapshot`, `click`,
 connection:
 
 ```bash
-bb-browser open https://example.com
+borz open https://example.com
 ```
 
 To make only the current shell default to remote while other shells stay local,
 define an alias in that shell:
 
 ```bash
-alias bb-browser='bb-browser --remote'
+alias borz='borz --remote'
 ```
 
-The client config is stored at `~/.bb-browser/client.json` with 0600
+The client config is stored at `~/.borz/client.json` with 0600
 permissions because it may contain the bearer token. `client setup` probes the
 server's authenticated `/status` endpoint by default; pass `--no-check` only
 when you need to save config before the server is reachable.
@@ -328,7 +336,7 @@ curl -s -X POST $BASE/v1/click \
 Use n8n's **HTTP Request** node:
 
 - **Method:** `POST`
-- **URL:** `http://bb-host:19824/v1/snapshot`
+- **URL:** `http://borz-host:19824/v1/snapshot`
 - **Authentication:** Header Auth → `Authorization: Bearer <token>`
 - **Body:** JSON → `{ "interactive": true, "compact": true }`
 
@@ -338,31 +346,31 @@ Chain nodes to open → snapshot → click → extract. A dedicated n8n communit
 
 ```bash
 # Open a webpage
-bb-browser open https://example.com
+borz open https://example.com
 
 # Take a snapshot of the page (accessibility tree with element references)
-bb-browser snapshot
+borz snapshot
 
 # Click an element by its ref number from the snapshot
-bb-browser click 5
+borz click 5
 
 # Fill a text input
-bb-browser fill 3 "hello world"
+borz fill 3 "hello world"
 
 # Get the page title
-bb-browser get title
+borz get title
 
 # Take a screenshot
-bb-browser screenshot
+borz screenshot
 
 # Execute JavaScript in the page
-bb-browser eval "document.title"
+borz eval "document.title"
 
 # Get JSON output for scripting
-bb-browser snapshot --json
+borz snapshot --json
 
 # Filter with jq expressions
-bb-browser snapshot --jq ".snapshotData.refs | keys | length"
+borz snapshot --jq ".snapshotData.refs | keys | length"
 ```
 
 ## Commands
@@ -380,19 +388,19 @@ bb-browser snapshot --jq ".snapshotData.refs | keys | length"
 ```bash
 # Open a URL. Reuses an existing tab with the same URL if one exists,
 # otherwise creates a new tab. This prevents tab-blowup in automated workflows.
-bb-browser open https://github.com
+borz open https://github.com
 
 # Force a fresh tab even if one already has this URL
-bb-browser open https://github.com --new
+borz open https://github.com --new
 
 # Navigate a specific existing tab by ID
-bb-browser open https://github.com --tab ab1c
+borz open https://github.com --tab ab1c
 
 # Navigate back
-bb-browser back
+borz back
 
 # Wait for a selector before returning (default 10s, override with --timeout <ms>)
-bb-browser open https://app.example.com --wait-for ".dashboard-loaded"
+borz open https://app.example.com --wait-for ".dashboard-loaded"
 ```
 
 `--wait-for <selector>` and `--timeout <ms>` work on **every action that changes the page** — `open`, `click`, `hover`, `fill`, `type`, `check`, `uncheck`, `select`, `press`, `scroll`, `eval`, `back`, `forward`, `refresh`. The daemon runs the action, then polls `document.querySelector(...)` on a 100 ms tick until the node appears or the timeout elapses. Prefer this over `wait <ms>` for any DOM change.
@@ -407,26 +415,26 @@ The most important command. It returns a structured text representation of the p
 
 ```bash
 # Full accessibility tree
-bb-browser snapshot
+borz snapshot
 
 # Interactive elements only (buttons, links, inputs, etc.)
-bb-browser snapshot -i
+borz snapshot -i
 
 # Compact output (shorter names, no tag names)
-bb-browser snapshot -c
+borz snapshot -c
 
 # Limit tree depth
-bb-browser snapshot -d 3
+borz snapshot -d 3
 
 # Filter by selector/keyword
-bb-browser snapshot -s "search"
+borz snapshot -s "search"
 
 # Combine flags
-bb-browser snapshot -i -c
+borz snapshot -i -c
 
 # Reader-mode plain text (title + URL + visible text only) — no element refs.
 # Good for "summarize this page" or feeding the page to an LLM as context.
-bb-browser snapshot --text-only
+borz snapshot --text-only
 ```
 
 Example output:
@@ -448,88 +456,88 @@ The `[ref=N]` numbers are what you use with interaction commands like `click`, `
 
 ```bash
 # Capture screenshot (returned as base64 data URL in JSON)
-bb-browser screenshot
+borz screenshot
 
 # Save to file (use with --json and jq)
-bb-browser screenshot --json --jq ".data.dataUrl"
+borz screenshot --json --jq ".data.dataUrl"
 ```
 
 #### `get` - Get element or page attributes
 
 ```bash
 # Get the current page URL
-bb-browser get url
+borz get url
 
 # Get the page title
-bb-browser get title
+borz get title
 
 # Get the text content of an element
-bb-browser get text 5
+borz get text 5
 
 # Get an HTML attribute of an element
-bb-browser get href 2
-bb-browser get class 4
-bb-browser get value 3
+borz get href 2
+borz get class 4
+borz get value 3
 ```
 
 #### `network` - Monitor network requests
 
 ```bash
 # List all captured network requests
-bb-browser network
+borz network
 
 # Filter by URL pattern
-bb-browser network requests --filter "api"
+borz network requests --filter "api"
 
 # Filter by HTTP method
-bb-browser network requests --method POST
+borz network requests --method POST
 
 # Filter by status code
-bb-browser network requests --status 404
-bb-browser network requests --status 5xx
+borz network requests --status 404
+borz network requests --status 5xx
 
 # Include response bodies
-bb-browser network requests --with-body
+borz network requests --with-body
 
 # Show only requests since last action
-bb-browser network requests --since last_action
+borz network requests --since last_action
 
 # Live stream new requests as they arrive (Ctrl+C to stop).
 # Pairs with --filter / --method / --status and --json (JSONL output).
-bb-browser network requests --tail
-bb-browser network requests --tail --filter /api/ --method POST
+borz network requests --tail
+borz network requests --tail --filter /api/ --method POST
 
 # Clear captured requests
-bb-browser network clear
+borz network clear
 ```
 
 #### `console` - Read console messages
 
 ```bash
 # Get all console messages
-bb-browser console
+borz console
 
 # Filter messages
-bb-browser console --filter "error"
+borz console --filter "error"
 
 # Only messages since last action
-bb-browser console --since last_action
+borz console --since last_action
 
 # Clear console buffer
-bb-browser console --clear
+borz console --clear
 ```
 
 #### `errors` - Read JavaScript errors
 
 ```bash
 # Get all JS errors
-bb-browser errors
+borz errors
 
 # Filter errors
-bb-browser errors --filter "TypeError"
+borz errors --filter "TypeError"
 
 # Clear error buffer
-bb-browser errors --clear
+borz errors --clear
 ```
 
 ### Interaction
@@ -540,154 +548,154 @@ All interaction commands use **ref numbers** from the `snapshot` output.
 
 ```bash
 # Click a button (ref=4 from snapshot)
-bb-browser click 4
+borz click 4
 
 # Hover over an element
-bb-browser hover 2
+borz hover 2
 ```
 
 #### `fill` / `type`
 
 ```bash
 # Clear the input and fill with new text
-bb-browser fill 3 "hello world"
+borz fill 3 "hello world"
 
 # Append text to current value (like typing)
-bb-browser type 3 " more text"
+borz type 3 " more text"
 ```
 
 #### `check` / `uncheck`
 
 ```bash
 # Check a checkbox
-bb-browser check 7
+borz check 7
 
 # Uncheck it
-bb-browser uncheck 7
+borz uncheck 7
 ```
 
 #### `select`
 
 ```bash
 # Select a dropdown option by value
-bb-browser select 6 "option2"
+borz select 6 "option2"
 ```
 
 #### `press`
 
 ```bash
 # Press a key
-bb-browser press Enter
-bb-browser press Tab
-bb-browser press ArrowDown
-bb-browser press Escape
+borz press Enter
+borz press Tab
+borz press ArrowDown
+borz press Escape
 ```
 
 #### `scroll`
 
 ```bash
 # Scroll down (default 300px)
-bb-browser scroll down
+borz scroll down
 
 # Scroll up 500px
-bb-browser scroll up 500
+borz scroll up 500
 
 # Scroll left/right
-bb-browser scroll left 200
-bb-browser scroll right 200
+borz scroll left 200
+borz scroll right 200
 ```
 
 #### `eval` - Execute JavaScript
 
 ```bash
 # Run arbitrary JavaScript in the page context
-bb-browser eval "document.title"
-bb-browser eval "document.querySelectorAll('a').length"
-bb-browser eval "window.location.href"
+borz eval "document.title"
+borz eval "document.querySelectorAll('a').length"
+borz eval "window.location.href"
 
 # Multi-word scripts
-bb-browser eval "document.querySelector('h1').textContent"
+borz eval "document.querySelector('h1').textContent"
 
 # Top-level await is auto-wrapped in an async IIFE — no manual boilerplate.
-bb-browser eval "await fetch('/api/data').then(r => r.json())"
+borz eval "await fetch('/api/data').then(r => r.json())"
 
 # Disable auto-wrapping if you need the raw script.
-bb-browser eval --no-auto-await "(async () => { ... })()"
+borz eval --no-auto-await "(async () => { ... })()"
 
 # Read a script from disk so long extraction snippets aren't trapped in a shell quote.
-bb-browser eval --file ./extract.js
+borz eval --file ./extract.js
 
 # Inject CLI-supplied JSON values as top-level consts the script can read.
-bb-browser eval --file ./greet.js --json-arg user='{"id":7}' --json-arg n=3
+borz eval --file ./greet.js --json-arg user='{"id":7}' --json-arg n=3
 
 # Print the result raw — strings unquoted, other shapes JSON-formatted.
 # Removes the need for ' | jq .data.result' on every call.
-bb-browser eval --unwrap "document.title"
+borz eval --unwrap "document.title"
 ```
 
 #### `wait`
 
 ```bash
 # Wait 1 second (default)
-bb-browser wait
+borz wait
 
 # Wait 2 seconds
-bb-browser wait 2000
+borz wait 2000
 ```
 
 ### Tab Management
 
 ```bash
 # List all open tabs
-bb-browser tab
+borz tab
 
 # Open a new tab
-bb-browser tab new
-bb-browser tab new https://google.com
+borz tab new
+borz tab new https://google.com
 
 # Switch to tab by index
-bb-browser tab 0
-bb-browser tab 2
+borz tab 0
+borz tab 2
 
 # Switch to tab by short ID
-bb-browser tab select ab1c
+borz tab select ab1c
 
 # Close a tab
-bb-browser tab close 2
-bb-browser tab close --id ab1c
+borz tab close 2
+borz tab close --id ab1c
 ```
 
 Every response includes a short `tab` ID (e.g., `ab1c`) that you can use to target specific tabs:
 
 ```bash
 # Run commands on a specific tab
-bb-browser snapshot --tab ab1c
-bb-browser click 3 --tab ab1c
-bb-browser eval "document.title" --tab ab1c
+borz snapshot --tab ab1c
+borz click 3 --tab ab1c
+borz eval "document.title" --tab ab1c
 ```
 
 ### Frame (iframe) Navigation
 
 ```bash
 # Switch to an iframe by CSS selector
-bb-browser frame "#my-iframe"
-bb-browser frame "iframe[name='content']"
+borz frame "#my-iframe"
+borz frame "iframe[name='content']"
 
 # Switch back to the main frame
-bb-browser frame main
+borz frame main
 ```
 
 ### Dialog Handling
 
 ```bash
 # Auto-accept future dialogs (alert, confirm, prompt)
-bb-browser dialog accept
+borz dialog accept
 
 # Auto-dismiss future dialogs
-bb-browser dialog dismiss
+borz dialog dismiss
 
 # Accept with prompt text
-bb-browser dialog accept "my input"
+borz dialog accept "my input"
 ```
 
 ### Authenticated Fetch
@@ -696,10 +704,10 @@ Make HTTP requests using the browser's cookies and session:
 
 ```bash
 # GET request using browser's auth context
-bb-browser fetch https://api.example.com/me
+borz fetch https://api.example.com/me
 
 # POST request
-bb-browser fetch https://api.example.com/data --method POST
+borz fetch https://api.example.com/data --method POST
 ```
 
 This is useful for accessing authenticated APIs without extracting cookies manually.
@@ -708,13 +716,13 @@ This is useful for accessing authenticated APIs without extracting cookies manua
 
 ```bash
 # Start recording
-bb-browser trace start
+borz trace start
 
 # Check status
-bb-browser trace status
+borz trace status
 
 # Stop and get recorded events
-bb-browser trace stop
+borz trace stop
 ```
 
 ### Site Adapters
@@ -723,48 +731,48 @@ Site adapters are JavaScript plugins that automate interactions with specific we
 
 ```bash
 # List available adapters
-bb-browser site list
+borz site list
 
 # Search for adapters
-bb-browser site search twitter
+borz site search twitter
 
 # Get adapter details
-bb-browser site info twitter/search
+borz site info twitter/search
 
 # Run an adapter
-bb-browser site run twitter/search "AI news"
+borz site run twitter/search "AI news"
 # or shorthand:
-bb-browser twitter/search "AI news"
+borz twitter/search "AI news"
 
 # Pull community adapters
-bb-browser site update
+borz site update
 ```
 
 ### Daemon Management
 
 ```bash
 # Start daemon in foreground (for debugging)
-bb-browser daemon
+borz daemon
 
 # With custom CDP port
-bb-browser daemon --cdp-port 9222
+borz daemon --cdp-port 9222
 
 # Check daemon status
-bb-browser daemon status
+borz daemon status
 # or
-bb-browser status
+borz status
 
 # Stop the daemon
-bb-browser daemon shutdown
+borz daemon shutdown
 ```
 
 ### Diagnosing the stack
 
-When something doesn't work it's not always obvious which layer is broken: stale `daemon.json`, dead daemon process, daemon up but not attached to CDP, or no tabs. `bb-browser doctor` walks the stack top-down and reports the first failing layer with a remediation hint.
+When something doesn't work it's not always obvious which layer is broken: stale `daemon.json`, dead daemon process, daemon up but not attached to CDP, or no tabs. `borz doctor` walks the stack top-down and reports the first failing layer with a remediation hint.
 
 ```bash
-bb-browser doctor          # human-readable report
-bb-browser doctor --json   # structured {ok, checks[]} for scripts
+borz doctor          # human-readable report
+borz doctor --json   # structured {ok, checks[]} for scripts
 ```
 
 Exit code is `1` on any fail; warnings (e.g. daemon not started yet) do not fail. The same diagnostic is exposed to AI agents as the `browser_doctor` MCP tool and to remote integrations as `GET /v1/doctor` (returns 503 on a failing check).
@@ -783,9 +791,9 @@ Exit code is `1` on any fail; warnings (e.g. daemon not started yet) do not fail
 Every command supports `--json` for machine-readable output:
 
 ```bash
-bb-browser snapshot --json
-bb-browser tab --json
-bb-browser network requests --json
+borz snapshot --json
+borz tab --json
+borz network requests --json
 ```
 
 ### jq Filtering
@@ -794,16 +802,16 @@ Built-in jq-compatible expression filtering (no external `jq` binary needed):
 
 ```bash
 # Get just the snapshot text
-bb-browser snapshot --jq ".data.snapshotData.snapshot"
+borz snapshot --jq ".data.snapshotData.snapshot"
 
 # Count tabs
-bb-browser tab --json --jq ".data.tabs | length"
+borz tab --json --jq ".data.tabs | length"
 
 # Get all request URLs
-bb-browser network requests --jq ".data.networkRequests[].url"
+borz network requests --jq ".data.networkRequests[].url"
 
 # Filter network requests by status
-bb-browser network requests --jq '.data.networkRequests[] | select(.status > 400) | {url: .url, status: .status}'
+borz network requests --jq '.data.networkRequests[] | select(.status > 400) | {url: .url, status: .status}'
 ```
 
 ### Incremental Queries
@@ -812,19 +820,21 @@ Use `--since` to only get events that occurred after a specific point:
 
 ```bash
 # Get events since a sequence number
-bb-browser network requests --since 42
+borz network requests --since 42
 
 # Get events since the last user action
-bb-browser console --since last_action
-bb-browser errors --since last_action
+borz console --since last_action
+borz errors --since last_action
 ```
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `BB_BROWSER_CDP_URL` | Override CDP endpoint (e.g., `http://127.0.0.1:9222`) |
-| `BB_BROWSER_HOME` | Override config directory (default: `~/.bb-browser`) |
+| `BORZ_CDP_URL` | Override CDP endpoint (e.g., `http://127.0.0.1:9222`) |
+| `BORZ_HOME` | Override config directory (default: `~/.borz`) |
+
+Legacy `BB_BROWSER_*` environment variables are still accepted during the rename transition.
 
 ## Use Cases
 
@@ -832,85 +842,85 @@ bb-browser errors --since last_action
 
 ```bash
 # Open the target site and log in manually (or use fill/click to automate)
-bb-browser open https://app.example.com/login
-bb-browser snapshot -i
-bb-browser fill 0 "user@example.com"
-bb-browser fill 1 "password123"
-bb-browser click 2
+borz open https://app.example.com/login
+borz snapshot -i
+borz fill 0 "user@example.com"
+borz fill 1 "password123"
+borz click 2
 
 # Now fetch authenticated API data
-bb-browser fetch https://app.example.com/api/dashboard --json
+borz fetch https://app.example.com/api/dashboard --json
 ```
 
 ### Automated Testing
 
 ```bash
 # Navigate to the app
-bb-browser open http://localhost:3000
+borz open http://localhost:3000
 
 # Fill in a form
-bb-browser snapshot -i
-bb-browser fill 0 "Test User"
-bb-browser fill 1 "test@example.com"
-bb-browser click 3
+borz snapshot -i
+borz fill 0 "Test User"
+borz fill 1 "test@example.com"
+borz click 3
 
 # Verify the result
-bb-browser get text 5
-bb-browser errors
+borz get text 5
+borz errors
 ```
 
 ### Monitoring & Debugging
 
 ```bash
 # Watch network traffic
-bb-browser open https://myapp.com
-bb-browser network requests --filter "api" --json
+borz open https://myapp.com
+borz network requests --filter "api" --json
 
 # Check for JS errors
-bb-browser errors
+borz errors
 
 # Read console output
-bb-browser console --filter "warning"
+borz console --filter "warning"
 ```
 
 ### AI Agent Integration
 
-`bb-browser` is designed to work well with AI agents. The recommended approach is the built-in **MCP server** (see [MCP Server](#mcp-server) above), which lets AI assistants call browser tools directly without shell commands.
+`borz` is designed to work well with AI agents. The recommended approach is the built-in **MCP server** (see [MCP Server](#mcp-server) above), which lets AI assistants call browser tools directly without shell commands.
 
 For agents that use shell-based tool calling, the CLI works just as well:
 
 ```bash
 # The agent runs snapshot to "see" the page
-bb-browser snapshot -i -c
+borz snapshot -i -c
 
 # The agent decides which element to interact with based on the ref numbers
-bb-browser click 4
-bb-browser fill 7 "search query"
+borz click 4
+borz fill 7 "search query"
 
 # The agent checks the result
-bb-browser snapshot -i -c
+borz snapshot -i -c
 ```
 
 ## Typical Workflow
 
 ```bash
 # 1. Open a page
-bb-browser open https://news.ycombinator.com
+borz open https://news.ycombinator.com
 
 # 2. See what's on the page
-bb-browser snapshot -i
+borz snapshot -i
 
 # 3. Interact with elements using ref numbers
-bb-browser click 5
+borz click 5
 
 # 4. See the result
-bb-browser snapshot -i
+borz snapshot -i
 
 # 5. Extract data
-bb-browser eval "document.querySelector('.title').textContent"
+borz eval "document.querySelector('.title').textContent"
 
 # 6. Get structured JSON output
-bb-browser snapshot --json --jq ".data.snapshotData.refs"
+borz snapshot --json --jq ".data.snapshotData.refs"
 ```
 
 ## Development
@@ -933,10 +943,10 @@ the CLI against that page. It is opt-in locally and explicitly skips in GitHub
 Actions.
 
 ```bash
-BB_BROWSER_E2E=1 go test -run TestE2ECLICommandsAgainstVerifySite -count=1 -v .
+BORZ_E2E=1 go test -run TestE2ECLICommandsAgainstVerifySite -count=1 -v .
 ```
 
-Set `BB_BROWSER_CDP_URL=http://host:port` to force a specific Chrome CDP
+Set `BORZ_CDP_URL=http://host:port` to force a specific Chrome CDP
 endpoint; otherwise the normal managed-browser discovery flow is used.
 
 ## License

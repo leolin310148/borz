@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/config"
-	"github.com/leolin310148/bb-browser-go/internal/extupdate"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/extupdate"
 )
 
-// extensionDir is where the bb-browser Chrome extension is extracted to.
+// extensionDir is where the borz Chrome extension is extracted to.
 // User loads it via chrome://extensions → "Load unpacked" → this path.
 func extensionDir() string {
 	return filepath.Join(config.HomeDir(), "extension")
@@ -52,7 +52,7 @@ func handleExtension(cmdArgs []string, jsonOutput bool) {
 		fmt.Printf("Supported extension RPC methods: %d\n", len(caps.SupportedMethods))
 	case "call":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: bb-browser extension call <method> [json-params]")
+			fatal("Usage: borz extension call <method> [json-params]")
 		}
 		params := map[string]any{}
 		if len(cmdArgs) > 2 {
@@ -77,12 +77,15 @@ func handleExtension(cmdArgs []string, jsonOutput bool) {
 		}
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown 'extension' subcommand: %s\n", sub)
-		fmt.Fprintln(os.Stderr, "Run 'bb-browser help extension' for usage.")
+		fmt.Fprintln(os.Stderr, "Run 'borz help extension' for usage.")
 		os.Exit(1)
 	}
 }
 
 func runExtensionDownload() {
+	if _, err := config.EnsureHomeDir(); err != nil {
+		fatal(err.Error())
+	}
 	dir := extensionDir()
 	res, err := extupdate.Run(context.Background(), extupdate.Options{
 		DestDir: dir,
@@ -95,12 +98,12 @@ func runExtensionDownload() {
 
 func printExtensionSetupHint(tag, dir string) {
 	fmt.Println()
-	fmt.Printf("bb-browser extension %s installed to:\n  %s\n", tag, dir)
+	fmt.Printf("borz extension %s installed to:\n  %s\n", tag, dir)
 	fmt.Println()
 	fmt.Println("Load it into Chrome:")
 	fmt.Println("  1. Open chrome://extensions")
 	fmt.Println("  2. Enable \"Developer mode\" (top-right)")
 	fmt.Println("  3. Click \"Load unpacked\" and select the directory above")
 	fmt.Println()
-	fmt.Println("Re-run 'bb-browser extension update' to upgrade after a new release.")
+	fmt.Println("Re-run 'borz extension update' to upgrade after a new release.")
 }

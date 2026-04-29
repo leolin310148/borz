@@ -19,9 +19,9 @@ func TestAssetName(t *testing.T) {
 	cases := []struct {
 		goos, goarch, want string
 	}{
-		{"linux", "amd64", "bb-browser-linux-amd64"},
-		{"darwin", "arm64", "bb-browser-darwin-arm64"},
-		{"windows", "amd64", "bb-browser-windows-amd64.exe"},
+		{"linux", "amd64", "borz-linux-amd64"},
+		{"darwin", "arm64", "borz-darwin-arm64"},
+		{"windows", "amd64", "borz-windows-amd64.exe"},
 	}
 	for _, c := range cases {
 		if got := AssetName(c.goos, c.goarch); got != c.want {
@@ -56,19 +56,19 @@ func TestNewerVersion(t *testing.T) {
 
 func TestParseChecksums(t *testing.T) {
 	input := `# comment line
-abc123  bb-browser-linux-amd64
-def456 *bb-browser-windows-amd64.exe
+abc123  borz-linux-amd64
+def456 *borz-windows-amd64.exe
 
-   deadbeef  bb-browser-darwin-arm64
+   deadbeef  borz-darwin-arm64
 `
 	got, err := ParseChecksums(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"bb-browser-linux-amd64":       "abc123",
-		"bb-browser-windows-amd64.exe": "def456",
-		"bb-browser-darwin-arm64":      "deadbeef",
+		"borz-linux-amd64":       "abc123",
+		"borz-windows-amd64.exe": "def456",
+		"borz-darwin-arm64":      "deadbeef",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("len=%d, want %d: %v", len(got), len(want), got)
@@ -82,10 +82,10 @@ def456 *bb-browser-windows-amd64.exe
 
 func TestFindAsset(t *testing.T) {
 	rel := &Release{Assets: []Asset{
-		{Name: "bb-browser-linux-amd64"},
+		{Name: "borz-linux-amd64"},
 		{Name: "checksums.txt"},
 	}}
-	if FindAsset(rel, "bb-browser-linux-amd64") == nil {
+	if FindAsset(rel, "borz-linux-amd64") == nil {
 		t.Error("expected to find asset")
 	}
 	if FindAsset(rel, "nope") != nil {
@@ -169,7 +169,7 @@ func TestRunEndToEnd(t *testing.T) {
 	// directly rather than go through Run(), since Run() replaces the *test*
 	// binary otherwise.
 	dir := t.TempDir()
-	fakeExe := filepath.Join(dir, "bb-browser")
+	fakeExe := filepath.Join(dir, "borz")
 	if err := os.WriteFile(fakeExe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestRunReplacesExecutable(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	fakeExe := filepath.Join(dir, "bb-browser")
+	fakeExe := filepath.Join(dir, "borz")
 	if err := os.WriteFile(fakeExe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestRunFiresOnReplaced(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	fakeExe := filepath.Join(dir, "bb-browser")
+	fakeExe := filepath.Join(dir, "borz")
 	if err := os.WriteFile(fakeExe, []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestRunMissingAsset(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	fakeExe := filepath.Join(dir, "bb-browser")
+	fakeExe := filepath.Join(dir, "borz")
 	os.WriteFile(fakeExe, []byte("old"), 0o755)
 
 	err := Run(context.Background(), Options{
@@ -469,7 +469,7 @@ func TestRunMissingChecksumEntry(t *testing.T) {
 		CurrentVersion: "1.0.0",
 		Repo:           "owner/repo",
 		APIBaseURL:     srv.URL,
-		ExecutablePath: filepath.Join(t.TempDir(), "bb-browser"),
+		ExecutablePath: filepath.Join(t.TempDir(), "borz"),
 		Stderr:         io.Discard,
 	})
 	if err == nil || !strings.Contains(err.Error(), "no checksum entry") {
@@ -513,7 +513,7 @@ func TestDownloadVerifiedChecksumMismatch(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	dest := filepath.Join(dir, "bb-browser")
+	dest := filepath.Join(dir, "borz")
 	_, err := downloadVerified(context.Background(), http.DefaultClient, srv.URL, dest, "0000")
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("expected checksum mismatch, got %v", err)
@@ -531,7 +531,7 @@ func TestDownloadVerifiedHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := downloadVerified(context.Background(), http.DefaultClient, srv.URL, filepath.Join(t.TempDir(), "bb-browser"), "abc")
+	_, err := downloadVerified(context.Background(), http.DefaultClient, srv.URL, filepath.Join(t.TempDir(), "borz"), "abc")
 	if err == nil || !strings.Contains(err.Error(), "http 404") {
 		t.Fatalf("expected download HTTP error, got %v", err)
 	}

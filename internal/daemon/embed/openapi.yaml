@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: bb-browser daemon API
+  title: borz daemon API
   version: "1.0.0"
   description: |
-    HTTP/REST front-end for the bb-browser daemon. Each `/v1/*` endpoint accepts
+    HTTP/REST front-end for the borz daemon. Each `/v1/*` endpoint accepts
     a JSON body, dispatches a request to the attached Chrome (CDP) session, and
     returns a `Response` envelope.
 
@@ -604,7 +604,7 @@ paths:
       description: |
         Quick stack diagnostic from inside the daemon. Returns 200 with
         `{ok: true, checks: [...]}` when all checks pass, 503 when any check
-        fails. Use this as the remote analogue of the CLI `bb-browser doctor`.
+        fails. Use this as the remote analogue of the CLI `borz doctor`.
       responses:
         "200":
           description: All checks passed

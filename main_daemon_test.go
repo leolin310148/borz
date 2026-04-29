@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // fakeDaemon starts an httptest server that replies to /status and /command,
 // and writes a matching daemon.json into a tempdir pointed at by
-// BB_BROWSER_HOME. Returns the server for handler registration overrides.
+// BORZ_HOME. Returns the server for handler registration overrides.
 func fakeDaemon(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -47,7 +47,7 @@ func fakeDaemon(t *testing.T) *httptest.Server {
 	t.Cleanup(ts.Close)
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 
 	u := strings.TrimPrefix(ts.URL, "http://")
 	host, portStr, _ := net.SplitHostPort(u)
@@ -198,4 +198,3 @@ func TestHandleServer_Status(t *testing.T) {
 		t.Fatalf("server status: %q", out)
 	}
 }
-

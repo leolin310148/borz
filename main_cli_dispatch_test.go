@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/daemon"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/daemon"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 type cliFakeDaemon struct {
@@ -37,7 +37,7 @@ func newFakeDaemon(t *testing.T) *cliFakeDaemon {
 
 	host, port := splitTestServerAddr(t, fd.server)
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	info := protocol.DaemonInfo{PID: os.Getpid(), Host: host, Port: port, Token: "test-token"}
 	data, err := json.Marshal(info)
 	if err != nil {
@@ -147,7 +147,7 @@ func runMainWithFakeDaemon(t *testing.T, args ...string) (string, []protocol.Req
 	t.Helper()
 	fd := newFakeDaemon(t)
 	oldArgs := os.Args
-	os.Args = append([]string{"bb-browser"}, args...)
+	os.Args = append([]string{"borz"}, args...)
 	defer func() { os.Args = oldArgs }()
 	jqExpression = ""
 
@@ -495,17 +495,17 @@ func TestMainStatusAndHelpCommands(t *testing.T) {
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "version"}
+		os.Args = []string{"borz", "version"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
-	if !strings.Contains(out, "bb-browser-go") {
+	if !strings.Contains(out, "borz") {
 		t.Fatalf("version output = %q", out)
 	}
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "help", "tab", "new"}
+		os.Args = []string{"borz", "help", "tab", "new"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
@@ -544,7 +544,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "client", "setup", "--url", ts.URL, "--token", "remote-token"}
+		os.Args = []string{"borz", "client", "setup", "--url", ts.URL, "--token", "remote-token"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
@@ -557,7 +557,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "--remote", "open", "https://remote-after-setup.test", "--json"}
+		os.Args = []string{"borz", "--remote", "open", "https://remote-after-setup.test", "--json"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
@@ -570,7 +570,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "client", "enable"}
+		os.Args = []string{"borz", "client", "enable"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
@@ -580,7 +580,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "open", "https://remote.test", "--json"}
+		os.Args = []string{"borz", "open", "https://remote.test", "--json"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
@@ -596,7 +596,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "--remote", "open", "https://remote.test", "--json"}
+		os.Args = []string{"borz", "--remote", "open", "https://remote.test", "--json"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
@@ -610,7 +610,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 	shotPath := filepath.Join(t.TempDir(), "remote-shot.png")
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "--remote", "screenshot", shotPath, "--json"}
+		os.Args = []string{"borz", "--remote", "screenshot", shotPath, "--json"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
@@ -626,7 +626,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "client", "status", "--json"}
+		os.Args = []string{"borz", "client", "status", "--json"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
@@ -636,7 +636,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
-		os.Args = []string{"bb-browser", "client", "disable"}
+		os.Args = []string{"borz", "client", "disable"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
@@ -672,7 +672,7 @@ func TestRunDoctorOutput(t *testing.T) {
 		w.Write([]byte(`{}`))
 	}))
 	defer cdp.Close()
-	t.Setenv("BB_BROWSER_CDP_URL", cdp.URL)
+	t.Setenv("BORZ_CDP_URL", cdp.URL)
 
 	out, reqs := runMainWithFakeDaemon(t, "doctor")
 	if len(reqs) != 1 || reqs[0].Action != protocol.ActionTabList {
@@ -682,7 +682,7 @@ func TestRunDoctorOutput(t *testing.T) {
 		t.Fatalf("doctor text output = %q", out)
 	}
 
-	t.Setenv("BB_BROWSER_CDP_URL", cdp.URL)
+	t.Setenv("BORZ_CDP_URL", cdp.URL)
 	out, reqs = runMainWithFakeDaemon(t, "doctor", "--json")
 	if len(reqs) != 1 || reqs[0].Action != protocol.ActionTabList {
 		t.Fatalf("doctor json requests = %+v", reqs)
@@ -746,7 +746,7 @@ func TestStartDaemonForegroundReturnsWhenAlreadyRunning(t *testing.T) {
 func TestStopDaemonAfterUpdateBranches(t *testing.T) {
 	client.ResetForTests()
 	t.Cleanup(client.ResetForTests)
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 	stopDaemonAfterUpdate()
 
 	fd := newFakeDaemon(t)
@@ -757,7 +757,7 @@ func TestStopDaemonAfterUpdateBranches(t *testing.T) {
 	}
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	client.ResetForTests()
 	info := protocol.DaemonInfo{PID: os.Getpid(), Host: "0.0.0.0", Port: 19824}
 	data, _ := json.Marshal(info)
@@ -772,7 +772,7 @@ func TestStopDaemonAfterUpdateBranches(t *testing.T) {
 
 func TestHandleSiteRunWithLocalAdapter(t *testing.T) {
 	newFakeDaemon(t)
-	sitesDir := filepath.Join(os.Getenv("BB_BROWSER_HOME"), "sites", "demo")
+	sitesDir := filepath.Join(os.Getenv("BORZ_HOME"), "sites", "demo")
 	if err := os.MkdirAll(sitesDir, 0o755); err != nil {
 		t.Fatalf("mkdir sites: %v", err)
 	}
@@ -784,7 +784,7 @@ func TestHandleSiteRunWithLocalAdapter(t *testing.T) {
   "args": {
     "q": {"required": true, "description": "query"}
   },
-  "example": "bb-browser demo/search cats"
+  "example": "borz demo/search cats"
 }
 */
 async function(args) { return args.q; }`

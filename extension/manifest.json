@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "bb-browser bridge",
+  "name": "borz bridge",
   "version": "0.1.0",
-  "description": "Extends bb-browser-go with Chrome APIs CDP cannot provide: cookies, bookmarks, history, downloads, windows, and browser-level events.",
+  "description": "Extends borz with Chrome APIs CDP cannot provide: cookies, bookmarks, history, downloads, windows, and browser-level events.",
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "bb-browser bridge"
+    "default_title": "borz bridge"
   },
   "permissions": [
     "bookmarks",

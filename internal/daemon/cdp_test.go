@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // rawMsg builds a map[string]json.RawMessage from typed fields.

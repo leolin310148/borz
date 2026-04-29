@@ -39,7 +39,7 @@ func TestPrintCommandHelpKnown(t *testing.T) {
 	})
 	for _, want := range []string{
 		"Click an element by ref.",
-		"Usage: bb-browser click <ref>",
+		"Usage: borz click <ref>",
 		"Notes:",
 		"Global flags",
 	} {
@@ -53,7 +53,7 @@ func TestPrintCommandHelpAlias(t *testing.T) {
 	out := captureStdout(t, func() {
 		printCommandHelp("--help")
 	})
-	if !strings.Contains(out, "Show help for bb-browser") {
+	if !strings.Contains(out, "Show help for borz") {
 		t.Errorf("--help alias did not resolve to 'help' entry; got:\n%s", out)
 	}
 }
@@ -64,7 +64,7 @@ func TestPrintCommandHelpUnknownFallsBack(t *testing.T) {
 			t.Error("printCommandHelp should return false for unknown command")
 		}
 	})
-	if !strings.Contains(out, "bb-browser-go - Your browser is the API") {
+	if !strings.Contains(out, "borz - Your browser is the API") {
 		t.Errorf("unknown command should fall back to top-level help; got:\n%s", out)
 	}
 }

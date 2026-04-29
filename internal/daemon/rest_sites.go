@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/leolin310148/bb-browser-go/internal/site"
+	"github.com/leolin310148/borz/internal/site"
 )
 
 // registerSiteRoutes attaches /v1/sites* handlers. Site adapters are read from

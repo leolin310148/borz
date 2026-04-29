@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/diagnostics"
-	"github.com/leolin310148/bb-browser-go/internal/jseval"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
-	"github.com/leolin310148/bb-browser-go/internal/site"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/diagnostics"
+	"github.com/leolin310148/borz/internal/jseval"
+	"github.com/leolin310148/borz/internal/protocol"
+	"github.com/leolin310148/borz/internal/site"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -477,7 +477,7 @@ func handleDoctor(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResu
 func handleSiteList(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	sites := siteLister()
 	if len(sites) == 0 {
-		return mcp.NewToolResultText("No site adapters available. Run `bb-browser site update` on the daemon host to pull community adapters."), nil
+		return mcp.NewToolResultText("No site adapters available. Run `borz site update` on the daemon host to pull community adapters."), nil
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Site adapters (%d):\n", len(sites))

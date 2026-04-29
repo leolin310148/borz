@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/config"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 var (
@@ -30,7 +30,7 @@ var (
 	discoverCDPPort = DiscoverCDPPort
 )
 
-// RemoteConfig is persisted by `bb-browser client setup` and stores the server
+// RemoteConfig is persisted by `borz client setup` and stores the server
 // used when a CLI invocation opts into remote routing with --remote.
 type RemoteConfig struct {
 	URL     string `json:"url"`
@@ -59,7 +59,7 @@ func RemoteRoutingEnabled() bool {
 	return useRemote
 }
 
-// ReadRemoteConfig reads ~/.bb-browser/client.json.
+// ReadRemoteConfig reads ~/.borz/client.json.
 func ReadRemoteConfig() (*RemoteConfig, error) {
 	data, err := os.ReadFile(config.ClientJSONPath())
 	if err != nil {
@@ -80,7 +80,7 @@ func ReadRemoteConfig() (*RemoteConfig, error) {
 	return &cfg, nil
 }
 
-// WriteRemoteConfig writes ~/.bb-browser/client.json with restrictive
+// WriteRemoteConfig writes ~/.borz/client.json with restrictive
 // permissions because it may contain a bearer token.
 func WriteRemoteConfig(cfg *RemoteConfig) error {
 	if cfg == nil {
@@ -96,7 +96,7 @@ func WriteRemoteConfig(cfg *RemoteConfig) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(config.HomeDir(), 0755); err != nil {
+	if _, err := config.EnsureHomeDir(); err != nil {
 		return err
 	}
 	return os.WriteFile(config.ClientJSONPath(), append(data, '\n'), 0600)
@@ -142,7 +142,7 @@ func SetRemoteEnabled(enabled bool) (*RemoteConfig, error) {
 }
 
 // EnabledRemoteConfig returns the active remote config for this process. Remote
-// routing is opt-in per invocation (bb-browser --remote ...); the persisted
+// routing is opt-in per invocation (borz --remote ...); the persisted
 // Enabled field is retained only for compatibility with older client.json files
 // and client enable/disable commands.
 func EnabledRemoteConfig() (*RemoteConfig, bool, error) {
@@ -152,7 +152,7 @@ func EnabledRemoteConfig() (*RemoteConfig, bool, error) {
 	cfg, err := ReadRemoteConfig()
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, false, fmt.Errorf("remote client is not configured; run 'bb-browser client setup <server-url> [--token <token>]'")
+			return nil, false, fmt.Errorf("remote client is not configured; run 'borz client setup <server-url> [--token <token>]'")
 		}
 		return nil, false, err
 	}
@@ -169,7 +169,7 @@ func CheckRemoteConfig(cfg *RemoteConfig, timeout time.Duration) error {
 		timeout = 5 * time.Second
 	}
 	if _, err := httpJSONEndpoint("GET", cfg.URL, cfg.Token, "/status", nil, timeout); err != nil {
-		return fmt.Errorf("cannot reach bb-browser server %s: %w", cfg.URL, err)
+		return fmt.Errorf("cannot reach borz server %s: %w", cfg.URL, err)
 	}
 	return nil
 }
@@ -198,7 +198,7 @@ func normalizeServerURL(raw string) (string, error) {
 	return u.String(), nil
 }
 
-// ReadDaemonJSON reads ~/.bb-browser/daemon.json.
+// ReadDaemonJSON reads ~/.borz/daemon.json.
 func ReadDaemonJSON() (*protocol.DaemonInfo, error) {
 	data, err := os.ReadFile(config.DaemonJSONPath())
 	if err != nil {
@@ -224,7 +224,7 @@ func IsProcessAlive(pid int) bool {
 	return err == nil
 }
 
-// httpJSONEndpoint sends an HTTP request to a bb-browser HTTP endpoint and
+// httpJSONEndpoint sends an HTTP request to a borz HTTP endpoint and
 // returns the raw JSON response.
 func httpJSONEndpoint(method, baseURL, token, urlPath string, body interface{}, timeout time.Duration) (json.RawMessage, error) {
 	var bodyReader io.Reader
@@ -261,7 +261,7 @@ func httpJSONEndpoint(method, baseURL, token, urlPath string, body interface{}, 
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("bb-browser HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("borz HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	return json.RawMessage(respBody), nil
@@ -316,11 +316,11 @@ func EnsureDaemon() error {
 	// Discover CDP port
 	cdpInfo, err := discoverCDPPort()
 	if err != nil {
-		return fmt.Errorf("bb-browser: Cannot find a Chromium-based browser.\n\n" +
+		return fmt.Errorf("borz: Cannot find a Chromium-based browser.\n\n" +
 			"Please do one of the following:\n" +
 			"  1. Install Google Chrome, Edge, or Brave\n" +
 			"  2. Start Chrome with: google-chrome --remote-debugging-port=19825\n" +
-			"  3. Set BB_BROWSER_CDP_URL=http://host:port")
+			"  3. Set BORZ_CDP_URL=http://host:port")
 	}
 
 	// Spawn daemon process
@@ -364,9 +364,9 @@ func EnsureDaemon() error {
 		}
 	}
 
-	return fmt.Errorf("bb-browser: Daemon did not start in time.\n\n" +
+	return fmt.Errorf("borz: Daemon did not start in time.\n\n" +
 		"Chrome CDP is reachable, but the daemon process failed to initialize.\n" +
-		"Try: bb-browser daemon status")
+		"Try: borz daemon status")
 }
 
 // SendCommand sends a command to the daemon.
@@ -520,6 +520,9 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	if executable == "" {
 		return nil, fmt.Errorf("no browser found")
 	}
+	if _, err := config.EnsureHomeDir(); err != nil {
+		return nil, err
+	}
 
 	userDataDir := config.ManagedUserDataDir()
 	os.MkdirAll(userDataDir, 0755)
@@ -529,7 +532,7 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	os.MkdirAll(defaultProfileDir, 0755)
 	prefsPath := filepath.Join(defaultProfileDir, "Preferences")
 	prefs := map[string]interface{}{
-		"profile": map[string]interface{}{"name": "bb-browser"},
+		"profile": map[string]interface{}{"name": "borz"},
 	}
 	prefsJSON, _ := json.Marshal(prefs)
 	os.WriteFile(prefsPath, prefsJSON, 0644)
@@ -585,8 +588,8 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 
 // DiscoverCDPPort finds a Chrome CDP endpoint.
 func DiscoverCDPPort() (*CDPEndpoint, error) {
-	// Priority 1: BB_BROWSER_CDP_URL env var
-	if envURL := os.Getenv("BB_BROWSER_CDP_URL"); envURL != "" {
+	// Priority 1: BORZ_CDP_URL env var (legacy BB_BROWSER_CDP_URL supported).
+	if envURL := config.Env("BORZ_CDP_URL", "BB_BROWSER_CDP_URL"); envURL != "" {
 		// Parse URL to extract host:port
 		envURL = strings.TrimPrefix(envURL, "http://")
 		envURL = strings.TrimPrefix(envURL, "https://")

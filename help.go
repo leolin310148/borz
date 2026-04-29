@@ -9,7 +9,7 @@ import (
 // cmdHelp is the structured help for a single command.
 type cmdHelp struct {
 	Summary  string   // one-line description
-	Usage    string   // e.g. "bb-browser open <url> [--new]"
+	Usage    string   // e.g. "borz open <url> [--new]"
 	Flags    []string // aligned "  --foo <v>   description" lines
 	Examples []string
 	Notes    string // additional context (ref format, side effects, etc.)
@@ -17,7 +17,7 @@ type cmdHelp struct {
 
 // refNote is the standard paragraph about the <ref> argument, reused by
 // every interaction command. Refs come from the accessibility snapshot.
-const refNote = `<ref> is an element handle from 'bb-browser snapshot'. Snapshots render
+const refNote = `<ref> is an element handle from 'borz snapshot'. Snapshots render
 elements as 'button [ref=5]'; pass "5" (or "@5") as <ref>. Refs are
 regenerated on every snapshot — take a fresh snapshot after navigation
 or any DOM change before interacting.`
@@ -25,7 +25,7 @@ or any DOM change before interacting.`
 // globalFlagsNote is the short summary of global flags shown in per-command help.
 const globalFlagsNote = `Global flags (available on every command):
   --remote                Route browser commands/status to configured server
-  --tab <id>              Target a specific tab (from 'bb-browser tab')
+  --tab <id>              Target a specific tab (from 'borz tab')
   --json                  Emit the raw JSON response instead of pretty output
   --jq <expr>             Filter JSON output with a jq expression (implies --json)
   --unwrap                For 'eval'/site adapters: print resp.data.result raw
@@ -39,12 +39,12 @@ check, uncheck, select, press, scroll, eval):
 
 // commandHelp indexes per-command help. Canonical commands are the keys; any
 // subcommand shortcuts ("tab.new", "site.run", ...) are also listed so callers
-// can look them up via 'bb-browser help <command> <sub>'.
+// can look them up via 'borz help <command> <sub>'.
 var commandHelp = map[string]cmdHelp{
 	// --- Navigation ---
 	"open": {
 		Summary: "Open a URL (reuses a tab with the same URL unless --new).",
-		Usage:   "bb-browser open <url> [--new] [--tab <id>] [--wait-for <selector>] [--timeout <ms>]",
+		Usage:   "borz open <url> [--new] [--tab <id>] [--wait-for <selector>] [--timeout <ms>]",
 		Flags: []string{
 			"  --new                   Force a new tab even if the URL is already open",
 			"  --tab <id>              Navigate an existing tab instead of opening a new one",
@@ -52,93 +52,93 @@ var commandHelp = map[string]cmdHelp{
 			"  --timeout <ms>          Cap --wait-for (default 10000ms)",
 		},
 		Examples: []string{
-			"  bb-browser open https://github.com",
-			"  bb-browser open https://github.com --new",
-			"  bb-browser open https://example.com/spa --wait-for '.article-content'",
-			"  bb-browser open https://slow.example --wait-for '#root' --timeout 30000",
+			"  borz open https://github.com",
+			"  borz open https://github.com --new",
+			"  borz open https://example.com/spa --wait-for '.article-content'",
+			"  borz open https://slow.example --wait-for '#root' --timeout 30000",
 		},
 	},
-	"back":    {Summary: "Go back in the current tab's history.", Usage: "bb-browser back [--tab <id>]"},
-	"forward": {Summary: "Go forward in the current tab's history.", Usage: "bb-browser forward [--tab <id>]"},
-	"refresh": {Summary: "Reload the current page.", Usage: "bb-browser refresh [--tab <id>]"},
+	"back":    {Summary: "Go back in the current tab's history.", Usage: "borz back [--tab <id>]"},
+	"forward": {Summary: "Go forward in the current tab's history.", Usage: "borz forward [--tab <id>]"},
+	"refresh": {Summary: "Reload the current page.", Usage: "borz refresh [--tab <id>]"},
 	"close": {
 		Summary: "Close the current tab (or the tab named by --tab).",
-		Usage:   "bb-browser close [--tab <id>]",
-		Notes:   "To close a tab by index/ID use 'bb-browser tab close <n>'.",
+		Usage:   "borz close [--tab <id>]",
+		Notes:   "To close a tab by index/ID use 'borz tab close <n>'.",
 	},
 
 	// --- Interaction ---
 	"click": {
 		Summary:  "Click an element by ref.",
-		Usage:    "bb-browser click <ref> [--tab <id>]",
-		Examples: []string{"  bb-browser click 5"},
+		Usage:    "borz click <ref> [--tab <id>]",
+		Examples: []string{"  borz click 5"},
 		Notes:    refNote,
 	},
 	"hover": {
 		Summary:  "Hover an element by ref.",
-		Usage:    "bb-browser hover <ref> [--tab <id>]",
-		Examples: []string{"  bb-browser hover 12"},
+		Usage:    "borz hover <ref> [--tab <id>]",
+		Examples: []string{"  borz hover 12"},
 		Notes:    refNote,
 	},
 	"fill": {
 		Summary: "Clear an input/textarea and fill it with <text>.",
-		Usage:   "bb-browser fill <ref> <text> [--tab <id>]",
+		Usage:   "borz fill <ref> <text> [--tab <id>]",
 		Examples: []string{
-			"  bb-browser fill 3 'hello world'",
-			"  bb-browser fill 3 multi word text (remaining args are joined)",
+			"  borz fill 3 'hello world'",
+			"  borz fill 3 multi word text (remaining args are joined)",
 		},
 		Notes: refNote + "\nUse 'type' to append without clearing.",
 	},
 	"type": {
 		Summary:  "Append <text> to an input/textarea without clearing it first.",
-		Usage:    "bb-browser type <ref> <text> [--tab <id>]",
-		Examples: []string{"  bb-browser type 3 ' and more'"},
+		Usage:    "borz type <ref> <text> [--tab <id>]",
+		Examples: []string{"  borz type 3 ' and more'"},
 		Notes:    refNote + "\nUse 'fill' to clear the field before writing.",
 	},
 	"check": {
 		Summary:  "Check a checkbox or radio by ref.",
-		Usage:    "bb-browser check <ref> [--tab <id>]",
-		Examples: []string{"  bb-browser check 7"},
+		Usage:    "borz check <ref> [--tab <id>]",
+		Examples: []string{"  borz check 7"},
 		Notes:    refNote,
 	},
 	"uncheck": {
 		Summary:  "Uncheck a checkbox by ref.",
-		Usage:    "bb-browser uncheck <ref> [--tab <id>]",
-		Examples: []string{"  bb-browser uncheck 7"},
+		Usage:    "borz uncheck <ref> [--tab <id>]",
+		Examples: []string{"  borz uncheck 7"},
 		Notes:    refNote,
 	},
 	"select": {
 		Summary:  "Select an <option> in a <select> element by value.",
-		Usage:    "bb-browser select <ref> <value> [--tab <id>]",
-		Examples: []string{"  bb-browser select 9 'us-east-1'"},
+		Usage:    "borz select <ref> <value> [--tab <id>]",
+		Examples: []string{"  borz select 9 'us-east-1'"},
 		Notes:    refNote,
 	},
 	"press": {
 		Summary: "Dispatch a single key press to the active element.",
-		Usage:   "bb-browser press <key> [--tab <id>]",
+		Usage:   "borz press <key> [--tab <id>]",
 		Examples: []string{
-			"  bb-browser press Enter",
-			"  bb-browser press Escape",
-			"  bb-browser press ArrowDown",
+			"  borz press Enter",
+			"  borz press Escape",
+			"  borz press ArrowDown",
 		},
 		Notes: "Key names follow KeyboardEvent.key (e.g. 'Enter', 'Tab', 'ArrowLeft', 'a').",
 	},
 	"scroll": {
 		Summary: "Scroll the page by pixels in a direction.",
-		Usage:   "bb-browser scroll [direction] [pixels] [--tab <id>]",
+		Usage:   "borz scroll [direction] [pixels] [--tab <id>]",
 		Flags: []string{
 			"  direction    up|down|left|right (default: down)",
 			"  pixels       integer pixel distance (default: 300)",
 		},
 		Examples: []string{
-			"  bb-browser scroll",
-			"  bb-browser scroll down 800",
-			"  bb-browser scroll up 200",
+			"  borz scroll",
+			"  borz scroll down 800",
+			"  borz scroll up 200",
 		},
 	},
 	"eval": {
 		Summary: "Run JavaScript in the page context and return the JSON result.",
-		Usage:   "bb-browser eval <script...> [--file <path>] [--unwrap] [--no-auto-await] [--json-arg name=value]... [--tab <id>]",
+		Usage:   "borz eval <script...> [--file <path>] [--unwrap] [--no-auto-await] [--json-arg name=value]... [--tab <id>]",
 		Flags: []string{
 			"  --file <path>            Read the script from a file instead of inline args",
 			"  --unwrap                 Print the result raw (strings unquoted, otherwise JSON)",
@@ -146,11 +146,11 @@ var commandHelp = map[string]cmdHelp{
 			"  --json-arg name=value    Inject a JSON value as a top-level `const` (repeatable)",
 		},
 		Examples: []string{
-			"  bb-browser eval 'document.title'",
-			"  bb-browser eval --unwrap 'document.title'",
-			"  bb-browser eval 'await fetch(\"/api/me\").then(r=>r.json())'",
-			"  bb-browser eval --file ./extract.js",
-			"  bb-browser eval --file ./greet.js --json-arg user='{\"id\":7}' --json-arg n=3",
+			"  borz eval 'document.title'",
+			"  borz eval --unwrap 'document.title'",
+			"  borz eval 'await fetch(\"/api/me\").then(r=>r.json())'",
+			"  borz eval --file ./extract.js",
+			"  borz eval --file ./greet.js --json-arg user='{\"id\":7}' --json-arg n=3",
 		},
 		Notes: "All remaining args are joined with spaces and evaluated as one expression.\n" +
 			"By default, scripts that contain a top-level `await` are auto-wrapped in\n" +
@@ -158,18 +158,18 @@ var commandHelp = map[string]cmdHelp{
 			"instead of `[object Promise]`. Use --no-auto-await to disable.\n" +
 			"--json-arg may be repeated; each value is parsed as JSON and prepended as\n" +
 			"`const NAME = VALUE;` so --file scripts can read CLI inputs without templating.\n" +
-			"For authenticated HTTP calls prefer 'bb-browser fetch'.",
+			"For authenticated HTTP calls prefer 'borz fetch'.",
 	},
 	"wait": {
 		Summary:  "Sleep for <ms> milliseconds (default 1000) without releasing the daemon.",
-		Usage:    "bb-browser wait [ms] [--tab <id>]",
-		Examples: []string{"  bb-browser wait 500"},
+		Usage:    "borz wait [ms] [--tab <id>]",
+		Examples: []string{"  borz wait 500"},
 	},
 
 	// --- Observation ---
 	"snapshot": {
 		Summary: "Emit the accessibility tree of the page with [ref=N] handles.",
-		Usage:   "bb-browser snapshot [-i] [-c] [-d N] [-s <selector>] [--text-only] [--tab <id>]",
+		Usage:   "borz snapshot [-i] [-c] [-d N] [-s <selector>] [--text-only] [--tab <id>]",
 		Flags: []string{
 			"  -i, --interactive   Include only clickable/fillable elements (much shorter)",
 			"  -c, --compact       Collapse whitespace and redundant nesting",
@@ -178,9 +178,9 @@ var commandHelp = map[string]cmdHelp{
 			"  --text-only         Reader-mode plain text (no refs, no tree); good for LLM context",
 		},
 		Examples: []string{
-			"  bb-browser snapshot -i -c",
-			"  bb-browser snapshot -d 4 -s '#app'",
-			"  bb-browser snapshot --text-only",
+			"  borz snapshot -i -c",
+			"  borz snapshot -d 4 -s '#app'",
+			"  borz snapshot --text-only",
 		},
 		Notes: "Always snapshot before calling interaction commands — refs are regenerated " +
 			"on every snapshot and go stale across navigations or DOM updates.\n" +
@@ -190,31 +190,31 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"screenshot": {
 		Summary: "Capture a PNG of the current page.",
-		Usage:   "bb-browser screenshot [path] [--tab <id>]",
+		Usage:   "borz screenshot [path] [--tab <id>]",
 		Examples: []string{
-			"  bb-browser screenshot",
-			"  bb-browser screenshot ./out.png",
+			"  borz screenshot",
+			"  borz screenshot ./out.png",
 		},
 		Notes: "With [path], the CLI writes the PNG on the machine running the CLI, including when --remote is used. Without [path] the image is returned as a base64 data URL in the JSON payload.",
 	},
 	"get": {
 		Summary: "Read a single attribute — page-level or from a ref.",
-		Usage:   "bb-browser get <attribute> [ref] [--tab <id>]",
+		Usage:   "borz get <attribute> [ref] [--tab <id>]",
 		Flags: []string{
 			"  Page-level: url, title",
 			"  Element:    text, value, href, html, <any DOM attribute> (requires <ref>)",
 		},
 		Examples: []string{
-			"  bb-browser get url",
-			"  bb-browser get title",
-			"  bb-browser get text 5",
-			"  bb-browser get href 12",
+			"  borz get url",
+			"  borz get title",
+			"  borz get text 5",
+			"  borz get href 12",
 		},
 		Notes: refNote,
 	},
 	"network": {
 		Summary: "List, clear, or live-tail network requests captured for the current tab.",
-		Usage:   "bb-browser network [requests|clear] [--tail] [--interval <ms>] [flags]",
+		Usage:   "borz network [requests|clear] [--tail] [--interval <ms>] [flags]",
 		Flags: []string{
 			"  --filter <substr>    Only requests whose URL contains <substr>",
 			"  --method <M>         Only requests with HTTP method M (GET, POST, ...)",
@@ -225,12 +225,12 @@ var commandHelp = map[string]cmdHelp{
 			"  --interval <ms>      Polling interval in --tail mode (default 500)",
 		},
 		Examples: []string{
-			"  bb-browser network",
-			"  bb-browser network requests --filter /api/ --method POST",
-			"  bb-browser network requests --since last_action",
-			"  bb-browser network requests --tail --filter /api/",
-			"  bb-browser network --tail --json | jq -c 'select(.status>=400)'",
-			"  bb-browser network clear",
+			"  borz network",
+			"  borz network requests --filter /api/ --method POST",
+			"  borz network requests --since last_action",
+			"  borz network requests --tail --filter /api/",
+			"  borz network --tail --json | jq -c 'select(.status>=400)'",
+			"  borz network clear",
 		},
 		Notes: "--tail polls the daemon every --interval ms, advancing the cursor so each\n" +
 			"request is printed at most once. Combine with --json for JSONL output suitable\n" +
@@ -238,28 +238,28 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"console": {
 		Summary: "Read or clear captured console messages.",
-		Usage:   "bb-browser console [--clear] [--filter <substr>] [--since <seq|last_action>]",
+		Usage:   "borz console [--clear] [--filter <substr>] [--since <seq|last_action>]",
 		Flags: []string{
 			"  --clear               Drop all captured console messages for this tab",
 			"  --filter <substr>     Only messages whose text contains <substr>",
 			"  --since <seq|last_action>   Only events newer than this checkpoint",
 		},
 		Examples: []string{
-			"  bb-browser console",
-			"  bb-browser console --filter error --since last_action",
+			"  borz console",
+			"  borz console --filter error --since last_action",
 		},
 	},
 	"errors": {
 		Summary: "Read or clear captured uncaught JS errors.",
-		Usage:   "bb-browser errors [--clear] [--filter <substr>] [--since <seq|last_action>]",
+		Usage:   "borz errors [--clear] [--filter <substr>] [--since <seq|last_action>]",
 		Examples: []string{
-			"  bb-browser errors",
-			"  bb-browser errors --since last_action",
+			"  borz errors",
+			"  borz errors --since last_action",
 		},
 	},
 	"trace": {
 		Summary: "Record the user's manual interactions as a replayable trace.",
-		Usage:   "bb-browser trace [start|stop|status] [--tab <id>]",
+		Usage:   "borz trace [start|stop|status] [--tab <id>]",
 		Flags: []string{
 			"  start     Begin recording clicks, fills, presses, scrolls, navigations",
 			"  stop      Stop recording and return the event list",
@@ -268,13 +268,13 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"history": {
 		Summary: "List the daemon's recent action history (ring buffer).",
-		Usage:   "bb-browser history",
+		Usage:   "borz history",
 	},
 
 	// --- Tabs / frames / dialogs ---
 	"tab": {
 		Summary: "List, create, switch between, or close Chrome tabs.",
-		Usage:   "bb-browser tab [subcommand]",
+		Usage:   "borz tab [subcommand]",
 		Flags: []string{
 			"  (no subcommand)       List all tabs (default)",
 			"  list                  Same as no subcommand",
@@ -286,33 +286,33 @@ var commandHelp = map[string]cmdHelp{
 			"  events [--tail]       Browser-level tab events (created/removed/updated/activated)",
 		},
 		Examples: []string{
-			"  bb-browser tab",
-			"  bb-browser tab new https://github.com",
-			"  bb-browser tab 2",
-			"  bb-browser tab select --id abc123",
-			"  bb-browser tab close 3",
-			"  bb-browser tab events --tail",
+			"  borz tab",
+			"  borz tab new https://github.com",
+			"  borz tab 2",
+			"  borz tab select --id abc123",
+			"  borz tab close 3",
+			"  borz tab events --tail",
 		},
-		Notes: "'events' requires the bb-browser Chrome extension to be installed and connected. " +
+		Notes: "'events' requires the borz Chrome extension to be installed and connected. " +
 			"It surfaces browser-level events (Chrome tab/window lifecycle) that CDP cannot observe.",
 	},
 	"cookies": {
 		Summary: "Read cookies the browser has stored, across every domain.",
-		Usage:   "bb-browser cookies [all] [domain-filter]",
+		Usage:   "borz cookies [all] [domain-filter]",
 		Flags: []string{
 			"  all [domain]          Dump cookies for every domain, optionally filtered",
 		},
 		Examples: []string{
-			"  bb-browser cookies all",
-			"  bb-browser cookies all github.com",
-			"  bb-browser cookies all --json",
+			"  borz cookies all",
+			"  borz cookies all github.com",
+			"  borz cookies all --json",
 		},
-		Notes: "Requires the bb-browser Chrome extension. CDP can only return cookies " +
+		Notes: "Requires the borz Chrome extension. CDP can only return cookies " +
 			"scoped to the active page; the extension exposes cookies across all domains.",
 	},
 	"bookmarks": {
-		Summary: "Read and manage Chrome bookmarks through the bb-browser extension.",
-		Usage:   "bb-browser bookmarks [tree|search|create|update|remove]",
+		Summary: "Read and manage Chrome bookmarks through the borz extension.",
+		Usage:   "borz bookmarks [tree|search|create|update|remove]",
 		Flags: []string{
 			"  tree                         Print the full bookmark tree (default)",
 			"  search <query>               Search bookmarks by title or URL",
@@ -321,28 +321,28 @@ var commandHelp = map[string]cmdHelp{
 			"  remove <id> [--recursive]    Remove a bookmark or folder",
 		},
 		Examples: []string{
-			"  bb-browser bookmarks tree",
-			"  bb-browser bookmarks search github",
-			"  bb-browser bookmarks create https://example.com Example --parent 1",
+			"  borz bookmarks tree",
+			"  borz bookmarks search github",
+			"  borz bookmarks create https://example.com Example --parent 1",
 		},
 		Notes: "Requires the Chrome extension. This uses chrome.bookmarks, a browser-level API CDP cannot access.",
 	},
 	"browser-history": {
 		Summary: "Search or delete Chrome browsing history through the extension.",
-		Usage:   "bb-browser browser-history [search|delete-url]",
+		Usage:   "borz browser-history [search|delete-url]",
 		Flags: []string{
 			"  search [query] [--limit N]   Search browser history (default)",
 			"  delete-url <url>             Delete one URL from browser history",
 		},
 		Examples: []string{
-			"  bb-browser browser-history search github --limit 20",
-			"  bb-browser browser-history delete-url https://example.com",
+			"  borz browser-history search github --limit 20",
+			"  borz browser-history delete-url https://example.com",
 		},
-		Notes: "Named browser-history to avoid changing the existing 'history' command, which shows bb-browser daemon action history.",
+		Notes: "Named browser-history to avoid changing the existing 'history' command, which shows borz daemon action history.",
 	},
 	"downloads": {
 		Summary: "Inspect and control Chrome downloads through the extension.",
-		Usage:   "bb-browser downloads [list|search|start|erase|cancel|pause|resume|show|show-folder]",
+		Usage:   "borz downloads [list|search|start|erase|cancel|pause|resume|show|show-folder]",
 		Flags: []string{
 			"  list [--limit N] [--state S]     List downloads (default)",
 			"  search <query> [--limit N]       Search downloads",
@@ -352,15 +352,15 @@ var commandHelp = map[string]cmdHelp{
 			"  show-folder                      Open the default download folder",
 		},
 		Examples: []string{
-			"  bb-browser downloads list --limit 20",
-			"  bb-browser downloads search report",
-			"  bb-browser downloads start https://example.com/file.zip --filename file.zip",
+			"  borz downloads list --limit 20",
+			"  borz downloads search report",
+			"  borz downloads start https://example.com/file.zip --filename file.zip",
 		},
 		Notes: "Requires the Chrome extension. It uses chrome.downloads, which exposes browser download manager state outside CDP.",
 	},
 	"window": {
 		Summary: "List and control Chrome browser windows through the extension.",
-		Usage:   "bb-browser window [list|new|focus|close]",
+		Usage:   "borz window [list|new|focus|close]",
 		Flags: []string{
 			"  list                  List Chrome windows and tab counts (default)",
 			"  new [url] [--focused] Create a browser window",
@@ -368,32 +368,32 @@ var commandHelp = map[string]cmdHelp{
 			"  close <id>            Close a browser window",
 		},
 		Examples: []string{
-			"  bb-browser window list",
-			"  bb-browser window new https://example.com --focused",
-			"  bb-browser window focus 123",
+			"  borz window list",
+			"  borz window new https://example.com --focused",
+			"  borz window focus 123",
 		},
 		Notes: "Requires the Chrome extension. The plural alias 'windows' is also accepted.",
 	},
 	"windows": {
 		Summary: "Alias for 'window'.",
-		Usage:   "bb-browser windows [list|new|focus|close]",
-		Notes:   "Use 'bb-browser help window' for the full command reference.",
+		Usage:   "borz windows [list|new|focus|close]",
+		Notes:   "Use 'borz help window' for the full command reference.",
 	},
 	"frame": {
 		Summary: "Switch the interaction context to a child iframe, or back to the main frame.",
-		Usage:   "bb-browser frame [main|<selector>]",
+		Usage:   "borz frame [main|<selector>]",
 		Examples: []string{
-			"  bb-browser frame 'iframe#checkout'",
-			"  bb-browser frame main",
+			"  borz frame 'iframe#checkout'",
+			"  borz frame main",
 		},
 	},
 	"dialog": {
 		Summary: "Pre-arm a handler for the next native alert/confirm/prompt/beforeunload.",
-		Usage:   "bb-browser dialog [accept|dismiss] [prompt-text]",
+		Usage:   "borz dialog [accept|dismiss] [prompt-text]",
 		Examples: []string{
-			"  bb-browser dialog accept",
-			"  bb-browser dialog accept 'Leo'",
-			"  bb-browser dialog dismiss",
+			"  borz dialog accept",
+			"  borz dialog accept 'Leo'",
+			"  borz dialog dismiss",
 		},
 		Notes: "Run this BEFORE the click/navigation that triggers the dialog. " +
 			"Default action is 'accept'. If accepting a prompt, pass the response text as the second arg.",
@@ -402,35 +402,35 @@ var commandHelp = map[string]cmdHelp{
 	// --- Site adapters ---
 	"site": {
 		Summary: "Run or inspect platform-specific scrapers (twitter/search, hackernews/top, ...).",
-		Usage:   "bb-browser site [subcommand]",
+		Usage:   "borz site [subcommand]",
 		Flags: []string{
 			"  list                  List all adapters grouped by platform (default)",
 			"  search <query>        Fuzzy-search adapters by name/description",
 			"  info <name>           Show an adapter's args, domain, and example",
 			"  update                Pull the latest community adapter pack",
-			"  run <name> [args...]  Run an adapter (equivalent to 'bb-browser <name> ...')",
+			"  run <name> [args...]  Run an adapter (equivalent to 'borz <name> ...')",
 		},
 		Examples: []string{
-			"  bb-browser site list",
-			"  bb-browser site info hackernews/top",
-			"  bb-browser hackernews/top",
-			"  bb-browser twitter/search 'claude code'",
+			"  borz site list",
+			"  borz site info hackernews/top",
+			"  borz hackernews/top",
+			"  borz twitter/search 'claude code'",
 		},
 		Notes: "Any '<platform>/<adapter>' invocation is forwarded to 'site run' — " +
-			"'bb-browser hackernews/top' and 'bb-browser site run hackernews/top' are equivalent. " +
-			"Run 'bb-browser site info <name>' to see required args for each adapter.",
+			"'borz hackernews/top' and 'borz site run hackernews/top' are equivalent. " +
+			"Run 'borz site info <name>' to see required args for each adapter.",
 	},
 
 	// --- Utility / infra ---
 	"fetch": {
 		Summary: "Issue an authenticated HTTP request from inside the page (inherits cookies).",
-		Usage:   "bb-browser fetch <url> [--method <M>] [--tab <id>]",
+		Usage:   "borz fetch <url> [--method <M>] [--tab <id>]",
 		Flags: []string{
 			"  --method <M>   HTTP method (default: GET)",
 		},
 		Examples: []string{
-			"  bb-browser fetch https://api.github.com/user",
-			"  bb-browser fetch https://example.com/api/x --method POST",
+			"  borz fetch https://api.github.com/user",
+			"  borz fetch https://example.com/api/x --method POST",
 		},
 		Notes: "Runs as fetch(url, {credentials:'include'}) in the tab, so session cookies, " +
 			"auth headers, and CORS policy all apply. Body is returned as parsed JSON when the " +
@@ -438,18 +438,18 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"status": {
 		Summary: "Print the daemon status as JSON (uptime, tabs, CDP connection).",
-		Usage:   "bb-browser status",
+		Usage:   "borz status",
 	},
 	"doctor": {
 		Summary: "Run end-to-end diagnostics on the CLI/daemon/browser stack.",
-		Usage:   "bb-browser doctor [--json]",
+		Usage:   "borz doctor [--json]",
 		Notes: "Checks: home directory, daemon.json, daemon process & HTTP, CDP connection,\n" +
 			"open tabs, and direct CDP discovery. Exits non-zero if any check fails;\n" +
 			"warnings (e.g. daemon not started) do not fail. Use --json for machine output.",
 	},
 	"daemon": {
 		Summary: "Start or control the local daemon (loopback only).",
-		Usage:   "bb-browser daemon [status|shutdown|stop] [--host H --port P --cdp-host H --cdp-port P]",
+		Usage:   "borz daemon [status|shutdown|stop] [--host H --port P --cdp-host H --cdp-port P]",
 		Flags: []string{
 			"  (no subcommand)        Start the daemon in the foreground",
 			"  status                 Show JSON status (or 'not running')",
@@ -459,37 +459,37 @@ var commandHelp = map[string]cmdHelp{
 			"  --cdp-host <h>         Chrome DevTools host (default 127.0.0.1)",
 			"  --cdp-port <p>         Chrome DevTools port (default 19825)",
 			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
-			"                         (default 30, 0=disable; env BB_BROWSER_TAB_IDLE_TIMEOUT)",
+			"                         (default 30, 0=disable; env BORZ_TAB_IDLE_TIMEOUT)",
 		},
-		Notes: "For a remote-accessible server with auth, use 'bb-browser server' instead.",
+		Notes: "For a remote-accessible server with auth, use 'borz server' instead.",
 	},
 	"server": {
 		Summary: "Start the REST server (exposes /v1/* routes; requires a token when non-loopback).",
-		Usage:   "bb-browser server [status|shutdown|stop] [--host H --port P --token T]",
+		Usage:   "borz server [status|shutdown|stop] [--host H --port P --token T]",
 		Flags: []string{
 			"  (no subcommand)        Start the server in the foreground",
 			"  status                 Show JSON status",
 			"  shutdown|stop          Ask the running server to exit",
 			"  --host <h>             Bind address (default 0.0.0.0)",
-			"  --port <p>             Listen port (default 19824; env BB_BROWSER_SERVER_PORT)",
+			"  --port <p>             Listen port (default 19824; env BORZ_SERVER_PORT)",
 			"  --token <t>            Bearer token required for non-loopback binds",
-			"                         (env BB_BROWSER_TOKEN)",
+			"                         (env BORZ_TOKEN)",
 			"  --cdp-host <h>         Chrome DevTools host (default 127.0.0.1)",
 			"  --cdp-port <p>         Chrome DevTools port (default 19825)",
 			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
-			"                         (default 30, 0=disable; env BB_BROWSER_TAB_IDLE_TIMEOUT)",
+			"                         (default 30, 0=disable; env BORZ_TAB_IDLE_TIMEOUT)",
 		},
 		Examples: []string{
-			"  bb-browser server --host 127.0.0.1",
-			"  bb-browser server --host 0.0.0.0 --token \"$BB_BROWSER_TOKEN\"",
-			"  bb-browser server shutdown",
+			"  borz server --host 127.0.0.1",
+			"  borz server --host 0.0.0.0 --token \"$BORZ_TOKEN\"",
+			"  borz server shutdown",
 		},
 		Notes: "Clients authenticate with 'Authorization: Bearer <token>'. " +
 			"Swagger UI is served at /docs and the OpenAPI spec at /openapi.yaml.",
 	},
 	"client": {
-		Summary: "Configure the remote bb-browser server used by the global --remote flag.",
-		Usage:   "bb-browser client [setup|status|enable|disable]",
+		Summary: "Configure the remote borz server used by the global --remote flag.",
+		Usage:   "borz client [setup|status|enable|disable]",
 		Flags: []string{
 			"  setup <url>            Store the remote server URL",
 			"  setup --url <url>      Same as positional URL",
@@ -499,22 +499,22 @@ var commandHelp = map[string]cmdHelp{
 			"  enable|disable         Legacy config toggle; normal commands still need --remote",
 		},
 		Examples: []string{
-			"  bb-browser client setup http://server:19824 --token \"$BB_BROWSER_TOKEN\"",
-			"  bb-browser --remote open https://example.com",
-			"  alias bb-browser='bb-browser --remote'  # remote by default in this shell",
+			"  borz client setup http://server:19824 --token \"$BORZ_TOKEN\"",
+			"  borz --remote open https://example.com",
+			"  alias borz='borz --remote'  # remote by default in this shell",
 		},
 		Notes: "Commands that talk to the browser use the local daemon unless --remote is " +
 			"passed for that invocation. The token is stored in " +
-			"~/.bb-browser/client.json with 0600 permissions and is never printed by status.",
+			"~/.borz/client.json with 0600 permissions and is never printed by status.",
 	},
 	"mcp": {
 		Summary: "Speak MCP over stdio — intended to be spawned by an MCP-aware client.",
-		Usage:   "bb-browser mcp",
+		Usage:   "borz mcp",
 		Notes:   "Humans rarely run this directly; configure it in your MCP client instead.",
 	},
 	"extension": {
-		Summary: "Download, locate, or inspect the bb-browser Chrome extension.",
-		Usage:   "bb-browser extension [download|update|path|status|call]",
+		Summary: "Download, locate, or inspect the borz Chrome extension.",
+		Usage:   "borz extension [download|update|path|status|call]",
 		Flags: []string{
 			"  download              Download the latest extension zip and extract it (default)",
 			"  update                Alias for 'download' — overwrites the current install",
@@ -523,12 +523,12 @@ var commandHelp = map[string]cmdHelp{
 			"  call <method> [json]  Raw extension RPC escape hatch",
 		},
 		Examples: []string{
-			"  bb-browser extension download",
-			"  bb-browser extension path",
-			"  bb-browser extension status --json",
-			"  bb-browser extension call bookmarks.search '{\"query\":\"github\"}'",
+			"  borz extension download",
+			"  borz extension path",
+			"  borz extension status --json",
+			"  borz extension call bookmarks.search '{\"query\":\"github\"}'",
 		},
-		Notes: "Extracts to ~/.bb-browser/extension (override with $BB_BROWSER_HOME). " +
+		Notes: "Extracts to ~/.borz/extension (override with $BORZ_HOME). " +
 			"After download, load it in Chrome via chrome://extensions → enable Developer " +
 			"mode → 'Load unpacked' → select the printed directory. The extension provides " +
 			"capabilities CDP cannot: cross-domain cookies, bookmarks, history, downloads, " +
@@ -536,189 +536,189 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"extension.download": {
 		Summary: "Download the latest extension zip and extract it (replacing any prior install).",
-		Usage:   "bb-browser extension download",
-		Notes: "Downloads bb-browser-extension.zip from the latest GitHub release, verifies " +
-			"its SHA-256 from checksums.txt, then nukes ~/.bb-browser/extension and extracts " +
+		Usage:   "borz extension download",
+		Notes: "Downloads borz-extension.zip from the latest GitHub release, verifies " +
+			"its SHA-256 from checksums.txt, then nukes ~/.borz/extension and extracts " +
 			"the new contents. After it finishes, follow the printed steps to load it via " +
 			"chrome://extensions → 'Load unpacked'.",
 	},
 	"extension.update": {
 		Summary: "Alias for 'extension download'. Overwrites the current install with the latest release.",
-		Usage:   "bb-browser extension update",
+		Usage:   "borz extension update",
 	},
 	"extension.install": {
 		Summary: "Alias for 'extension download'.",
-		Usage:   "bb-browser extension install",
+		Usage:   "borz extension install",
 	},
 	"extension.path": {
 		Summary: "Print the local extension install directory.",
-		Usage:   "bb-browser extension path",
+		Usage:   "borz extension path",
 		Notes:   "Useful for scripting or for pasting the path into chrome://extensions.",
 	},
 	"extension.status": {
 		Summary: "Show the connected extension's capabilities.",
-		Usage:   "bb-browser extension status [--json]",
+		Usage:   "borz extension status [--json]",
 		Notes:   "Requires the extension service worker to be connected to /v1/ext/ws.",
 	},
 	"extension.capabilities": {
 		Summary: "Alias for 'extension status'.",
-		Usage:   "bb-browser extension capabilities [--json]",
+		Usage:   "borz extension capabilities [--json]",
 	},
 	"extension.call": {
 		Summary: "Call a supported extension RPC method directly.",
-		Usage:   "bb-browser extension call <method> [json-params]",
+		Usage:   "borz extension call <method> [json-params]",
 		Examples: []string{
-			"  bb-browser extension call bookmarks.search '{\"query\":\"github\"}'",
-			"  bb-browser extension call downloads.search '{\"q\":\"report\",\"limit\":10}'",
+			"  borz extension call bookmarks.search '{\"query\":\"github\"}'",
+			"  borz extension call downloads.search '{\"q\":\"report\",\"limit\":10}'",
 		},
 		Notes: "Use 'extension status --json' to inspect supportedMethods. This is the CLI escape hatch for extension APIs not promoted to a first-class command.",
 	},
 	"update": {
 		Summary: "Download the latest release from GitHub and replace the running binary.",
-		Usage:   "bb-browser update [--check] [--force]",
+		Usage:   "borz update [--check] [--force]",
 		Flags: []string{
 			"  --check   Only report current vs latest version; do not download",
 			"  --force   Reinstall even if already on the latest version",
 		},
 		Examples: []string{
-			"  bb-browser update --check",
-			"  bb-browser update",
+			"  borz update --check",
+			"  borz update",
 		},
 		Notes: "The binary replaces itself atomically via rename. " +
 			"Verifies a SHA-256 checksum from the GitHub release assets.",
 	},
 	"help": {
-		Summary: "Show help for bb-browser as a whole or a specific command.",
-		Usage:   "bb-browser help [command [subcommand]]",
+		Summary: "Show help for borz as a whole or a specific command.",
+		Usage:   "borz help [command [subcommand]]",
 		Examples: []string{
-			"  bb-browser help",
-			"  bb-browser help snapshot",
-			"  bb-browser help tab new",
-			"  bb-browser snapshot --help",
-			"  bb-browser tab new --help",
+			"  borz help",
+			"  borz help snapshot",
+			"  borz help tab new",
+			"  borz snapshot --help",
+			"  borz tab new --help",
 		},
 	},
 	"version": {
-		Summary: "Print the version of this bb-browser binary.",
-		Usage:   "bb-browser version",
+		Summary: "Print the version of this borz binary.",
+		Usage:   "borz version",
 	},
 
 	// --- Subcommand pages: tab.* ---
 	"tab.list": {
 		Summary:  "List every open tab with title, URL, 1-based index, and short id.",
-		Usage:    "bb-browser tab [list]",
-		Examples: []string{"  bb-browser tab", "  bb-browser tab list"},
+		Usage:    "borz tab [list]",
+		Examples: []string{"  borz tab", "  borz tab list"},
 		Notes: "The active tab is marked with '*'. The short id shown in the last column is " +
 			"what you pass to '--tab' or to 'tab select --id'.",
 	},
 	"tab.new": {
 		Summary:  "Open a new tab, optionally pointed at a URL (default about:blank).",
-		Usage:    "bb-browser tab new [url]",
-		Examples: []string{"  bb-browser tab new", "  bb-browser tab new https://github.com"},
-		Notes: "Unlike 'bb-browser open', this always creates a fresh tab and never reuses an " +
+		Usage:    "borz tab new [url]",
+		Examples: []string{"  borz tab new", "  borz tab new https://github.com"},
+		Notes: "Unlike 'borz open', this always creates a fresh tab and never reuses an " +
 			"existing one. Use 'open --new' if you want the same force-new behaviour from the " +
 			"navigation flow.",
 	},
 	"tab.select": {
 		Summary: "Switch the active tab by index or short id.",
-		Usage:   "bb-browser tab select <n|--id <short-id>>",
+		Usage:   "borz tab select <n|--id <short-id>>",
 		Flags: []string{
-			"  <n>               1-based index as shown by 'bb-browser tab'",
-			"  --id <short-id>   Short tab id (also shown by 'bb-browser tab')",
+			"  <n>               1-based index as shown by 'borz tab'",
+			"  --id <short-id>   Short tab id (also shown by 'borz tab')",
 		},
 		Examples: []string{
-			"  bb-browser tab 2            # shorthand, equivalent to 'tab select 2'",
-			"  bb-browser tab select 2",
-			"  bb-browser tab select --id abc123",
+			"  borz tab 2            # shorthand, equivalent to 'tab select 2'",
+			"  borz tab select 2",
+			"  borz tab select --id abc123",
 		},
 	},
 	"tab.close": {
 		Summary: "Close a tab by index or short id (default: the currently active tab).",
-		Usage:   "bb-browser tab close [n|--id <short-id>]",
+		Usage:   "borz tab close [n|--id <short-id>]",
 		Examples: []string{
-			"  bb-browser tab close",
-			"  bb-browser tab close 3",
-			"  bb-browser tab close --id abc123",
+			"  borz tab close",
+			"  borz tab close 3",
+			"  borz tab close --id abc123",
 		},
 	},
 
 	// --- Subcommand pages: site.* ---
 	"site.list": {
 		Summary:  "List every available site adapter, grouped by platform.",
-		Usage:    "bb-browser site [list]",
-		Examples: []string{"  bb-browser site", "  bb-browser site list"},
+		Usage:    "borz site [list]",
+		Examples: []string{"  borz site", "  borz site list"},
 		Notes: "Entries tagged [local] come from your workspace; the rest are from the " +
 			"community pack. Use 'site update' to refresh the community pack.",
 	},
 	"site.search": {
 		Summary:  "Fuzzy-search adapters by name, description, or domain.",
-		Usage:    "bb-browser site search <query>",
-		Examples: []string{"  bb-browser site search hacker", "  bb-browser site search 'linux forum'"},
+		Usage:    "borz site search <query>",
+		Examples: []string{"  borz site search hacker", "  borz site search 'linux forum'"},
 	},
 	"site.info": {
 		Summary: "Print an adapter's description, domain, source, example, and args.",
-		Usage:   "bb-browser site info <name>",
+		Usage:   "borz site info <name>",
 		Examples: []string{
-			"  bb-browser site info hackernews/top",
-			"  bb-browser hackernews/top --help   # shortcut that forwards here",
+			"  borz site info hackernews/top",
+			"  borz hackernews/top --help   # shortcut that forwards here",
 		},
 		Notes: "'Args' in the output lists the positional arguments the adapter accepts. " +
 			"'(required)' marks mandatory ones.",
 	},
 	"site.update": {
 		Summary: "Pull the latest community adapter pack from GitHub.",
-		Usage:   "bb-browser site update",
+		Usage:   "borz site update",
 		Notes: "Community adapters are cached under the user's config dir. Local adapters " +
 			"you've placed in the workspace are not affected.",
 	},
 	"site.run": {
-		Summary:  "Run an adapter by name — equivalent to calling 'bb-browser <platform>/<name> ...' directly.",
-		Usage:    "bb-browser site run <name> [args...] [--tab <id>]",
-		Examples: []string{"  bb-browser site run hackernews/top 10", "  bb-browser hackernews/top 10"},
-		Notes: "Use 'bb-browser site info <name>' to discover the args an adapter expects " +
+		Summary:  "Run an adapter by name — equivalent to calling 'borz <platform>/<name> ...' directly.",
+		Usage:    "borz site run <name> [args...] [--tab <id>]",
+		Examples: []string{"  borz site run hackernews/top 10", "  borz hackernews/top 10"},
+		Notes: "Use 'borz site info <name>' to discover the args an adapter expects " +
 			"before running it.",
 	},
 
 	// --- Subcommand pages: daemon.* ---
 	"daemon.status": {
 		Summary: "Print the daemon's JSON status, or 'Daemon is not running'.",
-		Usage:   "bb-browser daemon status",
-		Notes:   "Identical payload to the top-level 'bb-browser status'.",
+		Usage:   "borz daemon status",
+		Notes:   "Identical payload to the top-level 'borz status'.",
 	},
 	"daemon.shutdown": {
 		Summary:  "Ask the running daemon to exit cleanly.",
-		Usage:    "bb-browser daemon shutdown",
-		Examples: []string{"  bb-browser daemon shutdown", "  bb-browser daemon stop   # alias"},
+		Usage:    "borz daemon shutdown",
+		Examples: []string{"  borz daemon shutdown", "  borz daemon stop   # alias"},
 	},
 	"daemon.stop": {
 		Summary:  "Alias for 'daemon shutdown'. Asks the running daemon to exit cleanly.",
-		Usage:    "bb-browser daemon stop",
-		Examples: []string{"  bb-browser daemon stop"},
+		Usage:    "borz daemon stop",
+		Examples: []string{"  borz daemon stop"},
 	},
 
 	// --- Subcommand pages: server.* ---
 	"server.status": {
 		Summary: "Print the server's JSON status, or 'Server is not running'.",
-		Usage:   "bb-browser server status",
+		Usage:   "borz server status",
 	},
 	"server.shutdown": {
 		Summary:  "Ask the running server to exit cleanly.",
-		Usage:    "bb-browser server shutdown",
-		Examples: []string{"  bb-browser server shutdown", "  bb-browser server stop   # alias"},
+		Usage:    "borz server shutdown",
+		Examples: []string{"  borz server shutdown", "  borz server stop   # alias"},
 	},
 	"server.stop": {
 		Summary:  "Alias for 'server shutdown'. Asks the running server to exit cleanly.",
-		Usage:    "bb-browser server stop",
-		Examples: []string{"  bb-browser server stop"},
+		Usage:    "borz server stop",
+		Examples: []string{"  borz server stop"},
 	},
 
 	// --- Subcommand pages: client.* ---
 	"client.setup": {
 		Summary: "Store the remote server URL and optional bearer token.",
-		Usage:   "bb-browser client setup <server-url> [--token <token>] [--no-check]",
+		Usage:   "borz client setup <server-url> [--token <token>] [--no-check]",
 		Examples: []string{
-			"  bb-browser client setup http://127.0.0.1:19824",
-			"  bb-browser client setup https://browser.example.com --token \"$BB_BROWSER_TOKEN\"",
+			"  borz client setup http://127.0.0.1:19824",
+			"  borz client setup https://browser.example.com --token \"$BORZ_TOKEN\"",
 		},
 		Notes: "The setup command probes the server's authenticated /status endpoint before " +
 			"saving unless --no-check is set. If the URL has no scheme, http:// is assumed. " +
@@ -726,41 +726,41 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"client.enable": {
 		Summary: "Set the legacy remote-client enabled field in client.json.",
-		Usage:   "bb-browser client enable [--no-check]",
+		Usage:   "borz client enable [--no-check]",
 		Notes:   "The configured server is checked unless --no-check is set. Browser actions still use local by default; pass --remote to route one invocation to the configured server.",
 	},
 	"client.disable": {
 		Summary:  "Clear the legacy remote-client enabled field in client.json.",
-		Usage:    "bb-browser client disable",
-		Examples: []string{"  bb-browser client disable"},
+		Usage:    "borz client disable",
+		Examples: []string{"  borz client disable"},
 	},
 	"client.status": {
 		Summary: "Show the remote client config used by --remote.",
-		Usage:   "bb-browser client status [--json]",
+		Usage:   "borz client status [--json]",
 	},
 
 	// --- Subcommand pages: trace.* ---
 	"trace.start": {
 		Summary: "Begin recording the user's manual clicks, fills, presses, scrolls, and navigations.",
-		Usage:   "bb-browser trace start [--tab <id>]",
+		Usage:   "borz trace start [--tab <id>]",
 		Notes: "Nothing is returned until you call 'trace stop'. Use 'trace status' to confirm " +
 			"recording is active.",
 	},
 	"trace.stop": {
 		Summary: "Stop recording and return the captured event list as JSON.",
-		Usage:   "bb-browser trace stop [--tab <id>]",
+		Usage:   "borz trace stop [--tab <id>]",
 		Notes: "Output is intended for replay: each event has a type (click/fill/press/...), " +
 			"timestamp, URL, and any type-specific fields (ref, text, pixels).",
 	},
 	"trace.status": {
 		Summary: "Report whether recording is active and how many events are captured so far.",
-		Usage:   "bb-browser trace status [--tab <id>]",
+		Usage:   "borz trace status [--tab <id>]",
 	},
 
 	// --- Subcommand pages: network.* ---
 	"network.requests": {
 		Summary: "List network requests captured for the current tab.",
-		Usage:   "bb-browser network requests [--filter S] [--method M] [--status C] [--with-body] [--since <seq|last_action>] [--tab <id>]",
+		Usage:   "borz network requests [--filter S] [--method M] [--status C] [--with-body] [--since <seq|last_action>] [--tab <id>]",
 		Flags: []string{
 			"  --filter <substr>    Only requests whose URL contains <substr>",
 			"  --method <M>         Only requests with HTTP method M (GET, POST, ...)",
@@ -769,60 +769,60 @@ var commandHelp = map[string]cmdHelp{
 			"  --since <seq|last_action>   Only requests newer than this checkpoint",
 		},
 		Examples: []string{
-			"  bb-browser network requests",
-			"  bb-browser network requests --filter /api/ --method POST",
-			"  bb-browser network requests --since last_action --with-body",
+			"  borz network requests",
+			"  borz network requests --filter /api/ --method POST",
+			"  borz network requests --since last_action --with-body",
 		},
 	},
 	"network.clear": {
 		Summary: "Drop all captured network requests for the current tab.",
-		Usage:   "bb-browser network clear [--tab <id>]",
+		Usage:   "borz network clear [--tab <id>]",
 		Notes:   "Pair with 'network requests --since last_action' if you just want a fresh window.",
 	},
 
 	// --- Subcommand pages: dialog.* ---
 	"dialog.accept": {
 		Summary: "Pre-arm the next native dialog to be accepted (OK / Leave / prompt submitted).",
-		Usage:   "bb-browser dialog accept [prompt-text] [--tab <id>]",
+		Usage:   "borz dialog accept [prompt-text] [--tab <id>]",
 		Examples: []string{
-			"  bb-browser dialog accept",
-			"  bb-browser dialog accept 'Leo'       # prompt response text",
+			"  borz dialog accept",
+			"  borz dialog accept 'Leo'       # prompt response text",
 		},
 		Notes: "Run BEFORE the click/navigation that triggers the dialog. For a prompt(), pass " +
 			"the response as the second arg; for alert()/confirm() it is ignored.",
 	},
 	"dialog.dismiss": {
 		Summary: "Pre-arm the next native dialog to be dismissed (Cancel / Stay on page).",
-		Usage:   "bb-browser dialog dismiss [--tab <id>]",
+		Usage:   "borz dialog dismiss [--tab <id>]",
 		Notes:   "Run BEFORE the click/navigation that triggers the dialog.",
 	},
 
 	// --- Subcommand pages: frame.* ---
 	"frame.main": {
 		Summary:  "Switch the interaction context back to the page's top-level frame.",
-		Usage:    "bb-browser frame main [--tab <id>]",
-		Examples: []string{"  bb-browser frame main"},
+		Usage:    "borz frame main [--tab <id>]",
+		Examples: []string{"  borz frame main"},
 	},
 
 	// --- Subcommand pages: extension-backed browser APIs ---
 	"bookmarks.tree": {
 		Summary:  "Print Chrome's full bookmark tree.",
-		Usage:    "bb-browser bookmarks tree [--json]",
-		Examples: []string{"  bb-browser bookmarks tree", "  bb-browser bookmarks tree --json"},
+		Usage:    "borz bookmarks tree [--json]",
+		Examples: []string{"  borz bookmarks tree", "  borz bookmarks tree --json"},
 	},
 	"bookmarks.search": {
 		Summary:  "Search Chrome bookmarks by title or URL.",
-		Usage:    "bb-browser bookmarks search <query> [--json]",
-		Examples: []string{"  bb-browser bookmarks search github"},
+		Usage:    "borz bookmarks search <query> [--json]",
+		Examples: []string{"  borz bookmarks search github"},
 	},
 	"bookmarks.create": {
 		Summary: "Create a Chrome bookmark.",
-		Usage:   "bb-browser bookmarks create <url> <title> [--parent <id>]",
+		Usage:   "borz bookmarks create <url> <title> [--parent <id>]",
 		Flags:   []string{"  --parent <id>   Parent bookmark folder ID"},
 	},
 	"bookmarks.update": {
 		Summary: "Update a Chrome bookmark title and/or URL.",
-		Usage:   "bb-browser bookmarks update <id> [--title <title>] [--url <url>]",
+		Usage:   "borz bookmarks update <id> [--title <title>] [--url <url>]",
 		Flags: []string{
 			"  --title <title>   New bookmark title",
 			"  --url <url>       New bookmark URL",
@@ -830,21 +830,21 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"bookmarks.remove": {
 		Summary: "Remove a Chrome bookmark or bookmark folder.",
-		Usage:   "bb-browser bookmarks remove <id> [--recursive]",
+		Usage:   "borz bookmarks remove <id> [--recursive]",
 		Flags:   []string{"  --recursive      Remove a folder and all children"},
 	},
 	"browser-history.search": {
 		Summary: "Search Chrome browsing history.",
-		Usage:   "bb-browser browser-history search [query] [--limit N] [--json]",
+		Usage:   "borz browser-history search [query] [--limit N] [--json]",
 		Flags:   []string{"  --limit N        Maximum results returned by Chrome"},
 	},
 	"browser-history.delete-url": {
 		Summary: "Delete one URL from Chrome browsing history.",
-		Usage:   "bb-browser browser-history delete-url <url>",
+		Usage:   "borz browser-history delete-url <url>",
 	},
 	"downloads.list": {
 		Summary: "List Chrome downloads.",
-		Usage:   "bb-browser downloads list [--limit N] [--state complete|interrupted|in_progress] [--json]",
+		Usage:   "borz downloads list [--limit N] [--state complete|interrupted|in_progress] [--json]",
 		Flags: []string{
 			"  --limit N       Maximum results",
 			"  --state S       Filter by download state",
@@ -852,12 +852,12 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"downloads.search": {
 		Summary: "Search Chrome downloads.",
-		Usage:   "bb-browser downloads search <query> [--limit N] [--json]",
+		Usage:   "borz downloads search <query> [--limit N] [--json]",
 		Flags:   []string{"  --limit N       Maximum results"},
 	},
 	"downloads.start": {
 		Summary: "Start a Chrome-managed download.",
-		Usage:   "bb-browser downloads start <url> [--filename <path>] [--save-as]",
+		Usage:   "borz downloads start <url> [--filename <path>] [--save-as]",
 		Flags: []string{
 			"  --filename <path>   Suggested download filename",
 			"  --save-as           Ask Chrome to show the Save As dialog",
@@ -865,35 +865,35 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"downloads.erase": {
 		Summary: "Erase Chrome download history records.",
-		Usage:   "bb-browser downloads erase [--id N|query]",
+		Usage:   "borz downloads erase [--id N|query]",
 		Flags:   []string{"  --id N          Erase one download record by ID"},
 	},
-	"downloads.cancel":      {Summary: "Cancel a Chrome download by ID.", Usage: "bb-browser downloads cancel <id>"},
-	"downloads.pause":       {Summary: "Pause a Chrome download by ID.", Usage: "bb-browser downloads pause <id>"},
-	"downloads.resume":      {Summary: "Resume a Chrome download by ID.", Usage: "bb-browser downloads resume <id>"},
-	"downloads.show":        {Summary: "Show one downloaded file in the platform file manager.", Usage: "bb-browser downloads show <id>"},
-	"downloads.show-folder": {Summary: "Open Chrome's default download folder.", Usage: "bb-browser downloads show-folder"},
+	"downloads.cancel":      {Summary: "Cancel a Chrome download by ID.", Usage: "borz downloads cancel <id>"},
+	"downloads.pause":       {Summary: "Pause a Chrome download by ID.", Usage: "borz downloads pause <id>"},
+	"downloads.resume":      {Summary: "Resume a Chrome download by ID.", Usage: "borz downloads resume <id>"},
+	"downloads.show":        {Summary: "Show one downloaded file in the platform file manager.", Usage: "borz downloads show <id>"},
+	"downloads.show-folder": {Summary: "Open Chrome's default download folder.", Usage: "borz downloads show-folder"},
 	"window.list": {
 		Summary:  "List Chrome browser windows.",
-		Usage:    "bb-browser window list [--json]",
-		Examples: []string{"  bb-browser window list"},
+		Usage:    "borz window list [--json]",
+		Examples: []string{"  borz window list"},
 	},
 	"window.new": {
 		Summary: "Create a Chrome browser window.",
-		Usage:   "bb-browser window new [url] [--focused]",
+		Usage:   "borz window new [url] [--focused]",
 		Flags:   []string{"  --focused       Focus the new window immediately"},
 	},
-	"window.focus": {Summary: "Focus a Chrome browser window.", Usage: "bb-browser window focus <id>"},
-	"window.close": {Summary: "Close a Chrome browser window.", Usage: "bb-browser window close <id>"},
-	"windows.list": {Summary: "Alias for 'window list'.", Usage: "bb-browser windows list [--json]"},
-	"windows.new":  {Summary: "Alias for 'window new'.", Usage: "bb-browser windows new [url] [--focused]"},
+	"window.focus": {Summary: "Focus a Chrome browser window.", Usage: "borz window focus <id>"},
+	"window.close": {Summary: "Close a Chrome browser window.", Usage: "borz window close <id>"},
+	"windows.list": {Summary: "Alias for 'window list'.", Usage: "borz windows list [--json]"},
+	"windows.new":  {Summary: "Alias for 'window new'.", Usage: "borz windows new [url] [--focused]"},
 	"windows.focus": {
 		Summary: "Alias for 'window focus'.",
-		Usage:   "bb-browser windows focus <id>",
+		Usage:   "borz windows focus <id>",
 	},
 	"windows.close": {
 		Summary: "Alias for 'window close'.",
-		Usage:   "bb-browser windows close <id>",
+		Usage:   "borz windows close <id>",
 	},
 }
 
@@ -1010,7 +1010,7 @@ func topLevelCommandNames() []string {
 // printAllHelp dumps every registered command's help block in one go.
 // Intended for piping into a pager or feeding to an LLM.
 func printAllHelp() {
-	fmt.Println("# bb-browser-go — full command reference")
+	fmt.Println("# borz — full command reference")
 	fmt.Println()
 	for _, name := range commandNames() {
 		fmt.Printf("## %s\n\n", name)

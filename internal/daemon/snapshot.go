@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 // Raw DOM types from buildDomTree.js output

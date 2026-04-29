@@ -21,12 +21,12 @@ const siteFixture = `/* @meta
 (function(args) { return args; })
 `
 
-// withSiteHome sets BB_BROWSER_HOME to a temp dir containing the given adapter
+// withSiteHome sets BORZ_HOME to a temp dir containing the given adapter
 // files under sites/*.
 func withSiteHome(t *testing.T, adapters map[string]string) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	for rel, body := range adapters {
 		p := filepath.Join(home, "sites", rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

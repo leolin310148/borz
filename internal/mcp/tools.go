@@ -231,14 +231,14 @@ var errorsTool = mcp.NewTool("browser_errors",
 )
 
 var doctorTool = mcp.NewTool("browser_doctor",
-	mcp.WithDescription("Run end-to-end diagnostics on the bb-browser stack (binary → daemon JSON → daemon process → daemon HTTP → CDP attach → tabs). Use when something isn't working and it's unclear which layer is broken; returns the first failing layer with a remediation hint."),
+	mcp.WithDescription("Run end-to-end diagnostics on the borz stack (binary → daemon JSON → daemon process → daemon HTTP → CDP attach → tabs). Use when something isn't working and it's unclear which layer is broken; returns the first failing layer with a remediation hint."),
 	mcp.WithBoolean("json", mcp.Description("Return structured JSON {ok, checks[]} instead of the human-readable report.")),
 )
 
 // --- Extension-backed browser APIs ---
 
 var extensionStatusTool = mcp.NewTool("browser_extension_status",
-	mcp.WithDescription("Show whether the optional bb-browser Chrome extension is connected and which Chrome-only APIs it exposes (cookies, bookmarks, history, downloads, windows, tabs/events). Use this when an extension-backed tool reports that no extension is connected."),
+	mcp.WithDescription("Show whether the optional borz Chrome extension is connected and which Chrome-only APIs it exposes (cookies, bookmarks, history, downloads, windows, tabs/events). Use this when an extension-backed tool reports that no extension is connected."),
 )
 
 var extensionCallTool = mcp.NewTool("browser_extension_call",
@@ -248,7 +248,7 @@ var extensionCallTool = mcp.NewTool("browser_extension_call",
 )
 
 var bookmarksTool = mcp.NewTool("browser_bookmarks",
-	mcp.WithDescription("Read or manage Chrome bookmarks through the bb-browser extension. CDP cannot access the browser bookmark store."),
+	mcp.WithDescription("Read or manage Chrome bookmarks through the borz extension. CDP cannot access the browser bookmark store."),
 	mcp.WithString("command", mcp.Description("tree, search, create, update, or remove"), mcp.Enum("tree", "search", "create", "update", "remove")),
 	mcp.WithString("query", mcp.Description("Search query for command=search")),
 	mcp.WithString("id", mcp.Description("Bookmark/folder ID for update/remove")),
@@ -259,7 +259,7 @@ var bookmarksTool = mcp.NewTool("browser_bookmarks",
 )
 
 var browserHistoryTool = mcp.NewTool("browser_history",
-	mcp.WithDescription("Search or delete Chrome browsing history through the bb-browser extension. This is browser-level history, not bb-browser's daemon action history."),
+	mcp.WithDescription("Search or delete Chrome browsing history through the borz extension. This is browser-level history, not borz's daemon action history."),
 	mcp.WithString("command", mcp.Description("search or deleteUrl"), mcp.Enum("search", "deleteUrl")),
 	mcp.WithString("query", mcp.Description("Search query for command=search")),
 	mcp.WithString("url", mcp.Description("URL for command=deleteUrl")),
@@ -267,7 +267,7 @@ var browserHistoryTool = mcp.NewTool("browser_history",
 )
 
 var downloadsTool = mcp.NewTool("browser_downloads",
-	mcp.WithDescription("Inspect or control Chrome downloads through the bb-browser extension. CDP cannot see the full browser download manager."),
+	mcp.WithDescription("Inspect or control Chrome downloads through the borz extension. CDP cannot see the full browser download manager."),
 	mcp.WithString("command", mcp.Description("list, search, start, erase, cancel, pause, resume, show, or showFolder"), mcp.Enum("list", "search", "start", "erase", "cancel", "pause", "resume", "show", "showFolder")),
 	mcp.WithString("query", mcp.Description("Search/erase query")),
 	mcp.WithString("url", mcp.Description("URL for command=start")),
@@ -279,7 +279,7 @@ var downloadsTool = mcp.NewTool("browser_downloads",
 )
 
 var windowsTool = mcp.NewTool("browser_windows",
-	mcp.WithDescription("List and control Chrome browser windows through the bb-browser extension. Useful for focusing or creating windows, which CDP cannot reliably manage at the browser UI level."),
+	mcp.WithDescription("List and control Chrome browser windows through the borz extension. Useful for focusing or creating windows, which CDP cannot reliably manage at the browser UI level."),
 	mcp.WithString("command", mcp.Description("list, new, focus, or close"), mcp.Enum("list", "new", "focus", "close")),
 	mcp.WithNumber("id", mcp.Description("Window ID for focus/close")),
 	mcp.WithString("url", mcp.Description("URL to open for command=new")),
@@ -289,7 +289,7 @@ var windowsTool = mcp.NewTool("browser_windows",
 // --- Site Adapters ---
 
 var siteListTool = mcp.NewTool("browser_site_list",
-	mcp.WithDescription("List available site adapters — JavaScript plugins that automate interactions with specific websites (e.g. twitter/search). Returns adapter names, descriptions, domains, and argument schemas. Adapters are resolved on the bb-browser daemon's filesystem."),
+	mcp.WithDescription("List available site adapters — JavaScript plugins that automate interactions with specific websites (e.g. twitter/search). Returns adapter names, descriptions, domains, and argument schemas. Adapters are resolved on the borz daemon's filesystem."),
 )
 
 var siteInfoTool = mcp.NewTool("browser_site_info",

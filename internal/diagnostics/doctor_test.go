@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/leolin310148/bb-browser-go/internal/client"
-	"github.com/leolin310148/bb-browser-go/internal/protocol"
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 func TestRenderText_AllOK(t *testing.T) {
@@ -64,7 +64,7 @@ func TestRenderJSON_Shape(t *testing.T) {
 
 func TestCheckHomeDir_Exists(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", tmp)
+	t.Setenv("BORZ_HOME", tmp)
 	c := checkHomeDir()
 	if c.Status != "ok" {
 		t.Errorf("expected ok, got %s (%s)", c.Status, c.Detail)
@@ -74,7 +74,7 @@ func TestCheckHomeDir_Exists(t *testing.T) {
 func TestCheckHomeDir_Missing(t *testing.T) {
 	tmp := t.TempDir()
 	missing := filepath.Join(tmp, "nope")
-	t.Setenv("BB_BROWSER_HOME", missing)
+	t.Setenv("BORZ_HOME", missing)
 	c := checkHomeDir()
 	if c.Status != "warn" {
 		t.Errorf("expected warn for missing home, got %s", c.Status)
@@ -87,7 +87,7 @@ func TestCheckHomeDir_File(t *testing.T) {
 	if err := os.WriteFile(target, []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("BB_BROWSER_HOME", target)
+	t.Setenv("BORZ_HOME", target)
 	c := checkHomeDir()
 	if c.Status != "fail" {
 		t.Errorf("expected fail when home path is a file, got %s", c.Status)
@@ -96,7 +96,7 @@ func TestCheckHomeDir_File(t *testing.T) {
 
 func TestCheckDaemonJSON_Missing(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", tmp)
+	t.Setenv("BORZ_HOME", tmp)
 	info, c := checkDaemonJSON()
 	if info != nil {
 		t.Errorf("expected nil info when daemon.json missing")
@@ -125,7 +125,7 @@ func TestRun_WithHealthyFakeDaemonAndCDP(t *testing.T) {
 		w.Write([]byte(`{}`))
 	}))
 	defer cdp.Close()
-	t.Setenv("BB_BROWSER_CDP_URL", cdp.URL)
+	t.Setenv("BORZ_CDP_URL", cdp.URL)
 
 	checks, ok := Run("test-version")
 	if !ok {
@@ -142,7 +142,7 @@ func TestRun_WithHealthyFakeDaemonAndCDP(t *testing.T) {
 
 func TestRun_FailsWhenDaemonReportsDisconnectedCDP(t *testing.T) {
 	setupFakeDaemonWithStatus(t, `{"running":true,"cdpConnected":false}`, protocol.Response{Success: true})
-	t.Setenv("BB_BROWSER_CDP_URL", "http://127.0.0.1:1")
+	t.Setenv("BORZ_CDP_URL", "http://127.0.0.1:1")
 
 	checks, ok := Run("test-version")
 	if ok {
@@ -185,7 +185,7 @@ func TestCheckDaemonProcessVariants(t *testing.T) {
 }
 
 func TestCheckDaemonHTTPFailure(t *testing.T) {
-	t.Setenv("BB_BROWSER_HOME", t.TempDir())
+	t.Setenv("BORZ_HOME", t.TempDir())
 	client.ResetForTests()
 	t.Cleanup(client.ResetForTests)
 
@@ -241,7 +241,7 @@ func setupFakeDaemonWithStatus(t *testing.T, status string, commandResp protocol
 	}
 
 	home := t.TempDir()
-	t.Setenv("BB_BROWSER_HOME", home)
+	t.Setenv("BORZ_HOME", home)
 	info := protocol.DaemonInfo{PID: os.Getpid(), Host: host, Port: port}
 	data, err := json.Marshal(info)
 	if err != nil {

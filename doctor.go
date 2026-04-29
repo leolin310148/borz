@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/leolin310148/bb-browser-go/internal/diagnostics"
+	"github.com/leolin310148/borz/internal/diagnostics"
 )
 
 // runDoctor performs end-to-end diagnostics for the CLI/daemon/browser stack.

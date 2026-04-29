@@ -1,4 +1,4 @@
-// Package extupdate downloads the bb-browser Chrome extension zip from the
+// Package extupdate downloads the borz Chrome extension zip from the
 // latest GitHub release and extracts it into a local directory the user can
 // load via chrome://extensions → "Load unpacked".
 package extupdate
@@ -18,10 +18,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/leolin310148/bb-browser-go/internal/selfupdate"
+	"github.com/leolin310148/borz/internal/selfupdate"
 )
 
-const ExtensionAssetName = "bb-browser-extension.zip"
+const ExtensionAssetName = "borz-extension.zip"
 
 type Options struct {
 	Repo       string
@@ -149,7 +149,7 @@ func downloadVerified(ctx context.Context, client *http.Client, url, destDir, ex
 	if err := os.MkdirAll(filepath.Dir(destDir), 0o755); err != nil {
 		return "", err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(destDir), ".bb-browser-extension-*.zip")
+	tmp, err := os.CreateTemp(filepath.Dir(destDir), ".borz-extension-*.zip")
 	if err != nil {
 		return "", err
 	}
@@ -226,4 +226,3 @@ func extractFile(destDir string, f *zip.File) error {
 	}
 	return out.Close()
 }
-
