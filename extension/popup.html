@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <style>
-body { font: 13px system-ui; width: 280px; margin: 12px; }
+body { font: 13px system-ui; width: 320px; margin: 12px; }
 label { display: block; margin-top: 8px; font-weight: 600; }
 input { width: 100%; box-sizing: border-box; padding: 4px 6px; }
 button { margin-top: 12px; padding: 6px 12px; }
@@ -11,6 +11,7 @@ button { margin-top: 12px; padding: 6px 12px; }
 .status { margin-top: 8px; font-weight: 600; }
 .ok { color: #1a7f37; }
 .bad { color: #cf222e; }
+.caps { margin-top: 8px; color: #57606a; font-size: 11px; line-height: 1.35; }
 </style>
 </head>
 <body>
@@ -27,6 +28,7 @@ button { margin-top: 12px; padding: 6px 12px; }
 <div class="hint">Run <code>bb-browser daemon status</code> to find the token.</div>
 <button id="save">Save &amp; reconnect</button>
 <div class="status" id="status">…</div>
+<div class="caps" id="caps"></div>
 <script src="popup.js"></script>
 </body>
 </html>

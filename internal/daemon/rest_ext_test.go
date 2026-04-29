@@ -113,6 +113,167 @@ func TestExt_CookiesAll_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestExt_GenericFeatureRoutesRoundTrip(t *testing.T) {
+	s, srv := startRouted(t)
+	c := dialExt(t, srv)
+	waitConnected(t, s, 1)
+
+	type expected struct {
+		Method string
+		Result json.RawMessage
+		Check  func(t *testing.T, params map[string]any)
+	}
+	expect := make(chan expected, 8)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for exp := range expect {
+			_, raw, err := c.ReadMessage()
+			if err != nil {
+				return
+			}
+			var in map[string]any
+			_ = json.Unmarshal(raw, &in)
+			if in["method"] != exp.Method {
+				t.Errorf("method=%v want %s", in["method"], exp.Method)
+			}
+			var params map[string]any
+			if p, ok := in["params"].(map[string]any); ok {
+				params = p
+			} else {
+				params = map[string]any{}
+			}
+			if exp.Check != nil {
+				exp.Check(t, params)
+			}
+			out, _ := json.Marshal(map[string]any{
+				"type":   "response",
+				"id":     in["id"],
+				"result": exp.Result,
+			})
+			_ = c.WriteMessage(websocket.TextMessage, out)
+		}
+	}()
+
+	doGet := func(path string) any {
+		t.Helper()
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("get %s: %v", path, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET %s status=%d", path, resp.StatusCode)
+		}
+		var body any
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		return body
+	}
+	doPost := func(path, body string) any {
+		t.Helper()
+		resp, err := http.Post(srv.URL+path, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("post %s: %v", path, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("POST %s status=%d", path, resp.StatusCode)
+		}
+		var out any
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		return out
+	}
+
+	expect <- expected{Method: "capabilities", Result: json.RawMessage(`{"ok":true,"supportedMethods":["bookmarks.search"]}`)}
+	if body := doGet("/v1/ext/capabilities").(map[string]any); body["ok"] != true {
+		t.Fatalf("capabilities body=%v", body)
+	}
+
+	expect <- expected{
+		Method: "bookmarks.search",
+		Result: json.RawMessage(`[{"id":"1","title":"GitHub"}]`),
+		Check: func(t *testing.T, params map[string]any) {
+			if params["query"] != "git" {
+				t.Fatalf("bookmark query params=%v", params)
+			}
+		},
+	}
+	if body := doGet("/v1/bookmarks/search?q=git").([]any); len(body) != 1 {
+		t.Fatalf("bookmark search body=%v", body)
+	}
+
+	expect <- expected{
+		Method: "history.search",
+		Result: json.RawMessage(`[{"url":"https://github.com","visitCount":2}]`),
+		Check: func(t *testing.T, params map[string]any) {
+			if params["text"] != "git" || params["maxResults"] != float64(5) {
+				t.Fatalf("history params=%v", params)
+			}
+		},
+	}
+	if body := doGet("/v1/browser-history/search?q=git&maxResults=5").([]any); len(body) != 1 {
+		t.Fatalf("history search body=%v", body)
+	}
+
+	expect <- expected{
+		Method: "downloads.download",
+		Result: json.RawMessage(`7`),
+		Check: func(t *testing.T, params map[string]any) {
+			if params["url"] != "https://example.com/file.zip" {
+				t.Fatalf("download params=%v", params)
+			}
+		},
+	}
+	if body := doPost("/v1/downloads/download", `{"url":"https://example.com/file.zip"}`).(float64); body != 7 {
+		t.Fatalf("download body=%v", body)
+	}
+
+	expect <- expected{
+		Method: "windows.update",
+		Result: json.RawMessage(`{"id":9,"focused":true}`),
+		Check: func(t *testing.T, params map[string]any) {
+			if params["id"] != float64(9) {
+				t.Fatalf("window params=%v", params)
+			}
+		},
+	}
+	if body := doPost("/v1/windows/update", `{"id":9,"updateInfo":{"focused":true}}`).(map[string]any); body["focused"] != true {
+		t.Fatalf("window body=%v", body)
+	}
+
+	expect <- expected{
+		Method: "tabs.query",
+		Result: json.RawMessage(`[{"id":3}]`),
+		Check: func(t *testing.T, params map[string]any) {
+			if params["active"] != true {
+				t.Fatalf("tabs query params=%v", params)
+			}
+		},
+	}
+	if body := doGet("/v1/ext/tabs/query?active=true").([]any); len(body) != 1 {
+		t.Fatalf("tabs query body=%v", body)
+	}
+
+	close(expect)
+	<-done
+}
+
+func TestExt_GenericCallValidation(t *testing.T) {
+	_, srv := startRouted(t)
+	resp, err := http.Post(srv.URL+"/v1/ext/call", "application/json", strings.NewReader(`{"params":{}}`))
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d want 400", resp.StatusCode)
+	}
+}
+
 func TestExt_TabsEvents(t *testing.T) {
 	s, srv := startRouted(t)
 	c := dialExt(t, srv)

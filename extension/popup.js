@@ -30,9 +30,13 @@ async function refreshStatus() {
     const data = await resp.json();
     $("status").textContent = data.connected > 0 ? "Connected" : "Daemon up · ext not attached";
     $("status").className = "status " + (data.connected > 0 ? "ok" : "bad");
+    $("caps").textContent = data.connected > 0
+      ? "APIs: cookies, bookmarks, history, downloads, windows, tabs, browser events"
+      : "Waiting for the service worker WebSocket to attach.";
   } catch {
     $("status").textContent = "Daemon unreachable";
     $("status").className = "status bad";
+    $("caps").textContent = "Start bb-browser daemon/server, then save to reconnect.";
   }
 }
 

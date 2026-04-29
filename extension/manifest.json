@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "bb-browser bridge",
   "version": "0.1.0",
-  "description": "Extends bb-browser-go with capabilities CDP cannot provide (cross-domain cookies, browser-level events).",
+  "description": "Extends bb-browser-go with Chrome APIs CDP cannot provide: cookies, bookmarks, history, downloads, windows, and browser-level events.",
   "background": {
     "service_worker": "background.js"
   },
@@ -11,8 +11,12 @@
     "default_title": "bb-browser bridge"
   },
   "permissions": [
+    "bookmarks",
     "cookies",
+    "downloads",
+    "history",
     "tabs",
+    "tabGroups",
     "alarms",
     "storage"
   ],

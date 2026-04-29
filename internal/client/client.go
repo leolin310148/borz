@@ -447,6 +447,28 @@ func GetJSON(path string, timeout time.Duration) (json.RawMessage, error) {
 	return httpJSON("GET", path, cachedInfo, nil, timeout)
 }
 
+// PostJSON calls a POST endpoint on the daemon and returns the raw response body.
+// Used by REST endpoints that don't fit the /command protocol.
+func PostJSON(path string, body interface{}, timeout time.Duration) (json.RawMessage, error) {
+	if cfg, enabled, err := EnabledRemoteConfig(); err != nil {
+		return nil, err
+	} else if enabled {
+		return httpJSONEndpoint("POST", cfg.URL, cfg.Token, path, body, timeout)
+	}
+
+	if err := EnsureDaemon(); err != nil {
+		return nil, err
+	}
+	if cachedInfo == nil {
+		info, err := ReadDaemonJSON()
+		if err != nil {
+			return nil, fmt.Errorf("no daemon.json found. Is the daemon running?")
+		}
+		cachedInfo = info
+	}
+	return httpJSON("POST", path, cachedInfo, body, timeout)
+}
+
 // GetDaemonStatus returns the daemon status.
 func GetDaemonStatus() (json.RawMessage, error) {
 	if cfg, enabled, err := EnabledRemoteConfig(); err != nil {

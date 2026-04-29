@@ -52,7 +52,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote"})
+	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval", "--limit", "--id", "--title", "--parent", "--filename", "--state"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused"})
 
 	if len(cleanArgs) == 0 {
 		printHelp()
@@ -380,6 +380,18 @@ func main() {
 	case "cookies":
 		handleCookies(cmdArgs, jsonOutput)
 
+	case "bookmarks":
+		handleBookmarks(cmdArgs, jsonOutput, args)
+
+	case "browser-history":
+		handleBrowserHistory(cmdArgs, jsonOutput, args)
+
+	case "downloads":
+		handleDownloads(cmdArgs, jsonOutput, args)
+
+	case "window", "windows":
+		handleWindows(cmdArgs, jsonOutput, args)
+
 	// --- Frame ---
 	case "frame":
 		if len(cmdArgs) == 0 || cmdArgs[0] == "main" {
@@ -527,7 +539,7 @@ func main() {
 
 	// --- Extension ---
 	case "extension":
-		handleExtension(cmdArgs)
+		handleExtension(cmdArgs, jsonOutput)
 
 	// --- History ---
 	case "history":
@@ -1381,8 +1393,13 @@ Tab Management:
   tab events [--tail]           Browser-level tab events (extension required)
 
 Browser-level (Chrome extension):
-  cookies all                   Cookies across every domain
-  tab events [--tail]           Tab create/remove/update/activate stream
+  extension status              Connected extension capabilities
+  cookies all [domain]          Cookies across every domain
+  bookmarks tree/search/...     Browser bookmarks
+  browser-history search        Browser history (Chrome-level)
+  downloads list/search/...     Browser download manager
+  window list/new/focus/close   Browser windows
+  tab events [--tail]           Browser event stream (tabs, windows, etc.)
 
 Site Adapters:
   site list / search / info / update     Discover and refresh adapters

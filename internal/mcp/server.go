@@ -76,6 +76,14 @@ func newMCPServer(version string) *server.MCPServer {
 	s.AddTool(errorsTool, handleErrors)
 	s.AddTool(doctorTool, handleDoctor)
 
+	// Extension-backed browser APIs
+	s.AddTool(extensionStatusTool, handleExtensionStatus)
+	s.AddTool(extensionCallTool, handleExtensionCall)
+	s.AddTool(bookmarksTool, handleBookmarks)
+	s.AddTool(browserHistoryTool, handleBrowserHistory)
+	s.AddTool(downloadsTool, handleDownloads)
+	s.AddTool(windowsTool, handleWindows)
+
 	// Site Adapters
 	s.AddTool(siteListTool, handleSiteList)
 	s.AddTool(siteInfoTool, handleSiteInfo)

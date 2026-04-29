@@ -25,6 +25,7 @@ import (
 const (
 	defaultRequestTimeout = 10 * time.Second
 	eventRingSize         = 512
+	readLimit             = 32 << 20
 	writeWait             = 5 * time.Second
 	pongWait              = 60 * time.Second
 	pingPeriod            = 30 * time.Second
@@ -70,10 +71,10 @@ type Hub struct {
 	pending map[string]*pending
 	nextID  uint64
 
-	evMu     sync.Mutex
-	evRing   []Event
-	evHead   int
-	evCount  int
+	evMu      sync.Mutex
+	evRing    []Event
+	evHead    int
+	evCount   int
 	evNextSeq uint64
 }
 
@@ -254,7 +255,7 @@ func (h *Hub) deliverResponse(id string, result json.RawMessage, errStr string) 
 }
 
 func (c *client) readLoop() {
-	c.conn.SetReadLimit(1 << 20)
+	c.conn.SetReadLimit(readLimit)
 	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
 		return c.conn.SetReadDeadline(time.Now().Add(pongWait))

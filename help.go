@@ -298,16 +298,86 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"cookies": {
 		Summary: "Read cookies the browser has stored, across every domain.",
-		Usage:   "bb-browser cookies [all]",
+		Usage:   "bb-browser cookies [all] [domain-filter]",
 		Flags: []string{
-			"  all                   Dump cookies for every domain (default)",
+			"  all [domain]          Dump cookies for every domain, optionally filtered",
 		},
 		Examples: []string{
 			"  bb-browser cookies all",
+			"  bb-browser cookies all github.com",
 			"  bb-browser cookies all --json",
 		},
 		Notes: "Requires the bb-browser Chrome extension. CDP can only return cookies " +
 			"scoped to the active page; the extension exposes cookies across all domains.",
+	},
+	"bookmarks": {
+		Summary: "Read and manage Chrome bookmarks through the bb-browser extension.",
+		Usage:   "bb-browser bookmarks [tree|search|create|update|remove]",
+		Flags: []string{
+			"  tree                         Print the full bookmark tree (default)",
+			"  search <query>               Search bookmarks by title or URL",
+			"  create <url> <title>         Create a bookmark",
+			"  update <id> [--title T] [--url U]",
+			"  remove <id> [--recursive]    Remove a bookmark or folder",
+		},
+		Examples: []string{
+			"  bb-browser bookmarks tree",
+			"  bb-browser bookmarks search github",
+			"  bb-browser bookmarks create https://example.com Example --parent 1",
+		},
+		Notes: "Requires the Chrome extension. This uses chrome.bookmarks, a browser-level API CDP cannot access.",
+	},
+	"browser-history": {
+		Summary: "Search or delete Chrome browsing history through the extension.",
+		Usage:   "bb-browser browser-history [search|delete-url]",
+		Flags: []string{
+			"  search [query] [--limit N]   Search browser history (default)",
+			"  delete-url <url>             Delete one URL from browser history",
+		},
+		Examples: []string{
+			"  bb-browser browser-history search github --limit 20",
+			"  bb-browser browser-history delete-url https://example.com",
+		},
+		Notes: "Named browser-history to avoid changing the existing 'history' command, which shows bb-browser daemon action history.",
+	},
+	"downloads": {
+		Summary: "Inspect and control Chrome downloads through the extension.",
+		Usage:   "bb-browser downloads [list|search|start|erase|cancel|pause|resume|show|show-folder]",
+		Flags: []string{
+			"  list [--limit N] [--state S]     List downloads (default)",
+			"  search <query> [--limit N]       Search downloads",
+			"  start <url> [--filename P] [--save-as]",
+			"  erase [--id N|query]             Erase download records",
+			"  cancel|pause|resume|show <id>    Control a download by ID",
+			"  show-folder                      Open the default download folder",
+		},
+		Examples: []string{
+			"  bb-browser downloads list --limit 20",
+			"  bb-browser downloads search report",
+			"  bb-browser downloads start https://example.com/file.zip --filename file.zip",
+		},
+		Notes: "Requires the Chrome extension. It uses chrome.downloads, which exposes browser download manager state outside CDP.",
+	},
+	"window": {
+		Summary: "List and control Chrome browser windows through the extension.",
+		Usage:   "bb-browser window [list|new|focus|close]",
+		Flags: []string{
+			"  list                  List Chrome windows and tab counts (default)",
+			"  new [url] [--focused] Create a browser window",
+			"  focus <id>            Focus a browser window",
+			"  close <id>            Close a browser window",
+		},
+		Examples: []string{
+			"  bb-browser window list",
+			"  bb-browser window new https://example.com --focused",
+			"  bb-browser window focus 123",
+		},
+		Notes: "Requires the Chrome extension. The plural alias 'windows' is also accepted.",
+	},
+	"windows": {
+		Summary: "Alias for 'window'.",
+		Usage:   "bb-browser windows [list|new|focus|close]",
+		Notes:   "Use 'bb-browser help window' for the full command reference.",
 	},
 	"frame": {
 		Summary: "Switch the interaction context to a child iframe, or back to the main frame.",
@@ -443,21 +513,26 @@ var commandHelp = map[string]cmdHelp{
 		Notes:   "Humans rarely run this directly; configure it in your MCP client instead.",
 	},
 	"extension": {
-		Summary: "Download or locate the bb-browser Chrome extension.",
-		Usage:   "bb-browser extension [download|update|path]",
+		Summary: "Download, locate, or inspect the bb-browser Chrome extension.",
+		Usage:   "bb-browser extension [download|update|path|status|call]",
 		Flags: []string{
 			"  download              Download the latest extension zip and extract it (default)",
 			"  update                Alias for 'download' — overwrites the current install",
 			"  path                  Print the local install directory and exit",
+			"  status                Query the connected extension capabilities",
+			"  call <method> [json]  Raw extension RPC escape hatch",
 		},
 		Examples: []string{
 			"  bb-browser extension download",
 			"  bb-browser extension path",
+			"  bb-browser extension status --json",
+			"  bb-browser extension call bookmarks.search '{\"query\":\"github\"}'",
 		},
 		Notes: "Extracts to ~/.bb-browser/extension (override with $BB_BROWSER_HOME). " +
 			"After download, load it in Chrome via chrome://extensions → enable Developer " +
 			"mode → 'Load unpacked' → select the printed directory. The extension provides " +
-			"capabilities CDP cannot (cross-domain cookies, browser-level tab events).",
+			"capabilities CDP cannot: cross-domain cookies, bookmarks, history, downloads, " +
+			"windows, tab groups, and browser-level events.",
 	},
 	"extension.download": {
 		Summary: "Download the latest extension zip and extract it (replacing any prior install).",
@@ -479,6 +554,24 @@ var commandHelp = map[string]cmdHelp{
 		Summary: "Print the local extension install directory.",
 		Usage:   "bb-browser extension path",
 		Notes:   "Useful for scripting or for pasting the path into chrome://extensions.",
+	},
+	"extension.status": {
+		Summary: "Show the connected extension's capabilities.",
+		Usage:   "bb-browser extension status [--json]",
+		Notes:   "Requires the extension service worker to be connected to /v1/ext/ws.",
+	},
+	"extension.capabilities": {
+		Summary: "Alias for 'extension status'.",
+		Usage:   "bb-browser extension capabilities [--json]",
+	},
+	"extension.call": {
+		Summary: "Call a supported extension RPC method directly.",
+		Usage:   "bb-browser extension call <method> [json-params]",
+		Examples: []string{
+			"  bb-browser extension call bookmarks.search '{\"query\":\"github\"}'",
+			"  bb-browser extension call downloads.search '{\"q\":\"report\",\"limit\":10}'",
+		},
+		Notes: "Use 'extension status --json' to inspect supportedMethods. This is the CLI escape hatch for extension APIs not promoted to a first-class command.",
 	},
 	"update": {
 		Summary: "Download the latest release from GitHub and replace the running binary.",
@@ -709,6 +802,98 @@ var commandHelp = map[string]cmdHelp{
 		Summary:  "Switch the interaction context back to the page's top-level frame.",
 		Usage:    "bb-browser frame main [--tab <id>]",
 		Examples: []string{"  bb-browser frame main"},
+	},
+
+	// --- Subcommand pages: extension-backed browser APIs ---
+	"bookmarks.tree": {
+		Summary:  "Print Chrome's full bookmark tree.",
+		Usage:    "bb-browser bookmarks tree [--json]",
+		Examples: []string{"  bb-browser bookmarks tree", "  bb-browser bookmarks tree --json"},
+	},
+	"bookmarks.search": {
+		Summary:  "Search Chrome bookmarks by title or URL.",
+		Usage:    "bb-browser bookmarks search <query> [--json]",
+		Examples: []string{"  bb-browser bookmarks search github"},
+	},
+	"bookmarks.create": {
+		Summary: "Create a Chrome bookmark.",
+		Usage:   "bb-browser bookmarks create <url> <title> [--parent <id>]",
+		Flags:   []string{"  --parent <id>   Parent bookmark folder ID"},
+	},
+	"bookmarks.update": {
+		Summary: "Update a Chrome bookmark title and/or URL.",
+		Usage:   "bb-browser bookmarks update <id> [--title <title>] [--url <url>]",
+		Flags: []string{
+			"  --title <title>   New bookmark title",
+			"  --url <url>       New bookmark URL",
+		},
+	},
+	"bookmarks.remove": {
+		Summary: "Remove a Chrome bookmark or bookmark folder.",
+		Usage:   "bb-browser bookmarks remove <id> [--recursive]",
+		Flags:   []string{"  --recursive      Remove a folder and all children"},
+	},
+	"browser-history.search": {
+		Summary: "Search Chrome browsing history.",
+		Usage:   "bb-browser browser-history search [query] [--limit N] [--json]",
+		Flags:   []string{"  --limit N        Maximum results returned by Chrome"},
+	},
+	"browser-history.delete-url": {
+		Summary: "Delete one URL from Chrome browsing history.",
+		Usage:   "bb-browser browser-history delete-url <url>",
+	},
+	"downloads.list": {
+		Summary: "List Chrome downloads.",
+		Usage:   "bb-browser downloads list [--limit N] [--state complete|interrupted|in_progress] [--json]",
+		Flags: []string{
+			"  --limit N       Maximum results",
+			"  --state S       Filter by download state",
+		},
+	},
+	"downloads.search": {
+		Summary: "Search Chrome downloads.",
+		Usage:   "bb-browser downloads search <query> [--limit N] [--json]",
+		Flags:   []string{"  --limit N       Maximum results"},
+	},
+	"downloads.start": {
+		Summary: "Start a Chrome-managed download.",
+		Usage:   "bb-browser downloads start <url> [--filename <path>] [--save-as]",
+		Flags: []string{
+			"  --filename <path>   Suggested download filename",
+			"  --save-as           Ask Chrome to show the Save As dialog",
+		},
+	},
+	"downloads.erase": {
+		Summary: "Erase Chrome download history records.",
+		Usage:   "bb-browser downloads erase [--id N|query]",
+		Flags:   []string{"  --id N          Erase one download record by ID"},
+	},
+	"downloads.cancel":      {Summary: "Cancel a Chrome download by ID.", Usage: "bb-browser downloads cancel <id>"},
+	"downloads.pause":       {Summary: "Pause a Chrome download by ID.", Usage: "bb-browser downloads pause <id>"},
+	"downloads.resume":      {Summary: "Resume a Chrome download by ID.", Usage: "bb-browser downloads resume <id>"},
+	"downloads.show":        {Summary: "Show one downloaded file in the platform file manager.", Usage: "bb-browser downloads show <id>"},
+	"downloads.show-folder": {Summary: "Open Chrome's default download folder.", Usage: "bb-browser downloads show-folder"},
+	"window.list": {
+		Summary:  "List Chrome browser windows.",
+		Usage:    "bb-browser window list [--json]",
+		Examples: []string{"  bb-browser window list"},
+	},
+	"window.new": {
+		Summary: "Create a Chrome browser window.",
+		Usage:   "bb-browser window new [url] [--focused]",
+		Flags:   []string{"  --focused       Focus the new window immediately"},
+	},
+	"window.focus": {Summary: "Focus a Chrome browser window.", Usage: "bb-browser window focus <id>"},
+	"window.close": {Summary: "Close a Chrome browser window.", Usage: "bb-browser window close <id>"},
+	"windows.list": {Summary: "Alias for 'window list'.", Usage: "bb-browser windows list [--json]"},
+	"windows.new":  {Summary: "Alias for 'window new'.", Usage: "bb-browser windows new [url] [--focused]"},
+	"windows.focus": {
+		Summary: "Alias for 'window focus'.",
+		Usage:   "bb-browser windows focus <id>",
+	},
+	"windows.close": {
+		Summary: "Alias for 'window close'.",
+		Usage:   "bb-browser windows close <id>",
 	},
 }
 

@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/leolin310148/bb-browser-go/internal/client"
 	"github.com/leolin310148/bb-browser-go/internal/diagnostics"
@@ -565,4 +567,203 @@ func handleErrors(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResu
 		return mcp.NewToolResultText("JavaScript errors cleared"), nil
 	}
 	return formatErrors(resp), nil
+}
+
+func handleExtensionStatus(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	raw, err := client.GetJSON("/v1/ext/capabilities", 10*time.Second)
+	return rawToolResult(raw, err), nil
+}
+
+func handleExtensionCall(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	method, err := r.RequireString("method")
+	if err != nil {
+		return mcp.NewToolResultError("method is required"), nil
+	}
+	params := map[string]interface{}{}
+	if raw, ok := r.GetArguments()["params"]; ok && raw != nil {
+		if m, ok := raw.(map[string]interface{}); ok {
+			params = m
+		} else {
+			return mcp.NewToolResultError("params must be an object"), nil
+		}
+	}
+	raw, callErr := client.PostJSON("/v1/ext/call", map[string]interface{}{"method": method, "params": params}, 15*time.Second)
+	return rawToolResult(raw, callErr), nil
+}
+
+func handleBookmarks(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	cmd := r.GetString("command", "tree")
+	switch cmd {
+	case "tree":
+		raw, err := client.GetJSON("/v1/bookmarks/tree", 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "search":
+		q := url.Values{}
+		q.Set("q", r.GetString("query", ""))
+		raw, err := client.GetJSON("/v1/bookmarks/search?"+q.Encode(), 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "create":
+		body := map[string]interface{}{
+			"url":   r.GetString("url", ""),
+			"title": r.GetString("title", ""),
+		}
+		if body["url"] == "" || body["title"] == "" {
+			return mcp.NewToolResultError("url and title are required"), nil
+		}
+		if parent := r.GetString("parentId", ""); parent != "" {
+			body["parentId"] = parent
+		}
+		raw, err := client.PostJSON("/v1/bookmarks/create", body, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "update":
+		id := r.GetString("id", "")
+		if id == "" {
+			return mcp.NewToolResultError("id is required"), nil
+		}
+		changes := map[string]interface{}{}
+		if title := r.GetString("title", ""); title != "" {
+			changes["title"] = title
+		}
+		if u := r.GetString("url", ""); u != "" {
+			changes["url"] = u
+		}
+		if len(changes) == 0 {
+			return mcp.NewToolResultError("title or url is required"), nil
+		}
+		raw, err := client.PostJSON("/v1/bookmarks/update", map[string]interface{}{"id": id, "changes": changes}, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "remove":
+		id := r.GetString("id", "")
+		if id == "" {
+			return mcp.NewToolResultError("id is required"), nil
+		}
+		raw, err := client.PostJSON("/v1/bookmarks/remove", map[string]interface{}{"id": id, "recursive": r.GetBool("recursive", false)}, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	default:
+		return mcp.NewToolResultError("unknown bookmarks command"), nil
+	}
+}
+
+func handleBrowserHistory(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	cmd := r.GetString("command", "search")
+	switch cmd {
+	case "search":
+		q := url.Values{}
+		q.Set("q", r.GetString("query", ""))
+		if limit := r.GetInt("limit", 0); limit > 0 {
+			q.Set("maxResults", fmt.Sprintf("%d", limit))
+		}
+		raw, err := client.GetJSON("/v1/browser-history/search?"+q.Encode(), 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "deleteUrl":
+		u := r.GetString("url", "")
+		if u == "" {
+			return mcp.NewToolResultError("url is required"), nil
+		}
+		raw, err := client.PostJSON("/v1/browser-history/delete-url", map[string]interface{}{"url": u}, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	default:
+		return mcp.NewToolResultError("unknown browser_history command"), nil
+	}
+}
+
+func handleDownloads(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	cmd := r.GetString("command", "list")
+	switch cmd {
+	case "list", "search":
+		q := url.Values{}
+		if cmd == "search" {
+			q.Set("q", r.GetString("query", ""))
+		}
+		if state := r.GetString("state", ""); state != "" {
+			q.Set("state", state)
+		}
+		if limit := r.GetInt("limit", 0); limit > 0 {
+			q.Set("limit", fmt.Sprintf("%d", limit))
+		}
+		path := "/v1/downloads/search"
+		if len(q) > 0 {
+			path += "?" + q.Encode()
+		}
+		raw, err := client.GetJSON(path, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "start":
+		u := r.GetString("url", "")
+		if u == "" {
+			return mcp.NewToolResultError("url is required"), nil
+		}
+		body := map[string]interface{}{"url": u, "saveAs": r.GetBool("saveAs", false)}
+		if filename := r.GetString("filename", ""); filename != "" {
+			body["filename"] = filename
+		}
+		raw, err := client.PostJSON("/v1/downloads/download", body, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "erase":
+		body := map[string]interface{}{}
+		if id := r.GetInt("id", 0); id > 0 {
+			body["id"] = id
+		}
+		if query := r.GetString("query", ""); query != "" {
+			body["q"] = query
+		}
+		raw, err := client.PostJSON("/v1/downloads/erase", body, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "cancel", "pause", "resume", "show":
+		id := r.GetInt("id", 0)
+		if id <= 0 {
+			return mcp.NewToolResultError("id is required"), nil
+		}
+		raw, err := client.PostJSON("/v1/downloads/"+cmd, map[string]interface{}{"id": id}, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "showFolder":
+		raw, err := client.PostJSON("/v1/downloads/show-default-folder", map[string]interface{}{}, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	default:
+		return mcp.NewToolResultError("unknown downloads command"), nil
+	}
+}
+
+func handleWindows(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	cmd := r.GetString("command", "list")
+	switch cmd {
+	case "list":
+		raw, err := client.GetJSON("/v1/windows", 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "new":
+		body := map[string]interface{}{"focused": r.GetBool("focused", false)}
+		if u := r.GetString("url", ""); u != "" {
+			body["url"] = u
+		}
+		raw, err := client.PostJSON("/v1/windows/create", body, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "focus":
+		id := r.GetInt("id", 0)
+		if id <= 0 {
+			return mcp.NewToolResultError("id is required"), nil
+		}
+		raw, err := client.PostJSON("/v1/windows/update", map[string]interface{}{"id": id, "updateInfo": map[string]interface{}{"focused": true}}, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	case "close":
+		id := r.GetInt("id", 0)
+		if id <= 0 {
+			return mcp.NewToolResultError("id is required"), nil
+		}
+		raw, err := client.PostJSON("/v1/windows/close", map[string]interface{}{"id": id}, 15*time.Second)
+		return rawToolResult(raw, err), nil
+	default:
+		return mcp.NewToolResultError("unknown windows command"), nil
+	}
+}
+
+func rawToolResult(raw json.RawMessage, err error) *mcp.CallToolResult {
+	if err != nil {
+		return mcp.NewToolResultError(err.Error())
+	}
+	var pretty any
+	if json.Unmarshal(raw, &pretty) == nil {
+		if out, marshalErr := json.MarshalIndent(pretty, "", "  "); marshalErr == nil {
+			return mcp.NewToolResultText(string(out))
+		}
+	}
+	return mcp.NewToolResultText(string(raw))
 }

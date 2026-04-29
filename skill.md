@@ -37,7 +37,7 @@ If `bb-browser` is configured as an MCP server, call tools directly. Workflow:
 
 All tools accept an optional `tab` param (short id from `browser_tab_list`) to target a specific tab.
 
-Tool categories (29 total): navigation, interaction, observation (includes `browser_eval` for arbitrary JS), tab management, diagnostics, site adapters (`browser_site_list`/`_info`/`_run`).
+Tool categories (36 total): navigation, interaction, observation (includes `browser_eval` for arbitrary JS), tab management, diagnostics, extension-backed Chrome APIs (`browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`), site adapters (`browser_site_list`/`_info`/`_run`).
 
 ### 2. Shell / CLI
 
@@ -62,6 +62,11 @@ bb-browser network requests --tail --filter /api/    # live stream until Ctrl+C
 bb-browser console --filter error
 bb-browser fetch <url>                           # authenticated HTTP via page session
 bb-browser tab                                   # list tabs
+bb-browser extension status                      # extension connection + capabilities
+bb-browser bookmarks search github               # Chrome bookmarks (extension)
+bb-browser browser-history search github --limit 20
+bb-browser downloads list --limit 20
+bb-browser window list                           # Chrome windows (extension)
 bb-browser <platform>/<adapter> [args]           # run a site adapter
 ```
 
@@ -92,6 +97,7 @@ Site adapters over HTTP: `GET /v1/sites`, `POST /v1/sites/info {name}`, `POST /v
 7. **Diagnose failures with `browser_console` + `browser_errors`** before assuming the automation is broken. Pages often log hints.
 8. **Prefer `--wait-for '<selector>'` over `wait <ms>`** for any DOM change. Works on `open`, `click`, `fill`, `press`, `eval`, etc. — the action runs, then the daemon polls `document.querySelector(...)` until non-null or timeout (default 10s, override with `--timeout <ms>`).
 9. **Use `eval --unwrap` to strip `{success, data, result, ...}` envelopes** when you only want the value — strings are emitted unquoted, other shapes as JSON. Combine with `--file <path>` for non-trivial scripts.
+10. **Use extension-backed tools for browser-level state CDP cannot see**: all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser events. Check `browser_extension_status` / `bb-browser extension status` first if one of these reports that no extension is connected.
 
 ## Site adapters
 

@@ -52,6 +52,12 @@ bb-browser tab                                     # list; "tab new", "tab 2", "
 bb-browser frame <selector> | main                 # iframe switching
 bb-browser dialog accept|dismiss [text]
 bb-browser trace start|stop|status
+bb-browser extension status                      # optional Chrome extension capabilities
+bb-browser cookies all [domain]                  # all-domain cookie store (extension)
+bb-browser bookmarks tree|search|create|update|remove
+bb-browser browser-history search [query] [--limit N]
+bb-browser downloads list|search|start|erase|cancel|pause|resume
+bb-browser window list|new|focus|close           # browser windows (extension)
 bb-browser site list|search|info|run|update       # site adapters
 bb-browser <platform>/<adapter> [args]            # shorthand for "site run"
 bb-browser status | daemon [shutdown]
@@ -75,13 +81,14 @@ MCP client config (e.g. Claude Code `.claude/settings.json`):
 { "mcpServers": { "bb-browser": { "command": "bb-browser", "args": ["mcp"] } } }
 ```
 
-Tools (29 total):
+Tools (36 total):
 
 - **Navigation:** `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close`
 - **Interaction:** `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_press`, `browser_scroll`
 - **Observation:** `browser_snapshot`, `browser_screenshot`, `browser_get`, `browser_eval`, `browser_wait`
 - **Tabs:** `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close`
-- **Diagnostics:** `browser_network`, `browser_console`, `browser_errors`
+- **Diagnostics:** `browser_network`, `browser_console`, `browser_errors`, `browser_doctor`
+- **Extension-backed Chrome APIs:** `browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`
 - **Site adapters:** `browser_site_list`, `browser_site_info`, `browser_site_run`
 
 Recommended agent flow: `browser_tab_list` → `browser_navigate` (reuses tab with same URL unless `new=true`) → `browser_snapshot` → `browser_click`/`browser_fill`/`browser_press` → `browser_network`/`browser_console` to diagnose.
@@ -124,6 +131,13 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 | GET | `/v1/sites` | list adapters |
 | POST | `/v1/sites/info` | `{name}` |
 | POST | `/v1/sites/run` | `{name, args?, tab?}` |
+| GET | `/v1/ext/capabilities` | extension status/capabilities |
+| POST | `/v1/ext/call` | `{method, params?}` raw extension RPC |
+| GET | `/v1/cookies/all` | all-domain cookies (`domain`, `name`, `url` filters) |
+| GET/POST | `/v1/bookmarks/*` | bookmark tree/search/create/update/remove |
+| GET/POST | `/v1/browser-history/*` | Chrome history search/delete |
+| GET/POST | `/v1/downloads/*` | downloads search/start/erase/control |
+| GET/POST | `/v1/windows*` | browser window list/create/update/close |
 | POST | `/command` | raw `protocol.Request` escape hatch |
 
 ## Environment
@@ -141,6 +155,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 - **Non-loopback bind requires a token.** The server refuses to start otherwise.
 - **Site adapters run on the daemon's filesystem**, not the client's. A remote client invoking `/v1/sites/*` or `browser_site_run` gets whatever adapters the server has in `~/.bb-browser/sites` or `~/.bb-browser/bb-sites` (community, pulled via `bb-browser site update`).
 - **Network/console/error buffers are per-tab rings.** Use `--since last_action` for incremental queries.
+- **The optional Chrome extension unlocks browser-level APIs CDP cannot see.** Use it for all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser-level event streams. Commands and MCP tools report a clear "no extension connected" error when it is missing.
 
 ## Minimal end-to-end example
 

@@ -235,6 +235,57 @@ var doctorTool = mcp.NewTool("browser_doctor",
 	mcp.WithBoolean("json", mcp.Description("Return structured JSON {ok, checks[]} instead of the human-readable report.")),
 )
 
+// --- Extension-backed browser APIs ---
+
+var extensionStatusTool = mcp.NewTool("browser_extension_status",
+	mcp.WithDescription("Show whether the optional bb-browser Chrome extension is connected and which Chrome-only APIs it exposes (cookies, bookmarks, history, downloads, windows, tabs/events). Use this when an extension-backed tool reports that no extension is connected."),
+)
+
+var extensionCallTool = mcp.NewTool("browser_extension_call",
+	mcp.WithDescription("Advanced escape hatch: call a supported Chrome extension RPC method directly. Methods include cookies.getAll, bookmarks.*, history.*, downloads.*, windows.*, tabs.*, tabGroups.*. Prefer the structured tools when possible."),
+	mcp.WithString("method", mcp.Required(), mcp.Description("Extension RPC method, e.g. bookmarks.search or downloads.search")),
+	mcp.WithObject("params", mcp.Description("Method parameters as a JSON object")),
+)
+
+var bookmarksTool = mcp.NewTool("browser_bookmarks",
+	mcp.WithDescription("Read or manage Chrome bookmarks through the bb-browser extension. CDP cannot access the browser bookmark store."),
+	mcp.WithString("command", mcp.Description("tree, search, create, update, or remove"), mcp.Enum("tree", "search", "create", "update", "remove")),
+	mcp.WithString("query", mcp.Description("Search query for command=search")),
+	mcp.WithString("id", mcp.Description("Bookmark/folder ID for update/remove")),
+	mcp.WithString("url", mcp.Description("Bookmark URL for create/update")),
+	mcp.WithString("title", mcp.Description("Bookmark title for create/update")),
+	mcp.WithString("parentId", mcp.Description("Parent folder ID for create")),
+	mcp.WithBoolean("recursive", mcp.Description("Remove a folder recursively")),
+)
+
+var browserHistoryTool = mcp.NewTool("browser_history",
+	mcp.WithDescription("Search or delete Chrome browsing history through the bb-browser extension. This is browser-level history, not bb-browser's daemon action history."),
+	mcp.WithString("command", mcp.Description("search or deleteUrl"), mcp.Enum("search", "deleteUrl")),
+	mcp.WithString("query", mcp.Description("Search query for command=search")),
+	mcp.WithString("url", mcp.Description("URL for command=deleteUrl")),
+	mcp.WithNumber("limit", mcp.Description("Maximum history results")),
+)
+
+var downloadsTool = mcp.NewTool("browser_downloads",
+	mcp.WithDescription("Inspect or control Chrome downloads through the bb-browser extension. CDP cannot see the full browser download manager."),
+	mcp.WithString("command", mcp.Description("list, search, start, erase, cancel, pause, resume, show, or showFolder"), mcp.Enum("list", "search", "start", "erase", "cancel", "pause", "resume", "show", "showFolder")),
+	mcp.WithString("query", mcp.Description("Search/erase query")),
+	mcp.WithString("url", mcp.Description("URL for command=start")),
+	mcp.WithString("filename", mcp.Description("Suggested filename for command=start")),
+	mcp.WithString("state", mcp.Description("Filter by state for list/search")),
+	mcp.WithNumber("id", mcp.Description("Download ID for id-based commands")),
+	mcp.WithNumber("limit", mcp.Description("Maximum results for list/search")),
+	mcp.WithBoolean("saveAs", mcp.Description("Show Chrome Save As dialog for command=start")),
+)
+
+var windowsTool = mcp.NewTool("browser_windows",
+	mcp.WithDescription("List and control Chrome browser windows through the bb-browser extension. Useful for focusing or creating windows, which CDP cannot reliably manage at the browser UI level."),
+	mcp.WithString("command", mcp.Description("list, new, focus, or close"), mcp.Enum("list", "new", "focus", "close")),
+	mcp.WithNumber("id", mcp.Description("Window ID for focus/close")),
+	mcp.WithString("url", mcp.Description("URL to open for command=new")),
+	mcp.WithBoolean("focused", mcp.Description("Focus the new window for command=new")),
+)
+
 // --- Site Adapters ---
 
 var siteListTool = mcp.NewTool("browser_site_list",

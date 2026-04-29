@@ -76,7 +76,7 @@ export BB_BROWSER_CDP_URL=http://127.0.0.1:19825
 
 ## Browser Extension (optional)
 
-A small Chrome extension extends `bb-browser` with capabilities CDP cannot provide on its own — cross-domain cookies (`bb-browser cookies all`) and browser-level tab events (`bb-browser tab events`). Install it once per Chrome profile:
+A Chrome extension extends `bb-browser` with browser-level capabilities CDP cannot provide on its own — cross-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, raw extension RPC, and browser event streams. Install it once per Chrome profile:
 
 ```bash
 # Download the extension that matches your installed bb-browser binary
@@ -91,7 +91,18 @@ This fetches `bb-browser-extension.zip` from the latest GitHub release, verifies
 
 Re-run `bb-browser extension update` after upgrading the binary to keep the extension in lockstep. The extension version mirrors the bb-browser release tag.
 
-Commands that *don't* require the extension keep working without it. The ones that do (`cookies all`, `tab events`) will tell you when it's missing.
+Commands that *don't* require the extension keep working without it. Extension-backed commands tell you when it is missing:
+
+```bash
+bb-browser extension status             # connected extension capabilities
+bb-browser extension call <method> '{}' # raw extension RPC escape hatch
+bb-browser cookies all [domain]          # all-domain cookie store
+bb-browser bookmarks tree|search|create|update|remove
+bb-browser browser-history search        # Chrome browsing history
+bb-browser downloads list|search|start|erase|cancel|pause|resume
+bb-browser window list|new|focus|close   # browser windows (alias: windows)
+bb-browser tab events --tail             # tabs/windows/bookmarks/history/download event stream
+```
 
 ## How It Works
 
@@ -139,7 +150,7 @@ Add to your MCP client configuration (e.g. `.claude/settings.json` for Claude Co
 
 ### Available Tools
 
-The MCP server exposes 30 tools:
+The MCP server exposes 36 tools:
 
 | Category | Tools |
 |----------|-------|
@@ -148,6 +159,7 @@ The MCP server exposes 30 tools:
 | **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_get`, `browser_eval`, `browser_wait` |
 | **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close` |
 | **Diagnostics** | `browser_network`, `browser_console`, `browser_errors`, `browser_doctor` |
+| **Extension-backed** | `browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows` |
 | **Site Adapters** | `browser_site_list`, `browser_site_info`, `browser_site_run` |
 
 The workflow mirrors the CLI: call `browser_snapshot` to see the page structure with element refs, then use those refs with interaction tools like `browser_click` or `browser_fill`. Screenshots are returned as inline base64 PNG images.
@@ -276,6 +288,13 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | GET | `/v1/sites` | — list site adapters on the server |
 | POST | `/v1/sites/info` | `{name}` — adapter metadata |
 | POST | `/v1/sites/run` | `{name, args?, tab?}` — run a site adapter |
+| GET | `/v1/ext/capabilities` | — connected extension capabilities |
+| POST | `/v1/ext/call` | `{method, params?}` — raw extension RPC |
+| GET | `/v1/cookies/all` | query: `domain?`, `name?`, `url?` — all-domain cookies |
+| GET \| POST | `/v1/bookmarks/*` | bookmark tree/search/create/update/remove |
+| GET \| POST | `/v1/browser-history/*` | Chrome history search/delete |
+| GET \| POST | `/v1/downloads/*` | downloads search/start/erase/cancel/pause/resume/show |
+| GET \| POST | `/v1/windows*` | browser window list/create/update/close |
 | POST | `/command` | raw `protocol.Request` — escape hatch |
 
 `waitFor` (CSS selector) and `timeoutMs` (default 10000) are honored across all action endpoints. After the action returns, the daemon polls `document.querySelector(waitFor)` on a 100 ms tick until it resolves to a non-null node or the timeout elapses, then returns. Combine with chained REST calls instead of guessing with fixed `/v1/wait` durations.

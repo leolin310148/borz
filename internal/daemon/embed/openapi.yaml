@@ -26,6 +26,7 @@ tags:
   - name: input
   - name: observation
   - name: tabs
+  - name: extension
   - name: sites
   - name: diagnostics
   - name: raw
@@ -796,6 +797,264 @@ paths:
         "200": { $ref: "#/components/responses/Ok" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /v1/ext/capabilities:
+    get:
+      tags: [extension]
+      summary: Connected Chrome extension capabilities
+      responses:
+        "200":
+          description: Extension status and supported RPC methods
+          content: { application/json: { schema: { type: object, additionalProperties: true } } }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/ext/call:
+    post:
+      tags: [extension]
+      summary: Raw Chrome extension RPC call
+      description: Advanced escape hatch for supported extension methods such as `bookmarks.search`, `history.search`, `downloads.search`, `windows.getAll`, and `tabs.query`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method]
+              properties:
+                method: { type: string }
+                params: { type: object, additionalProperties: true }
+      responses:
+        "200": { description: Raw extension method result }
+        "400": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/cookies/all:
+    get:
+      tags: [extension]
+      summary: All Chrome cookies visible to the extension
+      parameters:
+        - { name: domain, in: query, schema: { type: string } }
+        - { name: name, in: query, schema: { type: string } }
+        - { name: url, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Cookie array }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/cookies/set:
+    post:
+      tags: [extension]
+      summary: Set a Chrome cookie through chrome.cookies
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Cookie result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/cookies/remove:
+    post:
+      tags: [extension]
+      summary: Remove a Chrome cookie through chrome.cookies
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Removal result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/bookmarks/tree:
+    get:
+      tags: [extension]
+      summary: Chrome bookmark tree
+      responses:
+        "200": { description: Bookmark tree }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/bookmarks/search:
+    get:
+      tags: [extension]
+      summary: Search Chrome bookmarks
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Bookmark search results }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/bookmarks/create:
+    post:
+      tags: [extension]
+      summary: Create a Chrome bookmark
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Created bookmark }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/bookmarks/update:
+    post:
+      tags: [extension]
+      summary: Update a Chrome bookmark
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Updated bookmark }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/bookmarks/remove:
+    post:
+      tags: [extension]
+      summary: Remove a Chrome bookmark or folder
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Removal result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/browser-history/search:
+    get:
+      tags: [extension]
+      summary: Search Chrome browsing history
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: maxResults, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: History items }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/browser-history/delete-url:
+    post:
+      tags: [extension]
+      summary: Delete one URL from Chrome browsing history
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Delete result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/browser-history/delete-range:
+    post:
+      tags: [extension]
+      summary: Delete a time range from Chrome browsing history
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Delete result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/downloads/search:
+    get:
+      tags: [extension]
+      summary: Search Chrome downloads
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: state, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Download items }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/downloads/download:
+    post:
+      tags: [extension]
+      summary: Start a Chrome-managed download
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Download ID }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/downloads/erase:
+    post:
+      tags: [extension]
+      summary: Erase Chrome download records
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Erased download IDs }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/downloads/cancel:
+    post:
+      tags: [extension]
+      summary: Cancel a Chrome download by ID
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Cancel result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/downloads/pause:
+    post:
+      tags: [extension]
+      summary: Pause a Chrome download by ID
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Pause result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/downloads/resume:
+    post:
+      tags: [extension]
+      summary: Resume a Chrome download by ID
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Resume result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/downloads/show:
+    post:
+      tags: [extension]
+      summary: Show a downloaded file in the platform file manager
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Show result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/downloads/show-default-folder:
+    post:
+      tags: [extension]
+      summary: Open Chrome's default download folder
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Show result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/windows:
+    get:
+      tags: [extension]
+      summary: List Chrome browser windows
+      responses:
+        "200": { description: Window list }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/windows/create:
+    post:
+      tags: [extension]
+      summary: Create a Chrome browser window
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Created window }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/windows/update:
+    post:
+      tags: [extension]
+      summary: Update or focus a Chrome browser window
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Updated window }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/windows/close:
+    post:
+      tags: [extension]
+      summary: Close a Chrome browser window
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Close result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/ext/tabs/query:
+    get:
+      tags: [extension]
+      summary: Query Chrome tabs through the extension
+      parameters:
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: url, in: query, schema: { type: string } }
+        - { name: title, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Tab query results }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/ext/tabs/capture-visible:
+    post:
+      tags: [extension]
+      summary: Capture the visible Chrome tab via chrome.tabs.captureVisibleTab
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Data URL }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/ext/tabs/duplicate:
+    post:
+      tags: [extension]
+      summary: Duplicate a Chrome tab through the extension
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Duplicated tab }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/ext/tabs/discard:
+    post:
+      tags: [extension]
+      summary: Discard a Chrome tab through the extension
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Discarded tab }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/ext/tabs/reload:
+    post:
+      tags: [extension]
+      summary: Reload a Chrome tab through the extension
+      requestBody: { $ref: "#/components/requestBodies/FreeformJSON" }
+      responses: { "200": { description: Reload result }, "503": { $ref: "#/components/responses/Error" } }
+
+  /v1/ext/tab-groups/query:
+    get:
+      tags: [extension]
+      summary: Query Chrome tab groups through the extension
+      responses:
+        "200": { description: Tab group results }
+        "503": { $ref: "#/components/responses/Error" }
+
   /command:
     post:
       tags: [raw]
@@ -824,6 +1083,14 @@ components:
       description: Required when the daemon was started with a token.
 
   requestBodies:
+    FreeformJSON:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+
     RefOnly:
       required: true
       content:

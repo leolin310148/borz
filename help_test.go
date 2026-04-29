@@ -80,6 +80,7 @@ func TestCommandHelpCoversDispatch(t *testing.T) {
 		"eval", "get", "screenshot", "press", "scroll", "wait",
 		"snapshot", "tab", "frame", "dialog", "network", "console", "errors", "trace",
 		"fetch", "mcp", "daemon", "server", "client", "status", "site", "update", "history",
+		"cookies", "bookmarks", "browser-history", "downloads", "window", "windows", "extension",
 		"help", "version",
 	}
 	for _, name := range expected {
@@ -113,6 +114,13 @@ func TestCommandHelpCoversSubcommands(t *testing.T) {
 		"dialog.accept", "dialog.dismiss",
 		// frame
 		"frame.main",
+		// extension-backed APIs
+		"extension.download", "extension.update", "extension.install", "extension.path", "extension.status", "extension.capabilities", "extension.call",
+		"bookmarks.tree", "bookmarks.search", "bookmarks.create", "bookmarks.update", "bookmarks.remove",
+		"browser-history.search", "browser-history.delete-url",
+		"downloads.list", "downloads.search", "downloads.start", "downloads.erase", "downloads.cancel", "downloads.pause", "downloads.resume", "downloads.show", "downloads.show-folder",
+		"window.list", "window.new", "window.focus", "window.close",
+		"windows.list", "windows.new", "windows.focus", "windows.close",
 	}
 	for _, name := range expected {
 		if _, ok := commandHelp[name]; !ok {
