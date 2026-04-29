@@ -2,10 +2,18 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/protocol"
 	"github.com/leolin310148/borz/internal/site"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -65,6 +73,30 @@ func mkReq(args map[string]any) mcp.CallToolRequest {
 }
 
 func ok() *protocol.Response { return &protocol.Response{Success: true} }
+
+func extBridgeDaemon(t *testing.T, handler http.HandlerFunc) {
+	t.Helper()
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+	ts := httptest.NewServer(handler)
+	t.Cleanup(ts.Close)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	u := strings.TrimPrefix(ts.URL, "http://")
+	host, portStr, err := net.SplitHostPort(u)
+	if err != nil {
+		t.Fatalf("split host: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+	data, _ := json.Marshal(protocol.DaemonInfo{PID: os.Getpid(), Host: host, Port: port})
+	if err := os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600); err != nil {
+		t.Fatalf("write daemon.json: %v", err)
+	}
+}
 
 // --- helpers ---
 
@@ -702,5 +734,169 @@ func TestHandleErrors(t *testing.T) {
 	res, _ = handleErrors(context.Background(), mkReq(map[string]any{"clear": true}))
 	if !strings.Contains(firstText(t, res), "cleared") {
 		t.Errorf("got %q", firstText(t, res))
+	}
+}
+
+func TestExtensionBridgeHandlers_ForwardRequests(t *testing.T) {
+	type seenRequest struct {
+		method string
+		path   string
+		query  string
+		body   map[string]any
+	}
+	var seen []seenRequest
+	extBridgeDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			w.Write([]byte(`{"running":true}`))
+			return
+		}
+		rec := seenRequest{method: r.Method, path: r.URL.Path, query: r.URL.RawQuery}
+		_ = json.NewDecoder(r.Body).Decode(&rec.body)
+		seen = append(seen, rec)
+		switch r.URL.Path {
+		case "/v1/ext/capabilities":
+			w.Write([]byte(`{"name":"borz-ext","supportedMethods":["bookmarks.search"]}`))
+		case "/v1/ext/call":
+			w.Write([]byte(`{"result":{"ok":true}}`))
+		case "/v1/bookmarks/tree":
+			w.Write([]byte(`[{"id":"root"}]`))
+		case "/v1/bookmarks/search":
+			w.Write([]byte(`[{"id":"b1"}]`))
+		case "/v1/bookmarks/create", "/v1/bookmarks/update", "/v1/bookmarks/remove":
+			w.Write([]byte(`{"ok":true}`))
+		case "/v1/browser-history/search":
+			w.Write([]byte(`[{"id":"h1"}]`))
+		case "/v1/browser-history/delete-url":
+			w.Write([]byte(`{"ok":true}`))
+		case "/v1/downloads/search":
+			w.Write([]byte(`[{"id":7}]`))
+		case "/v1/downloads/download", "/v1/downloads/erase", "/v1/downloads/cancel", "/v1/downloads/pause", "/v1/downloads/resume", "/v1/downloads/show", "/v1/downloads/show-default-folder":
+			w.Write([]byte(`{"ok":true}`))
+		case "/v1/windows", "/v1/windows/create", "/v1/windows/update", "/v1/windows/close":
+			w.Write([]byte(`{"ok":true}`))
+		default:
+			t.Errorf("unexpected path %s", r.URL.String())
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	cases := []struct {
+		name string
+		fn   func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+		args map[string]any
+		want string
+	}{
+		{"extension status", handleExtensionStatus, nil, "borz-ext"},
+		{"extension call", handleExtensionCall, map[string]any{"method": "bookmarks.search", "params": map[string]any{"query": "go"}}, `"ok": true`},
+		{"bookmarks tree", handleBookmarks, map[string]any{"command": "tree"}, `"id": "root"`},
+		{"bookmarks search", handleBookmarks, map[string]any{"command": "search", "query": "go"}, `"id": "b1"`},
+		{"bookmarks create", handleBookmarks, map[string]any{"command": "create", "url": "https://new.test", "title": "New", "parentId": "root"}, `"ok": true`},
+		{"bookmarks update", handleBookmarks, map[string]any{"command": "update", "id": "b1", "title": "Updated", "url": "https://updated.test"}, `"ok": true`},
+		{"bookmarks remove", handleBookmarks, map[string]any{"command": "remove", "id": "b1", "recursive": true}, `"ok": true`},
+		{"history search", handleBrowserHistory, map[string]any{"command": "search", "query": "docs", "limit": 5}, `"id": "h1"`},
+		{"history delete", handleBrowserHistory, map[string]any{"command": "deleteUrl", "url": "https://old.test"}, `"ok": true`},
+		{"downloads list", handleDownloads, map[string]any{"command": "list", "state": "complete", "limit": 3}, `"id": 7`},
+		{"downloads search", handleDownloads, map[string]any{"command": "search", "query": "zip"}, `"id": 7`},
+		{"downloads start", handleDownloads, map[string]any{"command": "start", "url": "https://file.test/a.zip", "filename": "a.zip", "saveAs": true}, `"ok": true`},
+		{"downloads erase", handleDownloads, map[string]any{"command": "erase", "id": 7, "query": "old"}, `"ok": true`},
+		{"downloads cancel", handleDownloads, map[string]any{"command": "cancel", "id": 7}, `"ok": true`},
+		{"downloads pause", handleDownloads, map[string]any{"command": "pause", "id": 7}, `"ok": true`},
+		{"downloads resume", handleDownloads, map[string]any{"command": "resume", "id": 7}, `"ok": true`},
+		{"downloads show", handleDownloads, map[string]any{"command": "show", "id": 7}, `"ok": true`},
+		{"downloads show folder", handleDownloads, map[string]any{"command": "showFolder"}, `"ok": true`},
+		{"windows list", handleWindows, map[string]any{"command": "list"}, `"ok": true`},
+		{"windows new", handleWindows, map[string]any{"command": "new", "url": "https://new.test", "focused": true}, `"ok": true`},
+		{"windows focus", handleWindows, map[string]any{"command": "focus", "id": 9}, `"ok": true`},
+		{"windows close", handleWindows, map[string]any{"command": "close", "id": 9}, `"ok": true`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := tc.fn(context.Background(), mkReq(tc.args))
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if res.IsError {
+				t.Fatalf("unexpected error result: %s", firstText(t, res))
+			}
+			if !strings.Contains(firstText(t, res), tc.want) {
+				t.Fatalf("result text = %q, want %q", firstText(t, res), tc.want)
+			}
+		})
+	}
+
+	assertSeen := func(i int, method, path, query string) {
+		t.Helper()
+		if i >= len(seen) {
+			t.Fatalf("missing request %d; seen=%+v", i, seen)
+		}
+		if seen[i].method != method || seen[i].path != path || seen[i].query != query {
+			t.Fatalf("request %d = %+v, want method=%s path=%s query=%s", i, seen[i], method, path, query)
+		}
+	}
+	assertSeen(0, http.MethodGet, "/v1/ext/capabilities", "")
+	assertSeen(1, http.MethodPost, "/v1/ext/call", "")
+	assertSeen(3, http.MethodGet, "/v1/bookmarks/search", "q=go")
+	assertSeen(7, http.MethodGet, "/v1/browser-history/search", "maxResults=5&q=docs")
+	assertSeen(9, http.MethodGet, "/v1/downloads/search", "limit=3&state=complete")
+	assertSeen(10, http.MethodGet, "/v1/downloads/search", "q=zip")
+	if seen[1].body["method"] != "bookmarks.search" {
+		t.Fatalf("extension call body = %+v", seen[1].body)
+	}
+	if seen[4].body["parentId"] != "root" {
+		t.Fatalf("bookmark create body = %+v", seen[4].body)
+	}
+	if seen[12].body["id"] != float64(7) || seen[12].body["q"] != "old" {
+		t.Fatalf("downloads erase body = %+v", seen[12].body)
+	}
+	if seen[19].body["focused"] != true || seen[19].body["url"] != "https://new.test" {
+		t.Fatalf("window new body = %+v", seen[19].body)
+	}
+}
+
+func TestExtensionBridgeHandlers_ValidationErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		fn   func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+		args map[string]any
+		want string
+	}{
+		{"extension call missing method", handleExtensionCall, nil, "method is required"},
+		{"extension call bad params", handleExtensionCall, map[string]any{"method": "x", "params": "bad"}, "params must be an object"},
+		{"bookmarks create missing", handleBookmarks, map[string]any{"command": "create", "url": "https://x.test"}, "url and title are required"},
+		{"bookmarks update missing id", handleBookmarks, map[string]any{"command": "update", "title": "x"}, "id is required"},
+		{"bookmarks update no changes", handleBookmarks, map[string]any{"command": "update", "id": "b1"}, "title or url is required"},
+		{"bookmarks remove missing id", handleBookmarks, map[string]any{"command": "remove"}, "id is required"},
+		{"bookmarks unknown", handleBookmarks, map[string]any{"command": "bad"}, "unknown bookmarks command"},
+		{"history delete missing url", handleBrowserHistory, map[string]any{"command": "deleteUrl"}, "url is required"},
+		{"history unknown", handleBrowserHistory, map[string]any{"command": "bad"}, "unknown browser_history command"},
+		{"downloads start missing url", handleDownloads, map[string]any{"command": "start"}, "url is required"},
+		{"downloads action missing id", handleDownloads, map[string]any{"command": "cancel"}, "id is required"},
+		{"downloads unknown", handleDownloads, map[string]any{"command": "bad"}, "unknown downloads command"},
+		{"windows focus missing id", handleWindows, map[string]any{"command": "focus"}, "id is required"},
+		{"windows close missing id", handleWindows, map[string]any{"command": "close"}, "id is required"},
+		{"windows unknown", handleWindows, map[string]any{"command": "bad"}, "unknown windows command"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := tc.fn(context.Background(), mkReq(tc.args))
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if !res.IsError || !strings.Contains(firstText(t, res), tc.want) {
+				t.Fatalf("result = %+v text=%q, want error containing %q", res, firstText(t, res), tc.want)
+			}
+		})
+	}
+}
+
+func TestRawToolResult_ErrorAndRawFallback(t *testing.T) {
+	res := rawToolResult(nil, errors.New("down"))
+	if !res.IsError || !strings.Contains(firstText(t, res), "down") {
+		t.Fatalf("error result = %+v text=%q", res, firstText(t, res))
+	}
+	res = rawToolResult(json.RawMessage(`not-json`), nil)
+	if res.IsError || firstText(t, res) != "not-json" {
+		t.Fatalf("raw fallback = %+v text=%q", res, firstText(t, res))
 	}
 }

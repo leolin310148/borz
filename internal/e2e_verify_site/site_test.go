@@ -34,6 +34,36 @@ func TestHandlerServesVerifyPagesAndAPI(t *testing.T) {
 	}
 }
 
+func TestHandlerAdditionalPagesAndNotFound(t *testing.T) {
+	h := Handler()
+	for _, path := range []string{"/page2", "/tab", "/frame.html"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s status=%d", path, rec.Code)
+			}
+			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+				t.Fatalf("%s content-type=%q", path, ct)
+			}
+		})
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/missing", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing status=%d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	root(rec, httptest.NewRequest(http.MethodGet, "/not-root", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("root non-root status=%d", rec.Code)
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {

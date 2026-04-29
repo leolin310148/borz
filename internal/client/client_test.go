@@ -156,6 +156,82 @@ func TestRemoteConfigValidation(t *testing.T) {
 	}
 }
 
+func TestRemoteRoutingEnabledReflectsProcessFlag(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	if RemoteRoutingEnabled() {
+		t.Fatal("remote routing should default to disabled")
+	}
+	SetRemoteRouting(true)
+	if !RemoteRoutingEnabled() {
+		t.Fatal("remote routing flag was not enabled")
+	}
+}
+
+func TestReadRemoteConfigValidationErrors(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+
+	if err := os.WriteFile(filepath.Join(home, "client.json"), []byte(`{"token":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadRemoteConfig(); err == nil || !strings.Contains(err.Error(), "missing url") {
+		t.Fatalf("missing-url err = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "client.json"), []byte(`{"url":"ftp://example.test"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadRemoteConfig(); err == nil || !strings.Contains(err.Error(), "must use http") {
+		t.Fatalf("bad-url err = %v", err)
+	}
+}
+
+func TestWriteRemoteConfigValidationErrors(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
+	if err := WriteRemoteConfig(nil); err == nil || !strings.Contains(err.Error(), "missing remote") {
+		t.Fatalf("nil config err = %v", err)
+	}
+	if err := WriteRemoteConfig(&RemoteConfig{URL: "ftp://example.test"}); err == nil || !strings.Contains(err.Error(), "must use http") {
+		t.Fatalf("bad URL err = %v", err)
+	}
+}
+
+func TestCheckRemoteConfig(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	var sawAuth bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		sawAuth = r.Header.Get("Authorization") == "Bearer secret"
+		w.Write([]byte(`{"running":true}`))
+	}))
+	defer ts.Close()
+
+	if err := CheckRemoteConfig(&RemoteConfig{URL: ts.URL, Token: "secret"}, 0); err != nil {
+		t.Fatalf("CheckRemoteConfig success: %v", err)
+	}
+	if !sawAuth {
+		t.Fatal("authorization header was not sent")
+	}
+	if err := CheckRemoteConfig(nil, time.Second); err == nil || !strings.Contains(err.Error(), "missing remote") {
+		t.Fatalf("nil config err = %v", err)
+	}
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("nope"))
+	}))
+	defer bad.Close()
+	if err := CheckRemoteConfig(&RemoteConfig{URL: bad.URL}, time.Second); err == nil || !strings.Contains(err.Error(), "cannot reach") {
+		t.Fatalf("bad status err = %v", err)
+	}
+}
+
 // --- IsProcessAlive ---
 
 func TestIsProcessAlive_Self(t *testing.T) {
@@ -382,6 +458,69 @@ func TestGetJSONAndStatus_RemoteFlag(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"events"`) {
 		t.Fatalf("raw = %s", raw)
+	}
+}
+
+func TestPostJSON_LocalAndRemote(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	localBodies := 0
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/status":
+			w.Write([]byte(`{"running":true}`))
+		case "/v1/ext/call":
+			localBodies++
+			if r.Header.Get("Content-Type") != "application/json" {
+				t.Errorf("local content-type = %q", r.Header.Get("Content-Type"))
+			}
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["method"] != "local.method" {
+				t.Errorf("local body = %+v", body)
+			}
+			w.Write([]byte(`{"local":true}`))
+		default:
+			t.Errorf("unexpected local path %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer local.Close()
+	cachedInfo = infoForServer(t, local, "")
+	daemonReady = true
+	raw, err := PostJSON("/v1/ext/call", map[string]any{"method": "local.method"}, time.Second)
+	if err != nil {
+		t.Fatalf("local PostJSON: %v", err)
+	}
+	if string(raw) != `{"local":true}` || localBodies != 1 {
+		t.Fatalf("local raw=%s localBodies=%d", raw, localBodies)
+	}
+
+	resetState()
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	remoteBodies := 0
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/ext/call" {
+			t.Errorf("unexpected remote path %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer remote-token" {
+			t.Errorf("remote auth = %q", r.Header.Get("Authorization"))
+		}
+		remoteBodies++
+		w.Write([]byte(`{"remote":true}`))
+	}))
+	defer remote.Close()
+	if err := WriteRemoteConfig(&RemoteConfig{URL: remote.URL, Token: "remote-token"}); err != nil {
+		t.Fatalf("write remote config: %v", err)
+	}
+	SetRemoteRouting(true)
+	raw, err = PostJSON("/v1/ext/call", map[string]any{"method": "remote.method"}, time.Second)
+	if err != nil {
+		t.Fatalf("remote PostJSON: %v", err)
+	}
+	if string(raw) != `{"remote":true}` || remoteBodies != 1 {
+		t.Fatalf("remote raw=%s remoteBodies=%d", raw, remoteBodies)
 	}
 }
 

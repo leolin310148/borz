@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/leolin310148/borz/internal/daemon/extbridge"
 )
 
 // startRouted spins up the ext routes on an httptest server with no auth so
@@ -262,6 +264,103 @@ func TestExt_GenericFeatureRoutesRoundTrip(t *testing.T) {
 	<-done
 }
 
+func TestExt_GenericFeatureRoutesAdditionalParams(t *testing.T) {
+	s, srv := startRouted(t)
+	c := dialExt(t, srv)
+	waitConnected(t, s, 1)
+
+	type expected struct {
+		Method string
+		Check  func(t *testing.T, params map[string]any)
+		Result string
+	}
+	expect := make(chan expected, 4)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for exp := range expect {
+			_, raw, err := c.ReadMessage()
+			if err != nil {
+				return
+			}
+			var in map[string]any
+			_ = json.Unmarshal(raw, &in)
+			if in["method"] != exp.Method {
+				t.Errorf("method=%v want %s", in["method"], exp.Method)
+			}
+			params, _ := in["params"].(map[string]any)
+			if params == nil {
+				params = map[string]any{}
+			}
+			exp.Check(t, params)
+			out, _ := json.Marshal(map[string]any{
+				"type":   "response",
+				"id":     in["id"],
+				"result": json.RawMessage(exp.Result),
+			})
+			_ = c.WriteMessage(websocket.TextMessage, out)
+		}
+	}()
+
+	getJSON := func(path string) map[string]any {
+		t.Helper()
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("get %s: %v", path, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s status=%d", path, resp.StatusCode)
+		}
+		var out map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("decode %s: %v", path, err)
+		}
+		return out
+	}
+
+	expect <- expected{
+		Method: "history.search",
+		Result: `{"ok":true}`,
+		Check: func(t *testing.T, params map[string]any) {
+			if params["startTime"] != float64(10.5) || params["endTime"] != float64(20.25) || params["limit"] != float64(4) {
+				t.Fatalf("history params=%v", params)
+			}
+		},
+	}
+	_ = getJSON("/v1/browser-history/search?startTime=10.5&endTime=20.25&limit=4")
+
+	expect <- expected{
+		Method: "downloads.search",
+		Result: `{"ok":true}`,
+		Check: func(t *testing.T, params map[string]any) {
+			if params["id"] != float64(7) || params["limit"] != float64(8) || params["totalBytesGreater"] != float64(100) || params["totalBytesLess"] != float64(200) {
+				t.Fatalf("download numeric params=%v", params)
+			}
+			if params["filename"] != "a.zip" || params["paused"] != "false" {
+				t.Fatalf("download filter params=%v", params)
+			}
+		},
+	}
+	_ = getJSON("/v1/downloads/search?id=7&limit=8&totalBytesGreater=100&totalBytesLess=200&filename=a.zip&paused=false")
+
+	expect <- expected{
+		Method: "windows.getAll",
+		Result: `null`,
+		Check: func(t *testing.T, params map[string]any) {
+			if params["populate"] != false {
+				t.Fatalf("window params=%v", params)
+			}
+		},
+	}
+	if body := getJSON("/v1/windows?populate=false"); body["ok"] != true {
+		t.Fatalf("null response should become ok envelope, got %v", body)
+	}
+
+	close(expect)
+	<-done
+}
+
 func TestExt_GenericCallValidation(t *testing.T) {
 	_, srv := startRouted(t)
 	resp, err := http.Post(srv.URL+"/v1/ext/call", "application/json", strings.NewReader(`{"params":{}}`))
@@ -342,7 +441,7 @@ func TestExt_TabsEvents(t *testing.T) {
 
 func TestExt_MethodNotAllowed(t *testing.T) {
 	_, srv := startRouted(t)
-	for _, p := range []string{"/v1/cookies/all", "/v1/tabs/events"} {
+	for _, p := range []string{"/v1/cookies/all", "/v1/tabs/events", "/v1/bookmarks/tree"} {
 		resp, err := http.Post(srv.URL+p, "application/json", nil)
 		if err != nil {
 			t.Fatalf("post %s: %v", p, err)
@@ -351,5 +450,60 @@ func TestExt_MethodNotAllowed(t *testing.T) {
 			t.Fatalf("POST %s: status=%d want 405", p, resp.StatusCode)
 		}
 		resp.Body.Close()
+	}
+	for _, p := range []string{"/v1/bookmarks/create", "/v1/ext/call"} {
+		resp, err := http.Get(srv.URL + p)
+		if err != nil {
+			t.Fatalf("get %s: %v", p, err)
+		}
+		if resp.StatusCode != 405 {
+			t.Fatalf("GET %s: status=%d want 405", p, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+	resp, err := http.Post(srv.URL+"/v1/bookmarks/create", "application/json", strings.NewReader(`{`))
+	if err != nil {
+		t.Fatalf("post invalid json: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid JSON status=%d want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestExtHelpers(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/x", nil)
+	body, err := readExtBody(req)
+	if err != nil {
+		t.Fatalf("empty body err=%v", err)
+	}
+	if len(body) != 0 {
+		t.Fatalf("empty body = %+v", body)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{`))
+	if _, err := readExtBody(req); err == nil {
+		t.Fatal("expected invalid JSON error")
+	}
+	req = httptest.NewRequest(http.MethodGet, "/x?q=needle&limit=5&n=1.25&empty=", nil)
+	filter := queryFilter(req, "q", "empty", "missing")
+	if filter["q"] != "needle" || len(filter) != 1 {
+		t.Fatalf("filter = %+v", filter)
+	}
+	copyQueryInt(filter, req.URL.Query(), "limit")
+	copyQueryFloat(filter, req.URL.Query(), "n")
+	copyQueryInt(filter, req.URL.Query(), "bad")
+	copyQueryFloat(filter, req.URL.Query(), "bad")
+	if filter["limit"] != 5 || filter["n"] != 1.25 {
+		t.Fatalf("numeric filter = %+v", filter)
+	}
+
+	if extErrStatus(extbridge.ErrNoClient) != http.StatusServiceUnavailable {
+		t.Fatal("ErrNoClient should map to 503")
+	}
+	if extErrStatus(extbridge.ErrTimeout) != http.StatusGatewayTimeout {
+		t.Fatal("ErrTimeout should map to 504")
+	}
+	if extErrStatus(errors.New("boom")) != http.StatusBadGateway {
+		t.Fatal("generic extension errors should map to 502")
 	}
 }

@@ -33,7 +33,7 @@ jobs:
           go tool cover -func=coverage.out | tail -1
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {sub(/%/,"",$NF); print $NF}')
           echo "Total coverage: ${total}%"
-          awk -v t="$total" 'BEGIN { if (t+0 < 70) { print "Coverage " t "% is below 70% floor"; exit 1 } }'
+          awk -v t="$total" 'BEGIN { if (t+0 < 80) { print "Coverage " t "% is below 80% floor"; exit 1 } }'
 
       - name: Upload coverage profile
         uses: actions/upload-artifact@v4

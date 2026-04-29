@@ -3,27 +3,38 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 )
 
 const deprecationNotice = "bb-browser is deprecated; please use 'borz' instead. This wrapper will be removed in a future release."
 
-func main() {
-	fmt.Fprintln(os.Stderr, deprecationNotice)
+var (
+	lookPath = exec.LookPath
+	runBorz  = runBorzExec
+)
 
-	borzPath, err := exec.LookPath("borz")
+func main() {
+	os.Exit(runWrapper(os.Args[1:], os.Stderr))
+}
+
+func runWrapper(args []string, stderr io.Writer) int {
+	fmt.Fprintln(stderr, deprecationNotice)
+
+	borzPath, err := lookPath("borz")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "bb-browser wrapper: could not find 'borz' on PATH")
-		os.Exit(127)
+		fmt.Fprintln(stderr, "bb-browser wrapper: could not find 'borz' on PATH")
+		return 127
 	}
 
-	if err := runBorz(borzPath, os.Args[1:]); err != nil {
+	if err := runBorz(borzPath, args); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			os.Exit(exitErr.ExitCode())
+			return exitErr.ExitCode()
 		}
-		fmt.Fprintf(os.Stderr, "bb-browser wrapper: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "bb-browser wrapper: %v\n", err)
+		return 1
 	}
+	return 0
 }

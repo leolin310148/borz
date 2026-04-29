@@ -14,6 +14,18 @@ func TestHomeDir_EnvOverride(t *testing.T) {
 	}
 }
 
+func TestEnvPrefersCurrentNameThenLegacy(t *testing.T) {
+	t.Setenv("BORZ_TEST_CURRENT", "current")
+	t.Setenv("BB_BROWSER_TEST_LEGACY", "legacy")
+	if got := Env("BORZ_TEST_CURRENT", "BB_BROWSER_TEST_LEGACY"); got != "current" {
+		t.Fatalf("Env current = %q", got)
+	}
+	t.Setenv("BORZ_TEST_CURRENT", "")
+	if got := Env("BORZ_TEST_CURRENT", "BB_BROWSER_TEST_LEGACY"); got != "legacy" {
+		t.Fatalf("Env legacy = %q", got)
+	}
+}
+
 func TestHomeDir_LegacyEnvOverride(t *testing.T) {
 	t.Setenv("BORZ_HOME", "")
 	t.Setenv("BB_BROWSER_HOME", "/tmp/legacy-override")
@@ -46,6 +58,24 @@ func TestHomeDir_ReadsLegacyDirWhenCurrentMissing(t *testing.T) {
 	}
 }
 
+func TestHomeDir_PrefersCurrentDirOverLegacyDir(t *testing.T) {
+	home := t.TempDir()
+	current := filepath.Join(home, ".borz")
+	legacy := filepath.Join(home, ".bb-browser")
+	if err := os.Mkdir(current, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BORZ_HOME", "")
+	t.Setenv("BB_BROWSER_HOME", "")
+	t.Setenv("HOME", home)
+	if got := HomeDir(); got != current {
+		t.Fatalf("HomeDir with current and legacy dirs = %q, want %q", got, current)
+	}
+}
+
 func TestEnsureHomeDir_MigratesLegacyDir(t *testing.T) {
 	home := t.TempDir()
 	legacy := filepath.Join(home, ".bb-browser")
@@ -75,6 +105,50 @@ func TestEnsureHomeDir_MigratesLegacyDir(t *testing.T) {
 	}
 }
 
+func TestEnsureHomeDir_EnvOverridesCreateDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "custom-borz-home")
+	t.Setenv("BORZ_HOME", dir)
+	got, err := EnsureHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != dir {
+		t.Fatalf("EnsureHomeDir = %q, want %q", got, dir)
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		t.Fatalf("custom home not created: stat=%v err=%v", st, err)
+	}
+
+	legacy := filepath.Join(t.TempDir(), "legacy-home")
+	t.Setenv("BORZ_HOME", "")
+	t.Setenv("BB_BROWSER_HOME", legacy)
+	got, err = EnsureHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != legacy {
+		t.Fatalf("EnsureHomeDir legacy = %q, want %q", got, legacy)
+	}
+}
+
+func TestEnsureHomeDir_DefaultCreatesCurrentDir(t *testing.T) {
+	home := t.TempDir()
+	current := filepath.Join(home, ".borz")
+	t.Setenv("BORZ_HOME", "")
+	t.Setenv("BB_BROWSER_HOME", "")
+	t.Setenv("HOME", home)
+	got, err := EnsureHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != current {
+		t.Fatalf("EnsureHomeDir default = %q, want %q", got, current)
+	}
+	if st, err := os.Stat(current); err != nil || !st.IsDir() {
+		t.Fatalf("current home not created: stat=%v err=%v", st, err)
+	}
+}
+
 func TestDerivedPaths(t *testing.T) {
 	t.Setenv("BORZ_HOME", "/tmp/borz")
 	t.Setenv("BB_BROWSER_HOME", "")
@@ -85,6 +159,7 @@ func TestDerivedPaths(t *testing.T) {
 		want string
 	}{
 		{"DaemonJSONPath", DaemonJSONPath, "/tmp/borz/daemon.json"},
+		{"ClientJSONPath", ClientJSONPath, "/tmp/borz/client.json"},
 		{"SitesDir", SitesDir, "/tmp/borz/sites"},
 		{"CommunitySitesDir", CommunitySitesDir, "/tmp/borz/bb-sites"},
 		{"ManagedBrowserDir", ManagedBrowserDir, "/tmp/borz/browser"},
