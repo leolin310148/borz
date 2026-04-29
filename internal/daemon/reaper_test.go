@@ -119,6 +119,29 @@ func TestReapOnce_CloserErrorDoesNotPanic(t *testing.T) {
 	}
 }
 
+func TestTouchActivity_BumpsIdleSinceWithoutAffectingLastActionSeq(t *testing.T) {
+	tm := NewTabStateManager()
+	tab := tm.AddTab("t1")
+
+	seq := tab.RecordAction()
+	if tab.LastActionSeq != seq {
+		t.Fatalf("LastActionSeq after RecordAction: got %d want %d", tab.LastActionSeq, seq)
+	}
+
+	time.Sleep(2 * time.Millisecond)
+	before := time.Now()
+	tab.TouchActivity()
+	after := time.Now()
+
+	if tab.LastActionSeq != seq {
+		t.Fatalf("TouchActivity must not change LastActionSeq: got %d want %d", tab.LastActionSeq, seq)
+	}
+	got := tab.IdleSince()
+	if got.Before(before) || got.After(after) {
+		t.Fatalf("IdleSince after TouchActivity: got %v, want in [%v, %v]", got, before, after)
+	}
+}
+
 func TestRecordAction_StampsLastActionAt(t *testing.T) {
 	tm := NewTabStateManager()
 	tab := tm.AddTab("t1")

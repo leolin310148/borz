@@ -660,6 +660,10 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		return failResp(req.ID, "internal error: tab state not found")
 	}
 	shortID := tab.ShortID
+	// Any dispatched action against this tab — read or write — counts as
+	// activity for idle-tab reaping. Mutating handlers also call RecordAction
+	// below; the extra timestamp write is harmless.
+	tab.TouchActivity()
 
 	// Per-request foreground request. Honored for any action that fell through
 	// to EnsurePageTarget — handy for fetch/eval against pages that throttle
@@ -1197,6 +1201,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		tabShort := ""
 		if selTab != nil {
 			tabShort = selTab.ShortID
+			selTab.TouchActivity()
 		}
 		return okResp(req.ID, &protocol.ResponseData{
 			TabID: selected.ID, URL: selected.URL, Title: selected.Title, Tab: tabShort,

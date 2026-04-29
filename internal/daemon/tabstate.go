@@ -77,6 +77,13 @@ func (ts *TabState) RecordAction() int {
 	return seq
 }
 
+// TouchActivity bumps the idle-reaper timestamp without touching LastActionSeq.
+// Use for read-only handlers so any access to a tab extends the auto-close
+// timer while preserving `since: "last_action"` query semantics.
+func (ts *TabState) TouchActivity() {
+	ts.lastActionUnixNano.Store(time.Now().UnixNano())
+}
+
 // IdleSince returns the time of the most recent action, or CreatedAt if none.
 // Used by the idle-tab reaper.
 func (ts *TabState) IdleSince() time.Time {
