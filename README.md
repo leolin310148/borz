@@ -204,6 +204,13 @@ bb-browser client setup http://server-host:19824 --token "$BB_BROWSER_TOKEN"
 bb-browser --remote open https://example.com
 ```
 
+When a remote CLI command writes a screenshot path, the file is saved on the
+client machine running the CLI, not on the remote server:
+
+```bash
+bb-browser --remote screenshot ./out.png
+```
+
 Without `--remote`, browser actions such as `open`, `snapshot`, `click`,
 `eval`, `tab`, `network`, and `cookies` always use the local daemon/CDP
 connection:

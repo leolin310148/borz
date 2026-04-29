@@ -261,8 +261,8 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 				t.Fatalf("get output = %q", out)
 			}
 		}},
-		{name: "screenshot", args: []string{"screenshot", "/tmp/shot.png"}, action: protocol.ActionScreenshot, check: func(t *testing.T, req protocol.Request, out string) {
-			if req.Path != "/tmp/shot.png" {
+		{name: "screenshot", args: []string{"screenshot"}, action: protocol.ActionScreenshot, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.Path != "" {
 				t.Fatalf("screenshot request = %+v", req)
 			}
 			if !strings.Contains(out, "Screenshot captured") {
@@ -398,6 +398,27 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			}
 			tt.check(t, reqs[0], out)
 		})
+	}
+}
+
+func TestScreenshotSavesPathLocally(t *testing.T) {
+	shotPath := filepath.Join(t.TempDir(), "nested", "shot.png")
+	out, reqs := runMainWithFakeDaemon(t, "screenshot", shotPath)
+	if len(reqs) != 1 || reqs[0].Action != protocol.ActionScreenshot {
+		t.Fatalf("requests = %+v", reqs)
+	}
+	if reqs[0].Path != "" {
+		t.Fatalf("screenshot path should not be sent to daemon: %+v", reqs[0])
+	}
+	if !strings.Contains(out, "Screenshot saved: "+shotPath) {
+		t.Fatalf("screenshot output = %q", out)
+	}
+	data, err := os.ReadFile(shotPath)
+	if err != nil {
+		t.Fatalf("read saved screenshot: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("saved screenshot is empty")
 	}
 }
 
@@ -584,6 +605,23 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 	}
 	if len(commands) != 2 || commands[1].Action != protocol.ActionOpen || commands[1].URL != "https://remote.test" {
 		t.Fatalf("remote commands = %+v", commands)
+	}
+
+	shotPath := filepath.Join(t.TempDir(), "remote-shot.png")
+	out = captureStdout(t, func() {
+		oldArgs := os.Args
+		os.Args = []string{"bb-browser", "--remote", "screenshot", shotPath, "--json"}
+		defer func() { os.Args = oldArgs }()
+		main()
+	})
+	if !strings.Contains(out, `"screenshotPath": "`+shotPath+`"`) {
+		t.Fatalf("remote screenshot output = %q", out)
+	}
+	if len(commands) != 3 || commands[2].Action != protocol.ActionScreenshot || commands[2].Path != "" {
+		t.Fatalf("remote screenshot command should not send host path, commands = %+v", commands)
+	}
+	if data, err := os.ReadFile(shotPath); err != nil || len(data) == 0 {
+		t.Fatalf("remote screenshot file data=%d err=%v", len(data), err)
 	}
 
 	out = captureStdout(t, func() {

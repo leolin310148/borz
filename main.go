@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -288,10 +290,17 @@ func main() {
 		if len(cmdArgs) > 0 {
 			path = cmdArgs[0]
 		}
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionScreenshot, Path: path}
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionScreenshot}
 		setTab(req, globalTabID)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
-			if resp.Data != nil && resp.Data.DataURL != "" {
+		sendPrepareAndPrint(req, jsonOutput, func(resp *protocol.Response) error {
+			if path == "" {
+				return nil
+			}
+			return saveScreenshotDataURL(path, resp)
+		}, func(resp *protocol.Response) {
+			if path != "" {
+				fmt.Printf("Screenshot saved: %s\n", path)
+			} else if resp.Data != nil && resp.Data.DataURL != "" {
 				fmt.Println("Screenshot captured (data URL available in JSON output)")
 			}
 		})
@@ -1063,6 +1072,10 @@ func handleSiteRun(name string, cmdArgs []string, jsonOutput bool, globalTabID s
 // --- Helpers ---
 
 func sendAndPrint(req *protocol.Request, jsonOutput bool, prettyPrint func(*protocol.Response)) {
+	sendPrepareAndPrint(req, jsonOutput, nil, prettyPrint)
+}
+
+func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*protocol.Response) error, prettyPrint func(*protocol.Response)) {
 	resp, err := client.SendCommand(req)
 	if err != nil {
 		if jsonOutput {
@@ -1071,6 +1084,17 @@ func sendAndPrint(req *protocol.Request, jsonOutput bool, prettyPrint func(*prot
 			fatal(err.Error())
 		}
 		return
+	}
+
+	if resp.Success && prepare != nil {
+		if err := prepare(resp); err != nil {
+			if jsonOutput {
+				printJSON(protocol.Response{ID: req.ID, Success: false, Error: err.Error()})
+			} else {
+				fatal(err.Error())
+			}
+			return
+		}
 	}
 
 	// Apply jq filter
@@ -1108,6 +1132,33 @@ func sendAndPrint(req *protocol.Request, jsonOutput bool, prettyPrint func(*prot
 	if prettyPrint != nil {
 		prettyPrint(resp)
 	}
+}
+
+func saveScreenshotDataURL(path string, resp *protocol.Response) error {
+	if resp == nil || resp.Data == nil || resp.Data.DataURL == "" {
+		return fmt.Errorf("screenshot response did not include image data")
+	}
+	header, encoded, ok := strings.Cut(resp.Data.DataURL, ",")
+	if !ok || !strings.HasPrefix(header, "data:image/") || !strings.Contains(header, ";base64") {
+		return fmt.Errorf("screenshot response did not include a base64 image data URL")
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return fmt.Errorf("decode screenshot data: %w", err)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("screenshot response did not include image data")
+	}
+	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create screenshot directory: %w", err)
+		}
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write screenshot: %w", err)
+	}
+	resp.Data.ScreenshotPath = path
+	return nil
 }
 
 func printJSON(v interface{}) {
@@ -1312,7 +1363,7 @@ Observation:
   snapshot [-i] [-c] [-d N] [-s <sel>] [--text-only]
                                 Get accessibility tree (or reader-mode
                                 plain text with --text-only)
-  screenshot [path]             Take screenshot
+  screenshot [path]             Take screenshot (path saves on the CLI host)
   get <attribute> [ref]         Get element attribute
   network [requests|clear] [--tail]
                                 Network traffic; --tail streams new

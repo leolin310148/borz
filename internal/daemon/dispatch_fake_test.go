@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -602,6 +604,22 @@ func TestDispatch_Screenshot(t *testing.T) {
 	}
 	if !strings.HasPrefix(resp.Data.DataURL, "data:image/png;base64,") {
 		t.Fatalf("dataURL: %q", resp.Data.DataURL)
+	}
+
+	shotPath := filepath.Join(t.TempDir(), "shot.png")
+	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionScreenshot, Path: shotPath})
+	if !resp.Success {
+		t.Fatalf("screenshot with path: %+v", resp)
+	}
+	if resp.Data.ScreenshotPath != shotPath {
+		t.Fatalf("screenshot path: %+v", resp.Data)
+	}
+	data, err := os.ReadFile(shotPath)
+	if err != nil {
+		t.Fatalf("read screenshot: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("saved screenshot is empty")
 	}
 }
 

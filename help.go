@@ -195,7 +195,7 @@ var commandHelp = map[string]cmdHelp{
 			"  bb-browser screenshot",
 			"  bb-browser screenshot ./out.png",
 		},
-		Notes: "Without [path] the image is returned as a base64 data URL in the JSON payload.",
+		Notes: "With [path], the CLI writes the PNG on the machine running the CLI, including when --remote is used. Without [path] the image is returned as a base64 data URL in the JSON payload.",
 	},
 	"get": {
 		Summary: "Read a single attribute — page-level or from a ref.",

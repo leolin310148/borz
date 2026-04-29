@@ -2,8 +2,10 @@ package daemon
 
 import (
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -729,7 +731,24 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		var screenshot struct {
 			Data string `json:"data"`
 		}
-		json.Unmarshal(result, &screenshot)
+		if err := json.Unmarshal(result, &screenshot); err != nil {
+			return failResp(req.ID, fmt.Errorf("decode screenshot response: %w", err))
+		}
+		if screenshot.Data == "" {
+			return failResp(req.ID, "screenshot response did not include image data")
+		}
+		if req.Path != "" {
+			data, err := base64.StdEncoding.DecodeString(screenshot.Data)
+			if err != nil {
+				return failResp(req.ID, fmt.Errorf("decode screenshot data: %w", err))
+			}
+			if err := os.WriteFile(req.Path, data, 0o644); err != nil {
+				return failResp(req.ID, fmt.Errorf("write screenshot: %w", err))
+			}
+			return okResp(req.ID, &protocol.ResponseData{
+				ScreenshotPath: req.Path, Tab: shortID,
+			})
+		}
 		return okResp(req.ID, &protocol.ResponseData{
 			DataURL: "data:image/png;base64," + screenshot.Data, Tab: shortID,
 		})
