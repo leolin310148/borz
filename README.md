@@ -413,7 +413,7 @@ Use n8n's **HTTP Request** node:
 - **Authentication:** Header Auth → `Authorization: Bearer <token>`
 - **Body:** JSON → `{ "interactive": true, "compact": true }`
 
-Chain nodes to open → snapshot → click → extract. A dedicated n8n community node is on the roadmap.
+Chain nodes to open → snapshot → click → extract. Or install the dedicated [n8n community node](https://www.npmjs.com/package/@leolin310148/n8n-nodes-borz) (`@leolin310148/n8n-nodes-borz`) for a typed UI over the same `/v1/*` endpoints — see [borz-n8n-node](https://github.com/leolin310148/borz-n8n-node).
 
 ## Quick Start
 
