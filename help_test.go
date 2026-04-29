@@ -97,7 +97,7 @@ func TestCommandHelpCoversDispatch(t *testing.T) {
 func TestCommandHelpCoversSubcommands(t *testing.T) {
 	expected := []string{
 		// tab (handleTab)
-		"tab.list", "tab.new", "tab.select", "tab.close",
+		"tab.list", "tab.new", "tab.select", "tab.close", "tab.events",
 		// site (handleSite)
 		"site.list", "site.search", "site.info", "site.update", "site.run",
 		// daemon (handleDaemon)
@@ -185,6 +185,25 @@ func TestSuggestCommands(t *testing.T) {
 	}
 }
 
+func TestSuggestSubcommands(t *testing.T) {
+	got := suggestSubcommands("extension", "statu", 3)
+	if len(got) == 0 || got[0] != "status" {
+		t.Fatalf("suggestSubcommands(extension, statu): want status first, got %v", got)
+	}
+
+	hint := unknownSubcommandHint("client", "enabel")
+	for _, want := range []string{
+		"Unknown client subcommand: enabel",
+		"Did you mean: borz client enable?",
+		"Available subcommands:",
+		"Run 'borz help client' for usage.",
+	} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("unknownSubcommandHint missing %q; got:\n%s", want, hint)
+		}
+	}
+}
+
 func TestPrintAllHelp(t *testing.T) {
 	out := captureStdout(t, func() { printAllHelp() })
 	for _, want := range []string{
@@ -193,6 +212,7 @@ func TestPrintAllHelp(t *testing.T) {
 		"## snapshot",
 		"## tab",
 		"## tab.new",
+		"## tab.events",
 		"--unwrap",
 		"--wait-for",
 	} {

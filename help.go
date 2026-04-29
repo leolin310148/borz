@@ -521,7 +521,9 @@ var commandHelp = map[string]cmdHelp{
 		Flags: []string{
 			"  setup <url>            Store the remote server URL",
 			"  setup --url <url>      Same as positional URL",
+			"  BORZ_SERVER_URL        Env fallback when setup URL is omitted",
 			"  --token <t>            Bearer token for the remote server",
+			"  BORZ_TOKEN             Env fallback when --token is omitted",
 			"  --no-check             Store/toggle config without probing /status",
 			"  status                 Show current remote-client config",
 			"  enable|disable         Legacy config toggle; normal commands still need --remote",
@@ -533,7 +535,9 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Notes: "Commands that talk to the browser use the local daemon unless --remote is " +
 			"passed for that invocation. The token is stored in " +
-			"~/.borz/client.json with 0600 permissions and is never printed by status.",
+			"~/.borz/client.json with 0600 permissions and is never printed by status. " +
+			"BORZ_SERVER_URL and BORZ_TOKEN are read only by 'client setup' when the " +
+			"matching CLI argument is omitted.",
 	},
 	"mcp": {
 		Summary: "Speak MCP over stdio — intended to be spawned by an MCP-aware client.",
@@ -624,7 +628,11 @@ var commandHelp = map[string]cmdHelp{
 			"  borz help tab new",
 			"  borz snapshot --help",
 			"  borz tab new --help",
+			"  borz help --all | less",
 		},
+		Notes: "Unknown commands and known commands with misspelled subcommands print " +
+			"nearest-match hints, for example 'borz extension statu' suggests " +
+			"'borz extension status'.",
 	},
 	"version": {
 		Summary: "Print the version of this borz binary.",
@@ -668,6 +676,20 @@ var commandHelp = map[string]cmdHelp{
 			"  borz tab close 3",
 			"  borz tab close --id abc123",
 		},
+	},
+	"tab.events": {
+		Summary: "Stream or list browser-level tab/window events from the Chrome extension.",
+		Usage:   "borz tab events [--tail] [--since <seq|last_action>] [--json]",
+		Flags: []string{
+			"  --tail                  Keep streaming new events until Ctrl+C",
+			"  --since <seq|last_action>  Only include newer events",
+		},
+		Examples: []string{
+			"  borz tab events",
+			"  borz tab events --tail",
+			"  borz tab events --since last_action --json",
+		},
+		Notes: "Requires the borz Chrome extension to be installed and connected.",
 	},
 
 	// --- Subcommand pages: site.* ---
@@ -772,11 +794,14 @@ var commandHelp = map[string]cmdHelp{
 		Usage:   "borz client setup <server-url> [--token <token>] [--no-check]",
 		Examples: []string{
 			"  borz client setup http://127.0.0.1:19824",
+			"  BORZ_SERVER_URL=http://127.0.0.1:19824 BORZ_TOKEN=secret borz client setup",
 			"  borz client setup https://browser.example.com --token \"$BORZ_TOKEN\"",
 		},
 		Notes: "The setup command probes the server's authenticated /status endpoint before " +
 			"saving unless --no-check is set. If the URL has no scheme, http:// is assumed. " +
-			"Use --remote on individual browser commands to route them to this server.",
+			"Use --remote on individual browser commands to route them to this server. " +
+			"When <server-url> or --token is omitted, setup falls back to BORZ_SERVER_URL " +
+			"and BORZ_TOKEN respectively.",
 	},
 	"client.enable": {
 		Summary: "Set the legacy remote-client enabled field in client.json.",
@@ -1061,6 +1086,28 @@ func topLevelCommandNames() []string {
 	return out
 }
 
+// subcommandNames returns sorted first-level subcommands for a parent command.
+func subcommandNames(parent string) []string {
+	prefix := parent + "."
+	seen := map[string]bool{}
+	for n := range commandHelp {
+		if !strings.HasPrefix(n, prefix) {
+			continue
+		}
+		sub := strings.TrimPrefix(n, prefix)
+		if sub == "" || strings.Contains(sub, ".") || seen[sub] {
+			continue
+		}
+		seen[sub] = true
+	}
+	out := make([]string, 0, len(seen))
+	for sub := range seen {
+		out = append(out, sub)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // printAllHelp dumps every registered command's help block in one go.
 // Intended for piping into a pager or feeding to an LLM.
 func printAllHelp() {
@@ -1072,16 +1119,26 @@ func printAllHelp() {
 	}
 }
 
-// suggestCommands returns up to maxN canonical command names closest to input
-// (Levenshtein <= 3). Returns nil if nothing's close enough — better silent
-// than to scream "did you mean tab?" when the user typed "xyzzy".
+// suggestCommands returns up to maxN top-level command names closest to input.
 func suggestCommands(input string, maxN int) []string {
+	return suggestNames(input, topLevelCommandNames(), maxN)
+}
+
+// suggestSubcommands returns up to maxN subcommands for parent closest to input.
+func suggestSubcommands(parent, input string, maxN int) []string {
+	return suggestNames(input, subcommandNames(parent), maxN)
+}
+
+// suggestNames returns close Levenshtein matches. Returns nil if nothing's
+// close enough — better silent than to scream "did you mean tab?" for "xyzzy".
+func suggestNames(input string, candidates []string, maxN int) []string {
 	type scored struct {
 		name string
 		dist int
 	}
 	var hits []scored
-	for _, n := range topLevelCommandNames() {
+	input = strings.ToLower(input)
+	for _, n := range candidates {
 		d := levenshtein(strings.ToLower(input), n)
 		// Tighten the cap for short commands (e.g. "tab" -> "tap" should match
 		// at d=1 but "tab" -> "scroll" should not via d=4).
@@ -1107,6 +1164,34 @@ func suggestCommands(input string, maxN int) []string {
 		out[i] = h.name
 	}
 	return out
+}
+
+// formatCommandSuggestions renders command names as runnable command lines.
+func formatCommandSuggestions(parent string, names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		if parent == "" {
+			out = append(out, "borz "+name)
+		} else {
+			out = append(out, "borz "+parent+" "+name)
+		}
+	}
+	return out
+}
+
+// unknownSubcommandHint builds a consistent, subcommand-aware hint message for
+// fatal errors in dispatch handlers.
+func unknownSubcommandHint(parent, sub string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Unknown %s subcommand: %s", parent, sub)
+	if suggestions := suggestSubcommands(parent, sub, 3); len(suggestions) > 0 {
+		fmt.Fprintf(&b, "\nDid you mean: %s?", strings.Join(formatCommandSuggestions(parent, suggestions), ", "))
+	}
+	if available := subcommandNames(parent); len(available) > 0 {
+		fmt.Fprintf(&b, "\nAvailable subcommands: %s", strings.Join(available, ", "))
+	}
+	fmt.Fprintf(&b, "\nRun 'borz help %s' for usage.", parent)
+	return b.String()
 }
 
 // levenshtein returns the edit distance between a and b.

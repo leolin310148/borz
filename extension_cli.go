@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -76,9 +75,7 @@ func handleExtension(cmdArgs []string, jsonOutput bool) {
 			fmt.Println(string(raw))
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown 'extension' subcommand: %s\n", sub)
-		fmt.Fprintln(os.Stderr, "Run 'borz help extension' for usage.")
-		os.Exit(1)
+		fatal(unknownSubcommandHint("extension", sub))
 	}
 }
 

@@ -99,7 +99,7 @@ func handleCookies(cmdArgs []string, jsonOutput bool) {
 			fmt.Printf("  %s  %s = %s\n", scope, c.Name, truncate(c.Value, 64))
 		}
 	default:
-		fatal("Unknown cookies subcommand: " + sub + " (try: all)")
+		fatal(unknownSubcommandHint("cookies", sub))
 	}
 }
 
@@ -282,7 +282,7 @@ func handleBookmarks(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		raw := extPostJSON("/v1/bookmarks/remove", map[string]any{"id": cmdArgs[1], "recursive": hasFlag(rawArgs, "--recursive")})
 		emitRawOrMessage(raw, jsonOutput, "Bookmark removed")
 	default:
-		fatal("Unknown bookmarks subcommand: " + sub + " (try: tree, search, create, update, remove)")
+		fatal(unknownSubcommandHint("bookmarks", sub))
 	}
 }
 
@@ -317,7 +317,7 @@ func handleBrowserHistory(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		raw := extPostJSON("/v1/browser-history/delete-url", map[string]any{"url": cmdArgs[1]})
 		emitRawOrMessage(raw, jsonOutput, "History URL deleted")
 	default:
-		fatal("Unknown browser-history subcommand: " + sub + " (try: search, delete-url)")
+		fatal(unknownSubcommandHint("browser-history", sub))
 	}
 }
 
@@ -388,7 +388,7 @@ func handleDownloads(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		raw := extPostJSON("/v1/downloads/show-default-folder", map[string]any{})
 		emitRawOrMessage(raw, jsonOutput, "Download folder shown")
 	default:
-		fatal("Unknown downloads subcommand: " + sub + " (try: list, search, start, erase, cancel, pause, resume, show, show-folder)")
+		fatal(unknownSubcommandHint("downloads", sub))
 	}
 }
 
@@ -436,7 +436,7 @@ func handleWindows(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		raw := extPostJSON("/v1/windows/create", body)
 		emitRawOrMessage(raw, jsonOutput, "Window created")
 	default:
-		fatal("Unknown window subcommand: " + sub + " (try: list, new, focus, close)")
+		fatal(unknownSubcommandHint("window", sub))
 	}
 }
 

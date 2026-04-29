@@ -138,7 +138,7 @@ func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 		fmt.Printf("Config path: %s\n", config.ClientJSONPath())
 
 	default:
-		fatal("Unknown client subcommand: " + sub + " (try: setup, enable, disable, status)")
+		fatal(unknownSubcommandHint("client", sub))
 	}
 }
 

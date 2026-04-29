@@ -558,7 +558,7 @@ func main() {
 		} else {
 			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 			if suggestions := suggestCommands(command, 3); len(suggestions) > 0 {
-				fmt.Fprintf(os.Stderr, "Did you mean: %s?\n", strings.Join(suggestions, ", "))
+				fmt.Fprintf(os.Stderr, "Did you mean: %s?\n", strings.Join(formatCommandSuggestions("", suggestions), ", "))
 			}
 			fmt.Fprintln(os.Stderr, "Run 'borz help' for the full command list.")
 			os.Exit(1)
@@ -646,7 +646,7 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 				}
 			})
 		} else {
-			fatal("Unknown tab subcommand: " + sub)
+			fatal(unknownSubcommandHint("tab", sub))
 		}
 	}
 }
@@ -1162,7 +1162,7 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 		if strings.Contains(sub, "/") {
 			handleSiteRun(sub, cmdArgs[1:], jsonOutput, globalTabID)
 		} else {
-			fatal("Unknown site subcommand: " + sub)
+			fatal(unknownSubcommandHint("site", sub))
 		}
 	}
 }

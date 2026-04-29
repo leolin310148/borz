@@ -1131,6 +1131,9 @@ components:
         tab:
           type: string
           description: Short-ID alias for `tabId` (string form only).
+        activate:
+          type: boolean
+          description: Bring the resolved tab to the foreground before running the action.
 
     WaitOptions:
       type: object

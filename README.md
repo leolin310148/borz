@@ -144,6 +144,7 @@ Commands that *don't* require the extension keep working without it. Extension-b
 
 ```bash
 borz extension status             # connected extension capabilities
+borz help extension call          # raw RPC details and examples
 borz extension call <method> '{}' # raw extension RPC escape hatch
 borz cookies all [domain]          # all-domain cookie store
 borz bookmarks tree|search|create|update|remove
@@ -322,7 +323,34 @@ alias borz='borz --remote'
 The client config is stored at `~/.borz/client.json` with 0600
 permissions because it may contain the bearer token. `client setup` probes the
 server's authenticated `/status` endpoint by default; pass `--no-check` only
-when you need to save config before the server is reachable.
+when you need to save config before the server is reachable. If the setup URL
+or token is omitted, `client setup` falls back to `BORZ_SERVER_URL` and
+`BORZ_TOKEN`:
+
+```bash
+BORZ_SERVER_URL=http://server-host:19824 BORZ_TOKEN="$BORZ_TOKEN" borz client setup
+```
+
+`client enable` and `client disable` only update the legacy `enabled` field in
+`client.json`; browser actions still stay local unless that invocation includes
+`--remote`.
+
+### CLI help and typo hints
+
+Use command-specific help for the complete option set. Top-level help is a quick
+map; detailed flags and examples live on each command and subcommand:
+
+```bash
+borz help
+borz help snapshot
+borz help tab events
+borz tab events --help
+borz help --all | less
+```
+
+Unknown commands now include nearest-match hints for both top-level commands and
+subcommands. For example, `borz extension statu` suggests
+`borz extension status` and prints the available extension subcommands.
 
 ### REST endpoints
 
