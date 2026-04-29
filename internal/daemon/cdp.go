@@ -792,8 +792,16 @@ func (c *CdpConnection) BrowserCommand(method string, params interface{}) (json.
 
 // SessionCommand sends a session-level CDP command (flat protocol).
 func (c *CdpConnection) SessionCommand(targetID, method string, params interface{}) (json.RawMessage, error) {
+	return c.SessionCommandWithTimeout(targetID, method, params, 30*time.Second)
+}
+
+// SessionCommandWithTimeout sends a session-level CDP command with a caller-provided timeout.
+func (c *CdpConnection) SessionCommandWithTimeout(targetID, method string, params interface{}, timeout time.Duration) (json.RawMessage, error) {
 	if !c.connected.Load() {
 		return nil, fmt.Errorf("CDP not connected")
+	}
+	if timeout <= 0 {
+		timeout = 30 * time.Second
 	}
 
 	sessionIDVal, ok := c.sessions.Load(targetID)
@@ -843,7 +851,7 @@ func (c *CdpConnection) SessionCommand(targetID, method string, params interface
 		return result, nil
 	case err := <-listener.errCh:
 		return nil, err
-	case <-time.After(30 * time.Second):
+	case <-time.After(timeout):
 		c.sessionMu.Lock()
 		delete(c.sessionListeners, id)
 		c.sessionMu.Unlock()
@@ -865,11 +873,16 @@ func (c *CdpConnection) PageCommand(targetID, method string, params map[string]i
 
 // Evaluate executes JavaScript on a target and returns the result.
 func (c *CdpConnection) Evaluate(targetID, expression string, returnByValue bool) (json.RawMessage, error) {
-	result, err := c.SessionCommand(targetID, "Runtime.evaluate", map[string]interface{}{
+	return c.EvaluateWithTimeout(targetID, expression, returnByValue, 30*time.Second)
+}
+
+// EvaluateWithTimeout executes JavaScript on a target and returns the result.
+func (c *CdpConnection) EvaluateWithTimeout(targetID, expression string, returnByValue bool, timeout time.Duration) (json.RawMessage, error) {
+	result, err := c.SessionCommandWithTimeout(targetID, "Runtime.evaluate", map[string]interface{}{
 		"expression":    expression,
 		"awaitPromise":  true,
 		"returnByValue": returnByValue,
-	})
+	}, timeout)
 	if err != nil {
 		return nil, err
 	}

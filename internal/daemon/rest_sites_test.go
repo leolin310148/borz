@@ -248,7 +248,7 @@ func TestSiteRunBody_TabID(t *testing.T) {
 	if got := (siteRunBody{Tab: "y"}).tabID(); got != "y" {
 		t.Errorf("Tab alias: %v", got)
 	}
-	if got := (siteRunBody{TabID: "x", Tab: "y"}).tabID(); got != "x" {
+	if got := (siteRunBody{TabID: "x", Tab: "y"}).tabID(); got != "y" {
 		t.Errorf("precedence: %v", got)
 	}
 }

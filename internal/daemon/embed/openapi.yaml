@@ -10,8 +10,9 @@ info:
     - Default address: `http://127.0.0.1:19824`.
     - Authentication: if the daemon was started with a token, every request
       (except `/healthz`) must carry `Authorization: Bearer <token>`.
-    - Tab targeting: most endpoints accept `tabId` (string or number) or the
-      short alias `tab` in the body. Omit to target the active tab.
+    - Tab targeting: most endpoints accept `tab` (short ID string) or the
+      deprecated `tabId` alias (string or number) in the body. Omit to target
+      the active tab.
 servers:
   - url: http://127.0.0.1:19824
     description: Local daemon (default)
@@ -793,6 +794,12 @@ paths:
                       description: |
                         Adapter-specific arguments, matching keys declared in
                         the adapter's `@meta.args` block.
+                    force:
+                      type: boolean
+                      description: Bypass community trust checks and domain guard for this run.
+                    timeoutMs:
+                      type: integer
+                      description: Maximum adapter JavaScript execution time in milliseconds.
       responses:
         "200": { $ref: "#/components/responses/Ok" }
         "404": { $ref: "#/components/responses/Error" }
@@ -1127,10 +1134,14 @@ components:
       type: object
       description: Common tab-targeting fields accepted by most endpoints.
       properties:
-        tabId: { $ref: "#/components/schemas/TabID" }
+        tabId:
+          allOf:
+            - $ref: "#/components/schemas/TabID"
+          deprecated: true
+          description: Deprecated alias; prefer `tab`.
         tab:
           type: string
-          description: Short-ID alias for `tabId` (string form only).
+          description: Preferred short tab ID string.
         activate:
           type: boolean
           description: Bring the resolved tab to the foreground before running the action.
@@ -1323,6 +1334,18 @@ components:
         domain: { type: string }
         readOnly: { type: boolean }
         example: { type: string }
+        argOrder:
+          type: array
+          items: { type: string }
+        entry: { type: string }
+        timeoutMs: { type: integer }
+        output: { type: object, additionalProperties: true }
+        source: { type: string }
+        sourceRepo: { type: string }
+        sha256: { type: string }
+        trusted: { type: boolean }
+        usageCount: { type: integer }
+        lastUsed: { type: string }
         args:
           type: object
           additionalProperties: { $ref: "#/components/schemas/SiteArgDef" }

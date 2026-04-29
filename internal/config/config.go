@@ -103,6 +103,21 @@ func CommunitySitesDir() string {
 	return filepath.Join(HomeDir(), "bb-sites")
 }
 
+// CommunityLockPath returns the pinned community adapter repo metadata path.
+func CommunityLockPath() string {
+	return filepath.Join(HomeDir(), "community.lock")
+}
+
+// SiteTrustPath returns the trusted adapter hash database path.
+func SiteTrustPath() string {
+	return filepath.Join(HomeDir(), "sites-trust.json")
+}
+
+// SitesUsagePath returns the site adapter usage database path.
+func SitesUsagePath() string {
+	return filepath.Join(HomeDir(), "sites-usage.json")
+}
+
 // ManagedBrowserDir returns the managed browser directory.
 func ManagedBrowserDir() string {
 	return filepath.Join(HomeDir(), "browser")

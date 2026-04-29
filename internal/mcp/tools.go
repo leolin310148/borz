@@ -289,17 +289,20 @@ var windowsTool = mcp.NewTool("browser_windows",
 // --- Site Adapters ---
 
 var siteListTool = mcp.NewTool("browser_site_list",
-	mcp.WithDescription("List available site adapters — JavaScript plugins that automate interactions with specific websites (e.g. twitter/search). Returns adapter names, descriptions, domains, and argument schemas. Adapters are resolved on the borz daemon's filesystem."),
+	mcp.WithDescription("List available site adapters — JavaScript plugins that automate interactions with specific websites (e.g. twitter/search). Returns adapter names, descriptions, domains, read-only flags, and argument schemas. Adapters are resolved on the borz daemon's filesystem."),
 )
 
 var siteInfoTool = mcp.NewTool("browser_site_info",
-	mcp.WithDescription("Get detailed metadata for a site adapter, including its argument schema and example usage."),
+	mcp.WithDescription("Get detailed metadata for a site adapter, including read-only status, SHA256, source repo, argument order/schema, output schema, and example usage."),
 	mcp.WithString("name", mcp.Required(), mcp.Description("Adapter name, e.g. \"twitter/search\"")),
 )
 
 var siteRunTool = mcp.NewTool("browser_site_run",
-	mcp.WithDescription("Run a site adapter in the user's real Chrome tab. The adapter's JavaScript runs with the user's session (cookies, logins). Call browser_site_list first to discover adapters and their required arguments."),
+	mcp.WithDescription("Run a site adapter in the user's real Chrome tab. The adapter's JavaScript runs with the user's session (cookies, logins). Domain guard is enforced from adapter metadata unless force=true. Call browser_site_list first to discover adapters, read-only status, and required arguments."),
 	mcp.WithString("name", mcp.Required(), mcp.Description("Adapter name, e.g. \"twitter/search\"")),
 	mcp.WithObject("args", mcp.Description("Adapter arguments as a JSON object (e.g. {\"query\": \"AI news\"})")),
+	mcp.WithBoolean("force", mcp.Description("Bypass community trust and domain mismatch guard for this run. Use only after inspecting the adapter and target tab.")),
+	mcp.WithBoolean("raw", mcp.Description("Return the adapter result unwrapped like CLI --unwrap (strings are not JSON-quoted).")),
+	mcp.WithNumber("timeout", mcp.Description("Maximum adapter JavaScript execution time in milliseconds (default 30000 or adapter timeoutMs).")),
 	tabParam(),
 )

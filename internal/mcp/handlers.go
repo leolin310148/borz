@@ -23,7 +23,7 @@ import (
 var (
 	siteLister  = site.AllSites
 	siteFinder  = site.FindSite
-	siteBuilder = site.BuildEvalRequest
+	siteBuilder = site.BuildEvalRequestWithOptions
 )
 
 func newID() string {
@@ -493,6 +493,9 @@ func handleSiteList(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 		if s.Domain != "" {
 			fmt.Fprintf(&sb, " (%s)", s.Domain)
 		}
+		if s.ReadOnly {
+			sb.WriteString(" [read-only]")
+		}
 		sb.WriteByte('\n')
 	}
 	return mcp.NewToolResultText(sb.String()), nil
@@ -534,7 +537,10 @@ func handleSiteRun(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRes
 	}
 
 	tabID := r.GetString("tab", "")
-	req, err := siteBuilder(meta, args, tabID)
+	req, err := siteBuilder(meta, args, tabID, site.EvalOptions{
+		Force:     r.GetBool("force", false),
+		TimeoutMs: r.GetInt("timeout", 0),
+	})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to build adapter request: %v", err)), nil
 	}
@@ -543,6 +549,10 @@ func handleSiteRun(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRes
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
+	}
+	site.RecordUsage(meta.Name)
+	if r.GetBool("raw", false) {
+		return formatEvalRaw(resp), nil
 	}
 	return formatEval(resp), nil
 }

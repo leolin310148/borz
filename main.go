@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -1088,14 +1090,30 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 				platform := parts[0]
 				grouped[platform] = append(grouped[platform], s)
 			}
-			for platform, adapters := range grouped {
+			platforms := make([]string, 0, len(grouped))
+			for platform := range grouped {
+				platforms = append(platforms, platform)
+			}
+			sort.Strings(platforms)
+			for _, platform := range platforms {
+				adapters := grouped[platform]
 				fmt.Printf("\n%s:\n", platform)
 				for _, a := range adapters {
-					src := ""
+					var tags []string
 					if a.Source == "local" {
-						src = " [local]"
+						tags = append(tags, "local")
 					}
-					fmt.Printf("  %s - %s%s\n", a.Name, a.Description, src)
+					if a.ReadOnly {
+						tags = append(tags, "read-only")
+					}
+					if a.UsageCount > 0 {
+						tags = append(tags, fmt.Sprintf("used:%d", a.UsageCount))
+					}
+					tagText := ""
+					if len(tags) > 0 {
+						tagText = " [" + strings.Join(tags, ",") + "]"
+					}
+					fmt.Printf("  %s - %s%s\n", a.Name, a.Description, tagText)
 				}
 			}
 			fmt.Printf("\nTotal: %d adapters\n", len(sites))
@@ -1130,26 +1148,73 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 			fmt.Printf("Description: %s\n", s.Description)
 			fmt.Printf("Domain:      %s\n", s.Domain)
 			fmt.Printf("Source:       %s\n", s.Source)
+			fmt.Printf("Source repo:  %s\n", s.SourceRepo)
+			fmt.Printf("SHA256:      %s\n", s.SHA256)
+			fmt.Printf("Read-only:   %v\n", s.ReadOnly)
+			fmt.Printf("Trusted:     %v\n", s.Trusted)
+			if s.TimeoutMs > 0 {
+				fmt.Printf("Timeout:     %d ms\n", s.TimeoutMs)
+			}
+			if len(s.ArgOrder) > 0 {
+				fmt.Printf("Arg order:   %s\n", strings.Join(s.ArgOrder, ", "))
+			}
 			if s.Example != "" {
 				fmt.Printf("Example:     %s\n", s.Example)
 			}
 			if len(s.Args) > 0 {
 				fmt.Println("Args:")
-				for name, arg := range s.Args {
+				for idx, name := range orderedSiteArgNames(s) {
+					arg := s.Args[name]
 					req := ""
 					if arg.Required {
 						req = " (required)"
 					}
-					fmt.Printf("  %s%s - %s\n", name, req, arg.Description)
+					def := ""
+					if arg.Default != "" {
+						def = fmt.Sprintf(" default=%q", arg.Default)
+					}
+					fmt.Printf("  %d. %s%s%s - %s (positional or --%s)\n", idx+1, name, req, def, arg.Description, name)
 				}
+			}
+			if len(s.Output) > 0 {
+				fmt.Printf("Output:      %s\n", string(s.Output))
 			}
 		}
 
 	case "update":
-		if err := site.UpdateCommunityRepo(); err != nil {
+		if err := site.UpdateCommunityRepo(getArgValue(os.Args[1:], "--ref")); err != nil {
 			fatal("Update failed: " + err.Error())
 		}
 		fmt.Println("Community adapters updated")
+
+	case "new":
+		if len(cmdArgs) < 2 {
+			fatal("Usage: borz site new <platform/name>")
+		}
+		path, err := site.NewAdapterScaffold(cmdArgs[1])
+		if err != nil {
+			fatal(err.Error())
+		}
+		fmt.Println(path)
+
+	case "lint":
+		if len(cmdArgs) < 2 {
+			fatal("Usage: borz site lint <name-or-path>")
+		}
+		handleSiteLint(cmdArgs[1])
+
+	case "trust":
+		if len(cmdArgs) < 2 {
+			fatal("Usage: borz site trust <name>")
+		}
+		s := site.FindSite(cmdArgs[1])
+		if s == nil {
+			fatal("Adapter not found: " + cmdArgs[1])
+		}
+		if err := site.TrustAdapter(s); err != nil {
+			fatal(err.Error())
+		}
+		fmt.Printf("Trusted %s (%s)\n", s.Name, s.SHA256)
 
 	case "run":
 		if len(cmdArgs) < 2 {
@@ -1175,22 +1240,111 @@ func handleSiteRun(name string, cmdArgs []string, jsonOutput bool, globalTabID s
 		os.Exit(1)
 	}
 
-	args := site.ParseAdapterArgs(meta, cmdArgs)
-	evalReq, err := site.BuildEvalRequest(meta, args, globalTabID)
+	args, err := site.ParseAdapterArgs(meta, cmdArgs)
+	if err != nil {
+		fatal(err.Error())
+	}
+	rawArgs := os.Args[1:]
+	force := hasFlag(rawArgs, "--force")
+	if !force {
+		if err := confirmCommunityAdapter(meta); err != nil {
+			fatal(err.Error())
+		}
+	}
+	evalReq, err := site.BuildEvalRequestWithOptions(meta, args, globalTabID, site.EvalOptions{
+		Force:     force,
+		TimeoutMs: parsePositiveInt(getArgValue(rawArgs, "--timeout")),
+	})
 	if err != nil {
 		fatal(err.Error())
 	}
 
-	printEval(evalReq, jsonOutput, hasFlag(os.Args[1:], "--unwrap"))
+	if printEval(evalReq, jsonOutput, hasFlag(rawArgs, "--unwrap")) {
+		site.RecordUsage(meta.Name)
+	}
+}
+
+func handleSiteLint(nameOrPath string) {
+	var meta *site.SiteMeta
+	var err error
+	if strings.HasSuffix(nameOrPath, ".js") || strings.Contains(nameOrPath, string(filepath.Separator)) {
+		meta, err = site.ParseSiteMeta(nameOrPath, "local")
+	} else {
+		meta = site.FindSite(nameOrPath)
+		if meta == nil {
+			fatal("Adapter not found: " + nameOrPath)
+		}
+	}
+	if err != nil {
+		fatal(err.Error())
+	}
+	issues := site.LintAdapter(meta)
+	if len(issues) == 0 {
+		fmt.Printf("OK: %s\n", meta.Name)
+		return
+	}
+	hasError := false
+	for _, issue := range issues {
+		fmt.Printf("%s: %s\n", issue.Level, issue.Message)
+		if issue.Level == "error" {
+			hasError = true
+		}
+	}
+	if hasError {
+		os.Exit(1)
+	}
+}
+
+func confirmCommunityAdapter(meta *site.SiteMeta) error {
+	if meta.Source != "community" {
+		return nil
+	}
+	status, err := site.AdapterTrustStatus(meta)
+	if err != nil || status.Trusted {
+		return err
+	}
+	if fi, err := os.Stdin.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return site.CheckAdapterTrust(meta, false)
+	}
+	fmt.Fprintf(os.Stderr, "Community adapter %q will run JavaScript in your Chrome session.\nSHA256: %s\nTrust and continue? [y/N] ", meta.Name, status.Hash)
+	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer != "y" && answer != "yes" {
+		return fmt.Errorf("adapter not trusted")
+	}
+	return site.TrustAdapter(meta)
+}
+
+func orderedSiteArgNames(meta *site.SiteMeta) []string {
+	if len(meta.ArgOrder) > 0 {
+		return append([]string(nil), meta.ArgOrder...)
+	}
+	names := make([]string, 0, len(meta.Args))
+	for name := range meta.Args {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func parsePositiveInt(raw string) int {
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
 }
 
 // --- Helpers ---
 
-func sendAndPrint(req *protocol.Request, jsonOutput bool, prettyPrint func(*protocol.Response)) {
-	sendPrepareAndPrint(req, jsonOutput, nil, prettyPrint)
+func sendAndPrint(req *protocol.Request, jsonOutput bool, prettyPrint func(*protocol.Response)) bool {
+	return sendPrepareAndPrint(req, jsonOutput, nil, prettyPrint)
 }
 
-func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*protocol.Response) error, prettyPrint func(*protocol.Response)) {
+func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*protocol.Response) error, prettyPrint func(*protocol.Response)) bool {
 	resp, err := client.SendCommand(req)
 	if err != nil {
 		if jsonOutput {
@@ -1198,7 +1352,7 @@ func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*p
 		} else {
 			fatal(err.Error())
 		}
-		return
+		return false
 	}
 
 	if resp.Success && prepare != nil {
@@ -1208,7 +1362,7 @@ func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*p
 			} else {
 				fatal(err.Error())
 			}
-			return
+			return false
 		}
 	}
 
@@ -1231,12 +1385,12 @@ func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*p
 				fmt.Println(string(out))
 			}
 		}
-		return
+		return resp.Success
 	}
 
 	if jsonOutput {
 		printJSON(resp)
-		return
+		return resp.Success
 	}
 
 	if !resp.Success {
@@ -1247,6 +1401,7 @@ func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*p
 	if prettyPrint != nil {
 		prettyPrint(resp)
 	}
+	return true
 }
 
 func saveScreenshotDataURL(path string, resp *protocol.Response) error {
@@ -1284,10 +1439,9 @@ func printJSON(v interface{}) {
 // printEval handles eval (and adapter run) output: --jq > --json > --unwrap >
 // pretty default. Unwrap prints resp.Data.Result raw — strings without quotes,
 // other shapes as JSON.
-func printEval(req *protocol.Request, jsonOutput, unwrap bool) {
+func printEval(req *protocol.Request, jsonOutput, unwrap bool) bool {
 	if jqExpression != "" || jsonOutput {
-		sendAndPrint(req, jsonOutput, nil)
-		return
+		return sendAndPrint(req, jsonOutput, nil)
 	}
 	resp, err := client.SendCommand(req)
 	if err != nil {
@@ -1298,7 +1452,7 @@ func printEval(req *protocol.Request, jsonOutput, unwrap bool) {
 		os.Exit(1)
 	}
 	if resp.Data == nil || resp.Data.Result == nil {
-		return
+		return true
 	}
 	if unwrap {
 		switch v := resp.Data.Result.(type) {
@@ -1308,10 +1462,11 @@ func printEval(req *protocol.Request, jsonOutput, unwrap bool) {
 			out, _ := json.MarshalIndent(v, "", "  ")
 			fmt.Println(string(out))
 		}
-		return
+		return true
 	}
 	out, _ := json.MarshalIndent(resp.Data.Result, "", "  ")
 	fmt.Println(string(out))
+	return true
 }
 
 func setTab(req *protocol.Request, tabID string) {

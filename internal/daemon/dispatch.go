@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -39,6 +40,40 @@ func okResp(id string, data *protocol.ResponseData) *protocol.Response {
 func failResp(id string, err interface{}) *protocol.Response {
 	msg := fmt.Sprintf("%v", err)
 	return &protocol.Response{ID: id, Success: false, Error: msg}
+}
+
+func siteDomainMatchesURL(domain, rawURL string) bool {
+	domain = normalizeSiteDomain(domain)
+	if domain == "" {
+		return true
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == domain || strings.HasSuffix(host, "."+domain)
+}
+
+func normalizeSiteDomain(domain string) string {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	if domain == "" {
+		return ""
+	}
+	if strings.Contains(domain, "://") {
+		if u, err := url.Parse(domain); err == nil {
+			domain = u.Hostname()
+		}
+	}
+	domain = strings.TrimPrefix(domain, "*.")
+	domain = strings.TrimPrefix(domain, ".")
+	if h, _, ok := strings.Cut(domain, ":"); ok {
+		domain = h
+	}
+	if slash := strings.IndexByte(domain, '/'); slash >= 0 {
+		domain = domain[:slash]
+	}
+	return strings.TrimSpace(domain)
 }
 
 func intPtr(v int) *int { return &v }
@@ -1099,8 +1134,15 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		if req.Script == "" {
 			return failResp(req.ID, "missing script parameter")
 		}
+		if req.SiteDomain != "" && !req.Force && !siteDomainMatchesURL(req.SiteDomain, target.URL) {
+			return failResp(req.ID, fmt.Sprintf("site adapter domain guard blocked execution: active tab URL %q does not match %q (pass --force/force=true to override)", target.URL, req.SiteDomain))
+		}
 		seq := tab.RecordAction()
-		raw, err := cdp.Evaluate(target.ID, req.Script, true)
+		timeout := 30 * time.Second
+		if req.EvalTimeoutMs != nil && *req.EvalTimeoutMs > 0 {
+			timeout = time.Duration(*req.EvalTimeoutMs) * time.Millisecond
+		}
+		raw, err := cdp.EvaluateWithTimeout(target.ID, req.Script, true, timeout)
 		if err != nil {
 			return failResp(req.ID, err)
 		}

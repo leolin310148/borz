@@ -53,10 +53,10 @@ func TestUpdateCommunityRepo_ClonePath(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BORZ_HOME", home)
 	// Allow a short network attempt; skip if clone unexpectedly succeeds.
-	_ = UpdateCommunityRepo()
+	_ = UpdateCommunityRepo("")
 
 	// Also exercise the "pull" branch: make the dir look like a git repo.
-	dir := filepath.Join(home, "community-sites")
+	dir := filepath.Join(home, "bb-sites")
 	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
-	_ = UpdateCommunityRepo()
+	_ = UpdateCommunityRepo("")
 }

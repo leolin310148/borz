@@ -99,7 +99,7 @@ func TestCommandHelpCoversSubcommands(t *testing.T) {
 		// tab (handleTab)
 		"tab.list", "tab.new", "tab.select", "tab.close", "tab.events",
 		// site (handleSite)
-		"site.list", "site.search", "site.info", "site.update", "site.run",
+		"site.list", "site.search", "site.info", "site.update", "site.new", "site.lint", "site.trust", "site.run",
 		// daemon (handleDaemon)
 		"daemon.status", "daemon.shutdown", "daemon.stop",
 		// server (handleServer)

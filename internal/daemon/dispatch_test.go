@@ -44,6 +44,26 @@ func TestFailResp(t *testing.T) {
 	}
 }
 
+func TestSiteDomainMatchesURL(t *testing.T) {
+	cases := []struct {
+		domain string
+		rawURL string
+		want   bool
+	}{
+		{"example.com", "https://example.com/path", true},
+		{"example.com", "https://app.example.com/path", true},
+		{"https://example.com/docs", "https://example.com/path", true},
+		{"*.example.com", "https://cdn.example.com", true},
+		{"example.com", "https://evil-example.com", false},
+		{"example.com", "about:blank", false},
+	}
+	for _, tc := range cases {
+		if got := siteDomainMatchesURL(tc.domain, tc.rawURL); got != tc.want {
+			t.Errorf("siteDomainMatchesURL(%q, %q) = %v, want %v", tc.domain, tc.rawURL, got, tc.want)
+		}
+	}
+}
+
 func TestLoadBuildDomTreeScript(t *testing.T) {
 	s := loadBuildDomTreeScript()
 	if s == "" {

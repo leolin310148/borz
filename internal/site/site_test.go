@@ -101,7 +101,10 @@ func TestParseSiteMeta_ArgOrderFiveArgs(t *testing.T) {
 		if !stringsEqual(meta.ArgOrder, want) {
 			t.Fatalf("iter %d: ArgOrder = %v, want %v", i, meta.ArgOrder, want)
 		}
-		got := ParseAdapterArgs(meta, []string{"hello", "--sort", "top"})
+		got, err := ParseAdapterArgs(meta, []string{"hello", "--sort", "top"})
+		if err != nil {
+			t.Fatalf("ParseAdapterArgs: %v", err)
+		}
 		if got["query"] != "hello" {
 			t.Fatalf("iter %d: positional assigned to %+v, want query=hello", i, got)
 		}
@@ -254,8 +257,8 @@ func TestBuildAdapterScript(t *testing.T) {
 	if !strings.Contains(script, `"query":"cats"`) || !strings.Contains(script, `"limit":"5"`) {
 		t.Errorf("args not embedded: %s", script)
 	}
-	// Wrapped as invocation
-	if !strings.HasPrefix(script, "(") || !strings.Contains(script, ")(") {
+	// Wrapped as async invocation.
+	if !strings.HasPrefix(script, "(async () =>") || !strings.Contains(script, "__borzAdapter") {
 		t.Errorf("script not wrapped as IIFE: %s", script)
 	}
 }
@@ -272,7 +275,10 @@ func TestParseAdapterArgs_Positional(t *testing.T) {
 		Args:     map[string]ArgDef{"q": {}, "limit": {}},
 		ArgOrder: []string{"q", "limit"},
 	}
-	got := ParseAdapterArgs(meta, []string{"hello", "5"})
+	got, err := ParseAdapterArgs(meta, []string{"hello", "5"})
+	if err != nil {
+		t.Fatalf("ParseAdapterArgs: %v", err)
+	}
 	if got["q"] != "hello" || got["limit"] != "5" {
 		t.Errorf("positional assignment = %+v, want q=hello limit=5", got)
 	}
@@ -280,7 +286,10 @@ func TestParseAdapterArgs_Positional(t *testing.T) {
 
 func TestParseAdapterArgs_Flags(t *testing.T) {
 	meta := &SiteMeta{Args: map[string]ArgDef{"q": {}}}
-	got := ParseAdapterArgs(meta, []string{"--q", "cats", "--limit", "10"})
+	got, err := ParseAdapterArgs(meta, []string{"--q", "cats", "--limit", "10"})
+	if err != nil {
+		t.Fatalf("ParseAdapterArgs: %v", err)
+	}
 	if got["q"] != "cats" || got["limit"] != "10" {
 		t.Errorf("flag parsing = %+v", got)
 	}
@@ -288,15 +297,17 @@ func TestParseAdapterArgs_Flags(t *testing.T) {
 
 func TestParseAdapterArgs_FlagMissingValue(t *testing.T) {
 	meta := &SiteMeta{Args: map[string]ArgDef{}}
-	got := ParseAdapterArgs(meta, []string{"--dangling"})
-	if len(got) != 0 {
-		t.Errorf("dangling flag should not add key: %+v", got)
+	if _, err := ParseAdapterArgs(meta, []string{"--dangling"}); err == nil || !strings.Contains(err.Error(), "missing value") {
+		t.Fatalf("expected missing value error, got %v", err)
 	}
 }
 
 func TestParseAdapterArgs_ExcessPositionalIgnored(t *testing.T) {
 	meta := &SiteMeta{Args: map[string]ArgDef{"only": {}}}
-	got := ParseAdapterArgs(meta, []string{"a", "b", "c"})
+	got, err := ParseAdapterArgs(meta, []string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("ParseAdapterArgs: %v", err)
+	}
 	if len(got) != 1 {
 		t.Errorf("expected 1 arg stored, got %+v", got)
 	}
@@ -330,7 +341,7 @@ func TestBuildEvalRequest_NoTabID(t *testing.T) {
 	path := writeSite(t, dir, "sites/a.js", sampleJS)
 	meta, _ := ParseSiteMeta(path, "local")
 
-	req, err := BuildEvalRequest(meta, nil, "")
+	req, err := BuildEvalRequest(meta, map[string]interface{}{"query": "q"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,17 +357,6 @@ func TestBuildEvalRequest_MissingFile(t *testing.T) {
 	}
 }
 
-func TestRunAdapter_ReturnsExpectedError(t *testing.T) {
-	// RunAdapter is a stub that always errors; with a valid adapter it returns the "use client.SendCommand" message.
-	dir := t.TempDir()
-	path := writeSite(t, dir, "sites/a.js", sampleJS)
-	meta, _ := ParseSiteMeta(path, "local")
-	_, err := RunAdapter(meta, nil, "")
-	if err == nil || !strings.Contains(err.Error(), "client.SendCommand") {
-		t.Fatalf("expected stub error, got %v", err)
-	}
-}
-
 func TestGenerateID_Format(t *testing.T) {
 	id := generateID()
 	if len(id) == 0 {
@@ -367,5 +367,122 @@ func TestGenerateID_Format(t *testing.T) {
 			t.Errorf("id has non-hex char %q in %q", r, id)
 			break
 		}
+	}
+}
+
+func TestParseAdapterArgs_DefaultAndRequired(t *testing.T) {
+	meta := &SiteMeta{
+		Args: map[string]ArgDef{
+			"q":     {Required: true},
+			"limit": {Default: "10"},
+		},
+		ArgOrder: []string{"q", "limit"},
+	}
+	got, err := ParseAdapterArgs(meta, []string{"cats"})
+	if err != nil {
+		t.Fatalf("ParseAdapterArgs: %v", err)
+	}
+	if got["q"] != "cats" || got["limit"] != "10" {
+		t.Fatalf("args = %+v", got)
+	}
+	_, err = ParseAdapterArgs(meta, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing required") {
+		t.Fatalf("expected required error, got %v", err)
+	}
+}
+
+func TestBuildAdapterScript_ScriptBodyAndEntry(t *testing.T) {
+	dir := t.TempDir()
+	body := `/* @meta
+{"name":"script/body","domain":"example.com","args":{"q":{"required":true}}}
+*/
+const helper = (v) => v.toUpperCase();
+return { ok: true, data: helper(args.q) };`
+	path := writeSite(t, dir, "sites/body.js", body)
+	meta, err := ParseSiteMeta(path, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script, err := BuildAdapterScript(meta, map[string]interface{}{"q": "cat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(script, "const args =") || !strings.Contains(script, "helper(args.q)") {
+		t.Fatalf("script body not wrapped: %s", script)
+	}
+
+	entryBody := `/* @meta
+{"name":"entry/body","domain":"example.com","entry":"run","args":{"q":{"required":true}}}
+*/
+function run(args) { return args.q; }`
+	entryPath := writeSite(t, dir, "sites/entry.js", entryBody)
+	entryMeta, err := ParseSiteMeta(entryPath, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entryScript, err := BuildAdapterScript(entryMeta, map[string]interface{}{"q": "dog"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(entryScript, `eval("run")`) {
+		t.Fatalf("entry script = %s", entryScript)
+	}
+}
+
+func TestCommunityTrust(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	path := writeSite(t, home, "bb-sites/demo.js", sampleJS)
+	meta, err := ParseSiteMeta(path, "community")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckAdapterTrust(meta, false); err == nil || !strings.Contains(err.Error(), "not trusted") {
+		t.Fatalf("expected untrusted error, got %v", err)
+	}
+	if err := TrustAdapter(meta); err != nil {
+		t.Fatal(err)
+	}
+	status, err := AdapterTrustStatus(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Trusted {
+		t.Fatalf("trusted status = %+v", status)
+	}
+}
+
+func TestNewAdapterScaffoldAndLint(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	path, err := NewAdapterScaffold("demo/new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(path, filepath.Join("sites", "demo", "new.js")) {
+		t.Fatalf("path = %s", path)
+	}
+	meta, err := ParseSiteMeta(path, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issues := LintAdapter(meta); len(issues) != 0 {
+		t.Fatalf("lint issues = %+v", issues)
+	}
+	if _, err := NewAdapterScaffold("demo/new"); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected exists error, got %v", err)
+	}
+}
+
+func TestRecordUsageSortsAllSites(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	writeSite(t, home, "sites/a.js", strings.Replace(sampleJS, `"name": "example"`, `"name": "a"`, 1))
+	writeSite(t, home, "sites/b.js", strings.Replace(sampleJS, `"name": "example"`, `"name": "b"`, 1))
+	RecordUsage("b")
+	ResetCacheForTests()
+	got := AllSites()
+	if len(got) < 2 || got[0].Name != "b" {
+		t.Fatalf("usage sort = %+v", got)
 	}
 }

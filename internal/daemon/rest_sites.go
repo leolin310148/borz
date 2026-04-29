@@ -84,14 +84,16 @@ type siteRunBody struct {
 	TabID    interface{}            `json:"tabId,omitempty"`
 	Tab      string                 `json:"tab,omitempty"`
 	Activate bool                   `json:"activate,omitempty"`
+	Force    bool                   `json:"force,omitempty"`
+	Timeout  int                    `json:"timeoutMs,omitempty"`
 }
 
 func (b siteRunBody) tabID() interface{} {
-	if b.TabID != nil {
-		return b.TabID
-	}
 	if b.Tab != "" {
 		return b.Tab
+	}
+	if b.TabID != nil {
+		return b.TabID
 	}
 	return nil
 }
@@ -137,9 +139,12 @@ func (s *Server) handleSiteRun(w http.ResponseWriter, r *http.Request) {
 		tabID = v
 	}
 
-	req, err := site.BuildEvalRequest(meta, body.Args, tabID)
+	req, err := site.BuildEvalRequestWithOptions(meta, body.Args, tabID, site.EvalOptions{
+		Force:     body.Force,
+		TimeoutMs: body.Timeout,
+	})
 	if err != nil {
-		sendJSON(w, 500, map[string]interface{}{
+		sendJSON(w, 400, map[string]interface{}{
 			"id":      newReqID(),
 			"success": false,
 			"error":   err.Error(),
@@ -149,7 +154,7 @@ func (s *Server) handleSiteRun(w http.ResponseWriter, r *http.Request) {
 	req.ID = newReqID()
 	// If the body provided a non-string tabId (e.g. numeric index), use that
 	// instead — BuildEvalRequest only accepts strings.
-	if body.TabID != nil {
+	if body.Tab == "" && body.TabID != nil {
 		if _, isString := body.TabID.(string); !isString {
 			req.TabID = body.TabID
 		}
@@ -158,4 +163,5 @@ func (s *Server) handleSiteRun(w http.ResponseWriter, r *http.Request) {
 		req.Activate = true
 	}
 	s.dispatchAndWrite(w, req)
+	site.RecordUsage(meta.Name)
 }

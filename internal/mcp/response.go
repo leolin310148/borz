@@ -92,6 +92,21 @@ func formatEval(resp *protocol.Response) *mcp.CallToolResult {
 	return mcp.NewToolResultText(string(out))
 }
 
+// formatEvalRaw mirrors CLI --unwrap for tools that need an unquoted scalar.
+func formatEvalRaw(resp *protocol.Response) *mcp.CallToolResult {
+	if resp.Data == nil || resp.Data.Result == nil {
+		return mcp.NewToolResultText("")
+	}
+	if s, ok := resp.Data.Result.(string); ok {
+		return mcp.NewToolResultText(s)
+	}
+	out, err := json.MarshalIndent(resp.Data.Result, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf("%v", resp.Data.Result))
+	}
+	return mcp.NewToolResultText(string(out))
+}
+
 // formatGet formats a get attribute response.
 func formatGet(resp *protocol.Response) *mcp.CallToolResult {
 	if resp.Data == nil {

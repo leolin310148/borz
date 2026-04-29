@@ -107,7 +107,10 @@ type Request struct {
 	Limit    *int        `json:"limit,omitempty"`
 
 	// Eval
-	Script string `json:"script,omitempty"`
+	Script        string `json:"script,omitempty"`
+	SiteDomain    string `json:"siteDomain,omitempty"`
+	Force         bool   `json:"force,omitempty"`
+	EvalTimeoutMs *int   `json:"evalTimeoutMs,omitempty"`
 
 	// Select
 	Value string `json:"value,omitempty"`

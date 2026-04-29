@@ -39,7 +39,9 @@ func stubSiteFinder(t *testing.T, fn func(string) *site.SiteMeta) {
 func stubSiteBuilder(t *testing.T, fn func(*site.SiteMeta, map[string]interface{}, string) (*protocol.Request, error)) {
 	t.Helper()
 	orig := siteBuilder
-	siteBuilder = fn
+	siteBuilder = func(meta *site.SiteMeta, args map[string]interface{}, tab string, opts site.EvalOptions) (*protocol.Request, error) {
+		return fn(meta, args, tab)
+	}
 	t.Cleanup(func() { siteBuilder = orig })
 }
 

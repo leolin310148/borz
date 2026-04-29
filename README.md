@@ -845,9 +845,23 @@ borz site run twitter/search "AI news"
 # or shorthand:
 borz twitter/search "AI news"
 
-# Pull community adapters
+# Pull community adapters, optionally pinned to a tag/commit
 borz site update
+borz site update --ref v1.2.3
+
+# Create and validate a local adapter
+borz site new github/search
+borz site lint github/search
+
+# Trust the current SHA256 of a community adapter after inspection
+borz site trust twitter/search
 ```
+
+Adapter metadata supports ordered args with `default` and `required`, `readOnly`,
+`domain` origin guards, optional `entry`, `timeoutMs`, and `output` schema fields.
+`site info` shows the adapter SHA256 and source repo. Community adapters are
+arbitrary JavaScript running in your real Chrome session; changed hashes must be
+trusted again or run once with `--force`.
 
 ### Daemon Management
 

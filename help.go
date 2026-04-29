@@ -407,7 +407,10 @@ var commandHelp = map[string]cmdHelp{
 			"  list                  List all adapters grouped by platform (default)",
 			"  search <query>        Fuzzy-search adapters by name/description",
 			"  info <name>           Show an adapter's args, domain, and example",
-			"  update                Pull the latest community adapter pack",
+			"  update [--ref <ref>]  Pull the community adapter pack, optionally pinned",
+			"  new <name>            Scaffold a local adapter template",
+			"  lint <name|path>      Validate adapter metadata and wrapper buildability",
+			"  trust <name>          Trust the current SHA256 of a community adapter",
 			"  run <name> [args...]  Run an adapter (equivalent to 'borz <name> ...')",
 		},
 		Examples: []string{
@@ -418,7 +421,7 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Notes: "Any '<platform>/<adapter>' invocation is forwarded to 'site run' — " +
 			"'borz hackernews/top' and 'borz site run hackernews/top' are equivalent. " +
-			"Run 'borz site info <name>' to see required args for each adapter.",
+			"Run 'borz site info <name>' to see required args, read-only status, source, and hash.",
 	},
 
 	// --- Utility / infra ---
@@ -717,16 +720,37 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"site.update": {
 		Summary: "Pull the latest community adapter pack from GitHub.",
-		Usage:   "borz site update",
+		Usage:   "borz site update [--ref <tag|sha>]",
+		Flags: []string{
+			"  --ref <tag|sha>   Fetch and checkout a specific community repo ref; writes community.lock",
+		},
 		Notes: "Community adapters are cached under the user's config dir. Local adapters " +
-			"you've placed in the workspace are not affected.",
+			"you've placed in the workspace are not affected. Updates refuse to run when the community repo has local changes.",
+	},
+	"site.new": {
+		Summary:  "Create a local site adapter template.",
+		Usage:    "borz site new <platform/name>",
+		Examples: []string{"  borz site new github/search"},
+		Notes:    "Creates the file under the local sites directory and refuses to overwrite an existing adapter.",
+	},
+	"site.lint": {
+		Summary:  "Validate an adapter's metadata and generated execution wrapper.",
+		Usage:    "borz site lint <name-or-path>",
+		Examples: []string{"  borz site lint github/search", "  borz site lint ./sites/github/search.js"},
+		Notes:    "Checks required metadata, required/default consistency, required args, and adapter readability.",
+	},
+	"site.trust": {
+		Summary:  "Trust the current SHA256 hash of a community adapter.",
+		Usage:    "borz site trust <name>",
+		Examples: []string{"  borz site trust twitter/search"},
+		Notes:    "Community adapters are arbitrary JavaScript. Trust records the current hash in sites-trust.json; hash changes require re-trust or --force.",
 	},
 	"site.run": {
 		Summary:  "Run an adapter by name — equivalent to calling 'borz <platform>/<name> ...' directly.",
-		Usage:    "borz site run <name> [args...] [--tab <id>]",
+		Usage:    "borz site run <name> [args...] [--tab <id>] [--timeout <ms>] [--force]",
 		Examples: []string{"  borz site run hackernews/top 10", "  borz hackernews/top 10"},
 		Notes: "Use 'borz site info <name>' to discover the args an adapter expects " +
-			"before running it.",
+			"before running it. The daemon blocks domain mismatches by default; --force bypasses that guard and one-off community trust checks.",
 	},
 
 	// --- Subcommand pages: daemon.* ---
