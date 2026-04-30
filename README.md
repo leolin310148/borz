@@ -1066,7 +1066,7 @@ borz snapshot --json --jq ".data.snapshotData.refs"
 ## Development
 
 Activate the repo's pre-commit hook once per clone to run `go vet`, the
-race-enabled test suite, and the 80% coverage floor before every commit:
+race-enabled test suite, and the 85% coverage floor before every commit:
 
 ```bash
 git config core.hooksPath .githooks

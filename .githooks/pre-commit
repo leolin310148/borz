@@ -21,7 +21,7 @@ trap 'rm -f "$cov_file"' EXIT
 go test -race -coverprofile="$cov_file" -covermode=atomic ./...
 
 total=$(go tool cover -func="$cov_file" | awk '/^total:/ {sub(/%/,"",$NF); print $NF}')
-floor=80
+floor=85
 echo "[pre-commit] total coverage: ${total}%  (floor: ${floor}%)"
 awk -v t="$total" -v f="$floor" 'BEGIN { exit (t+0 < f+0) ? 1 : 0 }' || {
   echo "[pre-commit] coverage ${total}% is below ${floor}% floor" >&2

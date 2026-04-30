@@ -104,6 +104,17 @@ func TestSaveScreenshotDataURL(t *testing.T) {
 			t.Fatalf("expected error for response %+v", tc)
 		}
 	}
+
+	blockedParent := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blockedParent, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveScreenshotDataURL(filepath.Join(blockedParent, "shot.png"), resp); err == nil {
+		t.Fatal("expected mkdir error when screenshot parent is a file")
+	}
+	if err := saveScreenshotDataURL(t.TempDir(), resp); err == nil {
+		t.Fatal("expected write error when screenshot path is a directory")
+	}
 }
 
 func TestPrintEvalPrettyAndUnwrap(t *testing.T) {

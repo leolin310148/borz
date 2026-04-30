@@ -28,6 +28,11 @@ var (
 
 	// discoverCDPPort is indirected so tests can bypass real CDP discovery.
 	discoverCDPPort = DiscoverCDPPort
+
+	osExecutable            = os.Executable
+	execCommand             = exec.Command
+	browserExecutableFinder = findBrowserExecutable
+	canConnect              = defaultCanConnect
 )
 
 // RemoteConfig is persisted by `borz client setup` and stores the server
@@ -324,12 +329,12 @@ func EnsureDaemon() error {
 	}
 
 	// Spawn daemon process
-	exe, err := os.Executable()
+	exe, err := osExecutable()
 	if err != nil {
 		return fmt.Errorf("cannot find self executable: %w", err)
 	}
 
-	cmd := exec.Command(exe, "daemon",
+	cmd := execCommand(exe, "daemon",
 		"--cdp-host", cdpInfo.Host,
 		"--cdp-port", strconv.Itoa(cdpInfo.Port),
 	)
@@ -502,7 +507,7 @@ type CDPEndpoint struct {
 	Port int
 }
 
-func canConnect(host string, port int) bool {
+func defaultCanConnect(host string, port int) bool {
 	url := fmt.Sprintf("http://%s:%d/json/version", host, port)
 	client := &http.Client{Timeout: 1200 * time.Millisecond}
 	resp, err := client.Get(url)
@@ -516,7 +521,7 @@ func canConnect(host string, port int) bool {
 // findBrowserExecutable is implemented per-platform in browser_*.go.
 
 func launchManagedBrowser(port int) (*CDPEndpoint, error) {
-	executable := findBrowserExecutable()
+	executable := browserExecutableFinder()
 	if executable == "" {
 		return nil, fmt.Errorf("no browser found")
 	}
@@ -559,9 +564,9 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	if runtime.GOOS == "darwin" && strings.Contains(executable, ".app/Contents/MacOS/") {
 		appPath := executable[:strings.Index(executable, ".app/Contents/MacOS/")+len(".app")]
 		openArgs := append([]string{"-n", "-a", appPath, "--args"}, args...)
-		cmd = exec.Command("/usr/bin/open", openArgs...)
+		cmd = execCommand("/usr/bin/open", openArgs...)
 	} else {
-		cmd = exec.Command(executable, args...)
+		cmd = execCommand(executable, args...)
 	}
 	setDetached(cmd)
 	cmd.Stdout = nil

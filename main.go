@@ -29,6 +29,7 @@ import (
 var version = "0.1.0"
 
 var jqExpression string
+var exitFunc = os.Exit
 
 type daemonRunner interface {
 	Run() error
@@ -42,7 +43,7 @@ func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
 		printHelp()
-		os.Exit(0)
+		exitFunc(0)
 	}
 
 	// Parse global flags
@@ -59,7 +60,7 @@ func main() {
 
 	if len(cleanArgs) == 0 {
 		printHelp()
-		os.Exit(0)
+		exitFunc(0)
 	}
 
 	command := cleanArgs[0]
@@ -567,7 +568,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Did you mean: %s?\n", strings.Join(formatCommandSuggestions("", suggestions), ", "))
 			}
 			fmt.Fprintln(os.Stderr, "Run 'borz help' for the full command list.")
-			os.Exit(1)
+			exitFunc(1)
 		}
 	}
 }
@@ -783,7 +784,7 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 	case "shutdown", "stop":
 		if err := client.StopDaemon(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			exitFunc(1)
 		}
 		fmt.Println("Daemon stopped")
 	default:
@@ -875,7 +876,7 @@ func startDaemonForeground(rawArgs []string) {
 
 	if err := srv.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Daemon error: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 }
 
@@ -896,7 +897,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 		case "shutdown", "stop":
 			if err := client.StopDaemon(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
+				exitFunc(1)
 			}
 			fmt.Println("Server stopped")
 			return
@@ -906,7 +907,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 	opts, err := serverOptionsFromArgs(rawArgs, "0.0.0.0")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 
 	srv := newDaemonServer(opts)
@@ -920,7 +921,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 
 	if err := srv.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
 	}
 }
 
@@ -1241,7 +1242,7 @@ func handleSiteRun(name string, cmdArgs []string, jsonOutput bool, globalTabID s
 	if meta == nil {
 		fmt.Fprintf(os.Stderr, "Adapter not found: %s\n", name)
 		fmt.Fprintf(os.Stderr, "Run 'borz site update' to pull community adapters.\n")
-		os.Exit(1)
+		exitFunc(1)
 	}
 
 	args, err := site.ParseAdapterArgs(meta, cmdArgs)
@@ -1295,7 +1296,7 @@ func handleSiteLint(nameOrPath string) {
 		}
 	}
 	if hasError {
-		os.Exit(1)
+		exitFunc(1)
 	}
 }
 
@@ -1399,7 +1400,7 @@ func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*p
 
 	if !resp.Success {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", resp.Error)
-		os.Exit(1)
+		exitFunc(1)
 	}
 
 	if prettyPrint != nil {
@@ -1453,7 +1454,7 @@ func printEval(req *protocol.Request, jsonOutput, unwrap bool) bool {
 	}
 	if !resp.Success {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", resp.Error)
-		os.Exit(1)
+		exitFunc(1)
 	}
 	if resp.Data == nil || resp.Data.Result == nil {
 		return true
@@ -1526,7 +1527,7 @@ func newID() string {
 
 func fatal(msg string) {
 	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
-	os.Exit(1)
+	exitFunc(1)
 }
 
 func hasFlag(args []string, flag string) bool {
