@@ -18,7 +18,9 @@
     "tabs",
     "tabGroups",
     "alarms",
-    "storage"
+    "storage",
+    "scripting",
+    "tabCapture"
   ],
   "host_permissions": [
     "<all_urls>",

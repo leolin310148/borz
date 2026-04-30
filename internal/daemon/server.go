@@ -41,6 +41,7 @@ type Server struct {
 	opts         ServerOptions
 	cdp          *CdpConnection
 	extHub       *extbridge.Hub
+	recordings   *recordingManager
 	httpSrv      *http.Server
 	startTime    time.Time
 	mu           sync.Mutex
@@ -59,11 +60,13 @@ func NewServer(opts ServerOptions) *Server {
 	}
 	tabManager := NewTabStateManager()
 	cdp := NewCdpConnection(opts.CDPHost, opts.CDPPort, tabManager)
+	extHub := extbridge.NewHub()
 
 	return &Server{
-		opts:   opts,
-		cdp:    cdp,
-		extHub: extbridge.NewHub(),
+		opts:       opts,
+		cdp:        cdp,
+		extHub:     extHub,
+		recordings: newRecordingManager(cdp, extHub),
 	}
 }
 
@@ -90,6 +93,8 @@ func (s *Server) RunContext(ctx context.Context) error {
 	s.registerRESTRoutes(protectedMux)
 	s.registerSiteRoutes(protectedMux)
 	s.registerExtRoutes(protectedMux)
+	s.registerRecordingRoutes(protectedMux)
+	s.registerRecordingPreviewRoutes(protectedMux)
 
 	root := http.NewServeMux()
 	root.HandleFunc("/healthz", s.handleHealthz)

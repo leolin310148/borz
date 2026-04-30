@@ -942,6 +942,31 @@ borz console --since last_action
 borz errors --since last_action
 ```
 
+## Recording Mode
+
+`borz record` captures a browsing flow into a `.borzrec` bundle and renders it later with deterministic presets:
+
+```bash
+borz record start --url https://example.com --out demo.borzrec
+# drive the browser by hand or with borz commands
+borz record stop
+borz record render demo.borzrec --preset share --out demo.mp4
+```
+
+Useful commands:
+
+| Command | Description |
+| --- | --- |
+| `borz record start [--url <url>] [--mode cdp\|client] [--out <path.borzrec>]` | Start a daemon-managed recording. |
+| `borz record stop [id]` | Finalize the active recording. |
+| `borz record list` | Show active and recently completed recordings. |
+| `borz record info <bundle\|id>` | Inspect a bundle or daemon recording. |
+| `borz record verify <bundle>` | Check schema, frame/event ordering, and checksums. |
+| `borz record render <bundle> --preset share --out demo.mp4` | Render with cursor, click, key, focus, and redaction overlays. |
+| `borz record redact <bundle> --selector ".secret"` | Add a render-time selector redaction. |
+
+CDP mode records the controlled Chromium tab. Client mode uses the borz extension to capture the active browser window and mirror input events. Install `ffmpeg` on `PATH` before rendering videos or animated images.
+
 ## Environment Variables
 
 | Variable | Description |

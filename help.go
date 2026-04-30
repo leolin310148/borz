@@ -266,6 +266,23 @@ var commandHelp = map[string]cmdHelp{
 			"  status    Report whether recording is active and how many events captured (default)",
 		},
 	},
+	"record": {
+		Summary: "Capture a browser flow into a .borzrec bundle and render it to video/image.",
+		Usage:   "borz record [start|stop|list|info|verify|render|redact|export|edit|play]",
+		Flags: []string{
+			"  start --url <url> [--mode cdp|client] [--out <path.borzrec>] [--fps N]",
+			"  stop [id] [--recover]        Finalize the active recording",
+			"  render <bundle> --preset share [--out demo.mp4]",
+			"  redact <bundle> --selector <css> | --rect x,y,w,h",
+		},
+		Examples: []string{
+			"  borz record start --url https://example.com --out demo.borzrec",
+			"  borz record stop",
+			"  borz record render demo.borzrec --preset share --out demo.mp4",
+			"  borz record verify demo.borzrec",
+		},
+		Notes: "CDP mode records the controlled Chromium tab. Client mode requires the borz Chrome extension. Rendering requires ffmpeg on PATH.",
+	},
 	"history": {
 		Summary: "List the daemon's recent action history (ring buffer).",
 		Usage:   "borz history",

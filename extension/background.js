@@ -18,6 +18,8 @@ let ws = null;
 let reconnectMs = RECONNECT_BASE_MS;
 let connectTimer = null;
 let connectedAt = 0;
+let recordingActive = false;
+let recordingMaskSelectors = [];
 
 const SUPPORTED_METHODS = [
   "ping",
@@ -51,6 +53,11 @@ const SUPPORTED_METHODS = [
   "tabs.discard",
   "tabs.reload",
   "tabGroups.query",
+  "recording.start",
+  "recording.stop",
+  "recording.status",
+  "recording.captureVisible",
+  "recording.injectTap",
 ];
 
 async function getConfig() {
@@ -208,9 +215,106 @@ async function dispatch(method, params) {
       return await chrome.tabs.reload(params.id === undefined ? undefined : requireNumber(params.id, "id"), params.reloadProperties || {});
     case "tabGroups.query":
       return await chrome.tabGroups.query(params.queryInfo || params);
+    case "recording.start":
+      return await recordingStart(params);
+    case "recording.stop":
+      return await recordingStop();
+    case "recording.status":
+      return { active: recordingActive };
+    case "recording.captureVisible":
+      return await recordingCaptureVisible(params);
+    case "recording.injectTap":
+      return await recordingInjectTap(params);
     default:
       throw new Error(`unknown method: ${method}`);
   }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (!msg || msg.type !== "borz.recording.input" || !recordingActive) return;
+  pushEvent("recording.input", Object.assign({}, msg.event || {}, {
+    tabId: sender && sender.tab ? sender.tab.id : undefined,
+    url: sender && sender.tab ? sender.tab.url : undefined,
+  }));
+});
+
+async function recordingStart(params = {}) {
+  recordingActive = true;
+  recordingMaskSelectors = Array.isArray(params.maskSelectors) ? params.maskSelectors : [];
+  await recordingInjectTap({ maskSelectors: recordingMaskSelectors });
+  setBadge("REC", "#cf222e");
+  pushEvent("recording.started", { ts: Date.now() });
+  return { ok: true, active: true };
+}
+
+async function recordingStop() {
+  recordingActive = false;
+  setBadge(connectedAt ? "ON" : "OFF", connectedAt ? "#1a7f37" : "#cf222e");
+  pushEvent("recording.stopped", { ts: Date.now() });
+  return { ok: true, active: false };
+}
+
+async function recordingCaptureVisible() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || tab.windowId === undefined) throw new Error("no active tab to capture");
+  await recordingInjectTap({ tabId: tab.id, maskSelectors: recordingMaskSelectors });
+  const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  const dpr = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => ({ width: innerWidth, height: innerHeight, dpr: devicePixelRatio || 1, title: document.title, url: location.href }),
+  }).catch(() => [{ result: {} }]);
+  const result = dpr && dpr[0] && dpr[0].result ? dpr[0].result : {};
+  return { ok: true, dataUrl, width: result.width || tab.width || 0, height: result.height || tab.height || 0, dpr: result.dpr || 1, title: result.title || tab.title || "", url: result.url || tab.url || "" };
+}
+
+async function recordingInjectTap(params = {}) {
+  const tabId = params.tabId || (await activeTabId());
+  if (!tabId) throw new Error("no active tab for recording tap");
+  const maskSelectors = Array.isArray(params.maskSelectors) ? params.maskSelectors : recordingMaskSelectors;
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: installRecordingTap,
+    args: [maskSelectors],
+  });
+  return { ok: true, tabId };
+}
+
+async function activeTabId() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab && tab.id;
+}
+
+function installRecordingTap(maskSelectors) {
+  const selectors = Array.isArray(maskSelectors) ? maskSelectors : [];
+  const sensitiveSelector = "input[type=password],[autocomplete*=one-time-code],[autocomplete*=cc-],[data-borz-mask]" + (selectors.length ? "," + selectors.join(",") : "");
+  if (globalThis.__borzRecordingTapInstalled) return;
+  globalThis.__borzRecordingTapInstalled = true;
+  const push = (ev) => {
+    let target = ev.target;
+    let redacted = false;
+    let selector = "";
+    let cursor = "";
+    let focusRect = null;
+    try {
+      if (target && target.matches && target.matches(sensitiveSelector)) redacted = true;
+      if (target && target.tagName) selector = target.tagName.toLowerCase() + (target.id ? "#" + target.id : "");
+      if (target && target.getBoundingClientRect) {
+        const r = target.getBoundingClientRect();
+        focusRect = { x: r.x, y: r.y, w: r.width, h: r.height };
+      }
+      cursor = target ? getComputedStyle(target).cursor : "";
+    } catch (_) {}
+    const item = { type: ev.type, timestamp: Date.now(), selector, cursor, redacted };
+    if ("clientX" in ev) { item.x = ev.clientX; item.y = ev.clientY; }
+    if ("button" in ev) item.button = String(ev.button);
+    if (ev.type.startsWith("key")) {
+      item.key = redacted ? "<redacted>" : ev.key;
+      item.text = redacted ? "<redacted>" : (ev.key && ev.key.length === 1 ? ev.key : "");
+    }
+    if (ev.type === "focus") item.focusRect = focusRect;
+    chrome.runtime.sendMessage({ type: "borz.recording.input", event: item });
+  };
+  ["pointermove","pointerdown","pointerup","click","mousedown","mouseup","keydown","keyup","focus","blur","scroll","wheel"].forEach((type) => addEventListener(type, push, true));
 }
 
 async function capabilities() {

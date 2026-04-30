@@ -97,6 +97,24 @@ func (fd *cliFakeDaemon) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			LatestSeq: 7,
 			Connected: true,
 		})
+	case "/v1/recordings":
+		if r.Method == http.MethodGet {
+			writeJSON(fd.t, w, map[string]any{"recordings": []recordInfo{{
+				ID: "rec-1", Path: "/tmp/rec-1.borzrec", Status: "recording", FrameCount: 2, EventCount: 1,
+			}}})
+			return
+		}
+		var opts map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&opts)
+		writeJSON(fd.t, w, recordInfo{ID: "rec-start", Path: "/tmp/rec-start.borzrec", Status: "recording"})
+	case "/v1/recordings/rec-1/info":
+		writeJSON(fd.t, w, recordInfo{ID: "rec-1", Path: "/tmp/rec-1.borzrec", Status: "recording", FrameCount: 2, EventCount: 1})
+	case "/v1/recordings/current/stop":
+		writeJSON(fd.t, w, recordInfo{ID: "rec-1", Path: "/tmp/rec-1.borzrec", Status: "stopped", FrameCount: 2, EventCount: 1})
+	case "/v1/recordings/current/pause":
+		writeJSON(fd.t, w, recordInfo{ID: "rec-1", Path: "/tmp/rec-1.borzrec", Status: "paused", FrameCount: 2, EventCount: 1})
+	case "/v1/recordings/current/resume":
+		writeJSON(fd.t, w, recordInfo{ID: "rec-1", Path: "/tmp/rec-1.borzrec", Status: "recording", FrameCount: 2, EventCount: 1})
 	case "/shutdown":
 		writeJSON(fd.t, w, map[string]any{"ok": true})
 	default:

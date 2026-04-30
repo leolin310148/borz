@@ -40,5 +40,34 @@ async function refreshStatus() {
   }
 }
 
+async function recording(action) {
+  const cfg = await chrome.storage.local.get("bb");
+  const bb = cfg.bb || {};
+  const host = bb.host || "127.0.0.1";
+  const port = bb.port || 19824;
+  const token = bb.token ? `?token=${encodeURIComponent(bb.token)}` : "";
+  if (action === "start") {
+    const body = { mode: "client" };
+    const resp = await fetch(`http://${host}:${port}/v1/recordings${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+  } else {
+    const resp = await fetch(`http://${host}:${port}/v1/recordings/current/stop${token}`, { method: "POST" });
+    if (!resp.ok) throw new Error(await resp.text());
+  }
+  refreshStatus();
+}
+
 $("save").addEventListener("click", save);
+$("record-start").addEventListener("click", () => recording("start").catch((err) => {
+  $("status").textContent = err.message || String(err);
+  $("status").className = "status bad";
+}));
+$("record-stop").addEventListener("click", () => recording("stop").catch((err) => {
+  $("status").textContent = err.message || String(err);
+  $("status").className = "status bad";
+}));
 load();
