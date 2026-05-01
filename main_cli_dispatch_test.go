@@ -157,6 +157,7 @@ func responseDataFor(req protocol.Request) *protocol.ResponseData {
 		ConsoleMessages: []protocol.ConsoleMessageInfo{{Type: "log", Text: "hello"}},
 		JSErrors:        []protocol.JSErrorInfo{{Message: "boom"}},
 		TraceStatus:     &protocol.TraceStatus{Recording: true, EventCount: 3},
+		Viewport:        &protocol.ViewportInfo{Width: 390, Height: 844, DPR: 3, Mobile: true, Touch: true},
 		Cursor:          &cursor,
 	}
 }
@@ -208,6 +209,19 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			check: func(t *testing.T, req protocol.Request, out string) {
 				if req.URL != "https://example.test" || !req.New || req.WaitFor != "#ready" || req.TimeoutMs == nil || *req.TimeoutMs != 25 || req.TabID != "tab-a" {
 					t.Fatalf("open request = %+v", req)
+				}
+				if !strings.Contains(out, "Opened: https://example.test") {
+					t.Fatalf("open output = %q", out)
+				}
+			},
+		},
+		{
+			name:   "open with mobile viewport",
+			args:   []string{"open", "https://example.test", "--viewport", "mobile"},
+			action: protocol.ActionOpen,
+			check: func(t *testing.T, req protocol.Request, out string) {
+				if req.Viewport == nil || req.Viewport.Width != 390 || req.Viewport.Height != 844 || !req.Viewport.Mobile {
+					t.Fatalf("open viewport request = %+v", req)
 				}
 				if !strings.Contains(out, "Opened: https://example.test") {
 					t.Fatalf("open output = %q", out)
@@ -285,6 +299,14 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			}
 			if !strings.Contains(out, "Screenshot captured") {
 				t.Fatalf("screenshot output = %q", out)
+			}
+		}},
+		{name: "viewport mobile", args: []string{"viewport", "mobile"}, action: protocol.ActionViewport, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.Viewport == nil || req.Viewport.Width != 390 || req.Viewport.Height != 844 || req.Viewport.DPR != 3 || !req.Viewport.Mobile || req.Viewport.Touch == nil || !*req.Viewport.Touch {
+				t.Fatalf("viewport request = %+v", req)
+			}
+			if !strings.Contains(out, "Viewport: 390x844 @ 3x") {
+				t.Fatalf("viewport output = %q", out)
 			}
 		}},
 		{name: "close", args: []string{"close"}, action: protocol.ActionClose, check: expectOutput("Tab closed")},

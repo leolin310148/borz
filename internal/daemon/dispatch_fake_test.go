@@ -623,6 +623,48 @@ func TestDispatch_Screenshot(t *testing.T) {
 	}
 }
 
+func TestDispatch_Viewport_Mobile(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	c := connectCdp(t, f)
+
+	touch := true
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionViewport,
+		Viewport: &protocol.ViewportOptions{Width: 390, Height: 844, DPR: 3, Mobile: true, Touch: &touch},
+	})
+	if !resp.Success {
+		t.Fatalf("viewport: %+v", resp)
+	}
+	if resp.Data.Viewport == nil || resp.Data.Viewport.Width != 390 || !resp.Data.Viewport.Mobile || !resp.Data.Viewport.Touch {
+		t.Fatalf("viewport response = %+v", resp.Data.Viewport)
+	}
+
+	var metricsOK, touchOK bool
+	for _, call := range f.Calls() {
+		switch call.Method {
+		case "Emulation.setDeviceMetricsOverride":
+			var params struct {
+				Width             int     `json:"width"`
+				Height            int     `json:"height"`
+				DeviceScaleFactor float64 `json:"deviceScaleFactor"`
+				Mobile            bool    `json:"mobile"`
+			}
+			_ = json.Unmarshal(call.Params, &params)
+			metricsOK = params.Width == 390 && params.Height == 844 && params.DeviceScaleFactor == 3 && params.Mobile
+		case "Emulation.setTouchEmulationEnabled":
+			var params struct {
+				Enabled bool `json:"enabled"`
+			}
+			_ = json.Unmarshal(call.Params, &params)
+			touchOK = params.Enabled
+		}
+	}
+	if !metricsOK || !touchOK {
+		t.Fatalf("expected viewport CDP calls, metrics=%v touch=%v calls=%+v", metricsOK, touchOK, f.Calls())
+	}
+}
+
 func TestDispatch_Get_URLAndTitle(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")

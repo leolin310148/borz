@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/leolin310148/borz/internal/protocol"
@@ -58,6 +59,29 @@ func formatScreenshot(resp *protocol.Response) *mcp.CallToolResult {
 			},
 		},
 	}
+}
+
+func formatViewport(resp *protocol.Response) *mcp.CallToolResult {
+	if resp.Data == nil || resp.Data.Viewport == nil {
+		return mcp.NewToolResultText("Viewport updated")
+	}
+	vp := resp.Data.Viewport
+	mode := "desktop"
+	if vp.Mobile {
+		mode = "mobile"
+	}
+	prefix := "Viewport"
+	if vp.Reset {
+		prefix = "Viewport reset"
+	}
+	return mcp.NewToolResultText(fmt.Sprintf("%s: %dx%d @ %sx (%s, touch=%v)",
+		prefix,
+		vp.Width,
+		vp.Height,
+		strconv.FormatFloat(vp.DPR, 'f', -1, 64),
+		mode,
+		vp.Touch,
+	))
 }
 
 // formatTabList formats a tab list response as readable text.

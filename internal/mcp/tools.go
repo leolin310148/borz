@@ -154,6 +154,18 @@ var screenshotTool = mcp.NewTool("browser_screenshot",
 	tabParam(),
 )
 
+var viewportTool = mcp.NewTool("browser_viewport",
+	mcp.WithDescription("Inspect or emulate the tab viewport for responsive design testing. Use preset=mobile before checking mobile/RWD layouts, or pass width/height/dpr for a custom viewport. reset=true clears CDP viewport and touch emulation."),
+	mcp.WithString("preset", mcp.Description("Named viewport preset"), mcp.Enum("mobile", "tablet", "desktop")),
+	mcp.WithNumber("width", mcp.Description("Viewport width in CSS pixels")),
+	mcp.WithNumber("height", mcp.Description("Viewport height in CSS pixels")),
+	mcp.WithNumber("dpr", mcp.Description("Device scale factor (default 1)")),
+	mcp.WithBoolean("mobile", mcp.Description("Enable mobile device metrics")),
+	mcp.WithBoolean("touch", mcp.Description("Enable touch emulation")),
+	mcp.WithBoolean("reset", mcp.Description("Clear viewport and touch emulation")),
+	tabParam(),
+)
+
 var getTool = mcp.NewTool("browser_get",
 	mcp.WithDescription("Get a page or element attribute (url, title, text, html, value)"),
 	mcp.WithString("attribute", mcp.Required(),

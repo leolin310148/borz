@@ -88,6 +88,7 @@ paths:
               allOf:
                 - $ref: "#/components/schemas/TabTarget"
                 - $ref: "#/components/schemas/WaitOptions"
+                - $ref: "#/components/schemas/ViewportBody"
                 - type: object
                   required: [url]
                   properties:
@@ -403,6 +404,24 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
+  /v1/viewport:
+    post:
+      tags: [observation]
+      summary: Inspect or emulate the tab viewport
+      description: |
+        Omit viewport fields to read the current tab viewport. Pass `preset:
+        mobile` for responsive/mobile testing, or custom `width`/`height`/`dpr`
+        fields. `reset: true` clears CDP viewport and touch emulation.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/ViewportBody"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
   /v1/snapshot:
     post:
       tags: [observation]
@@ -660,12 +679,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                url:
-                  type: string
-                  format: uri
-                  description: Defaults to `about:blank` when omitted.
+              allOf:
+                - $ref: "#/components/schemas/ViewportBody"
+                - type: object
+                  properties:
+                    url:
+                      type: string
+                      format: uri
+                      description: Defaults to `about:blank` when omitted.
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
@@ -1161,6 +1182,48 @@ components:
           type: integer
           minimum: 0
           description: Cap for waitFor in milliseconds (default 10000).
+
+    ViewportBody:
+      type: object
+      description: Viewport/device emulation fields for responsive testing.
+      properties:
+        viewport:
+          $ref: "#/components/schemas/ViewportOptions"
+        preset:
+          type: string
+          enum: [mobile, tablet, desktop]
+          description: Named viewport profile. `mobile` is 390x844 @3x with mobile/touch enabled.
+        width:
+          type: integer
+          minimum: 1
+          description: Viewport width in CSS pixels.
+        height:
+          type: integer
+          minimum: 1
+          description: Viewport height in CSS pixels.
+        dpr:
+          type: number
+          exclusiveMinimum: 0
+          description: Device scale factor.
+        mobile:
+          type: boolean
+          description: Enable mobile device metrics.
+        touch:
+          type: boolean
+          description: Enable touch emulation.
+        reset:
+          type: boolean
+          description: Clear CDP viewport and touch emulation.
+
+    ViewportOptions:
+      type: object
+      properties:
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        dpr: { type: number }
+        mobile: { type: boolean }
+        touch: { type: boolean }
+        reset: { type: boolean }
 
     Since:
       description: |

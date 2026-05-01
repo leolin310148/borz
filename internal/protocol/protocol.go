@@ -24,6 +24,7 @@ const (
 	ActionForward    ActionType = "forward"
 	ActionRefresh    ActionType = "refresh"
 	ActionEval       ActionType = "eval"
+	ActionViewport   ActionType = "viewport"
 	ActionTabList    ActionType = "tab_list"
 	ActionTabNew     ActionType = "tab_new"
 	ActionTabSelect  ActionType = "tab_select"
@@ -133,6 +134,11 @@ type Request struct {
 	// Wait type
 	WaitType string `json:"waitType,omitempty"`
 
+	// Viewport controls tab-level CDP device metrics emulation. It is used by
+	// the viewport action and may also be attached to navigation/new-tab
+	// requests so responsive pages can be opened directly in a mobile layout.
+	Viewport *ViewportOptions `json:"viewport,omitempty"`
+
 	// Low-level key input (ActionKey). KeyType is one of:
 	//   "press" (default, keyDown + optional char + keyUp)
 	//   "down"  (keyDown only)
@@ -180,6 +186,26 @@ type TabInfo struct {
 	Active bool        `json:"active"`
 	TabID  interface{} `json:"tabId"`
 	Tab    string      `json:"tab,omitempty"`
+}
+
+// ViewportOptions describes a viewport/device emulation request.
+type ViewportOptions struct {
+	Width  int     `json:"width,omitempty"`
+	Height int     `json:"height,omitempty"`
+	DPR    float64 `json:"dpr,omitempty"`
+	Mobile bool    `json:"mobile,omitempty"`
+	Touch  *bool   `json:"touch,omitempty"`
+	Reset  bool    `json:"reset,omitempty"`
+}
+
+// ViewportInfo is returned after reading or changing a tab viewport.
+type ViewportInfo struct {
+	Width  int     `json:"width,omitempty"`
+	Height int     `json:"height,omitempty"`
+	DPR    float64 `json:"dpr,omitempty"`
+	Mobile bool    `json:"mobile,omitempty"`
+	Touch  bool    `json:"touch,omitempty"`
+	Reset  bool    `json:"reset,omitempty"`
 }
 
 // SnapshotData holds the accessibility tree and ref mapping.
@@ -272,6 +298,7 @@ type ResponseData struct {
 	Cursor *int        `json:"cursor,omitempty"`
 
 	SnapshotData   *SnapshotData `json:"snapshotData,omitempty"`
+	Viewport       *ViewportInfo `json:"viewport,omitempty"`
 	Value          string        `json:"value,omitempty"`
 	ScreenshotPath string        `json:"screenshotPath,omitempty"`
 	DataURL        string        `json:"dataUrl,omitempty"`

@@ -88,6 +88,24 @@ func TestReadBody_ParsesNewFields(t *testing.T) {
 	}
 }
 
+func TestRestBody_ViewportOptions(t *testing.T) {
+	width, height := 414, 896
+	dpr := 3.0
+	touch := true
+	body := restBody{Preset: "mobile", Width: &width, Height: &height, DPR: &dpr, Touch: &touch}
+	vp := body.viewportOptions()
+	if vp == nil || vp.Width != 414 || vp.Height != 896 || vp.DPR != 3 || !vp.Mobile || vp.Touch == nil || !*vp.Touch {
+		t.Fatalf("viewport options = %+v", vp)
+	}
+	vp = (restBody{Reset: true}).viewportOptions()
+	if vp == nil || !vp.Reset {
+		t.Fatalf("reset viewport options = %+v", vp)
+	}
+	if got := (restBody{}).viewportOptions(); got != nil {
+		t.Fatalf("empty viewport options = %+v", got)
+	}
+}
+
 func TestHandleDoctor_NoCDP(t *testing.T) {
 	s := newTestServer(t, "")
 	s.opts.Version = "test-1.0"
@@ -264,6 +282,7 @@ func TestRESTRoutes_RequestBuilders(t *testing.T) {
 		{"/v1/scroll", `{"direction":"down","pixels":10}`},
 		{"/v1/eval", `{"script":"1+1"}`},
 		{"/v1/wait", `{"ms":1,"activate":true}`},
+		{"/v1/viewport", `{"preset":"mobile"}`},
 		{"/v1/snapshot", `{"interactive":true,"compact":true,"maxDepth":2,"selector":"main","role":"button","mode":"text","activate":true}`},
 		{"/v1/screenshot", `{"path":"/tmp/shot.png","activate":true}`},
 		{"/v1/get", `{"attribute":"text","ref":"e1","activate":true}`},

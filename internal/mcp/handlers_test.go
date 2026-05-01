@@ -370,6 +370,29 @@ func TestHandleScreenshot(t *testing.T) {
 	}
 }
 
+func TestHandleViewport_Preset(t *testing.T) {
+	cap := capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{
+		Viewport: &protocol.ViewportInfo{Width: 390, Height: 844, DPR: 3, Mobile: true, Touch: true},
+	}})
+	res, _ := handleViewport(context.Background(), mkReq(map[string]any{"preset": "mobile", "tab": "t1"}))
+	if res.IsError {
+		t.Fatalf("unexpected error: %v", res)
+	}
+	if cap.req.Action != protocol.ActionViewport || cap.req.TabID != "t1" || cap.req.Viewport == nil || cap.req.Viewport.Width != 390 || !cap.req.Viewport.Mobile {
+		t.Fatalf("viewport request = %+v", cap.req)
+	}
+	if !strings.Contains(firstText(t, res), "390x844") {
+		t.Fatalf("viewport result = %q", firstText(t, res))
+	}
+}
+
+func TestHandleViewport_CustomValidation(t *testing.T) {
+	res, _ := handleViewport(context.Background(), mkReq(map[string]any{"width": float64(390)}))
+	if !res.IsError {
+		t.Fatal("expected error without height")
+	}
+}
+
 func TestHandleGet(t *testing.T) {
 	res, _ := handleGet(context.Background(), mkReq(nil))
 	if !res.IsError {

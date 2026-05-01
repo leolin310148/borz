@@ -200,13 +200,13 @@ Add to your MCP client configuration (e.g. `.claude/settings.json` for Claude Co
 
 ### Available Tools
 
-The MCP server exposes 36 tools:
+The MCP server exposes 37 tools:
 
 | Category | Tools |
 |----------|-------|
 | **Navigation** | `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close` |
 | **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_press`, `browser_scroll` |
-| **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_get`, `browser_eval`, `browser_wait` |
+| **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_wait` |
 | **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close` |
 | **Diagnostics** | `browser_network`, `browser_console`, `browser_errors`, `browser_doctor` |
 | **Extension-backed** | `browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows` |
@@ -219,6 +219,7 @@ Most action tools accept optional `waitFor` (CSS selector) and `timeout` (ms, de
 Other notable params:
 
 - `browser_snapshot` accepts `textOnly: true` for a reader-mode plain-text dump (no element refs) — useful for summarization or feeding the page to an LLM as context.
+- `browser_viewport` accepts `preset: "mobile"` for responsive/mobile layout checks, custom `width`/`height`/`dpr`, and `reset: true` to clear viewport emulation.
 - `browser_eval` auto-wraps top-level `await` in an async IIFE so `await fetch(...)` works without manual boilerplate. Pass `noAutoAwait: true` to opt out.
 - `browser_doctor` runs end-to-end stack diagnostics (binary → daemon → CDP → tabs) and returns the first failing layer with a remediation hint. Pass `json: true` for structured output.
 
@@ -370,14 +371,15 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | GET | `/docs` | — *(unauthenticated, Swagger UI)* |
 | GET | `/status` | — |
 | GET | `/v1/tabs` | — |
-| POST | `/v1/tabs` | `{url?}` — open new tab |
+| POST | `/v1/tabs` | `{url?, preset?, viewport?}` — open new tab |
 | POST | `/v1/tabs/select` | `{tabId?, index?}` |
 | POST | `/v1/tabs/close` | `{tabId?, index?}` |
-| POST | `/v1/open` | `{url, new?, tab?, waitFor?, timeoutMs?}` — reuses a tab with the exact same URL when one exists; `new: true` forces a fresh tab |
+| POST | `/v1/open` | `{url, new?, tab?, waitFor?, timeoutMs?, preset?, viewport?}` — reuses a tab with the exact same URL when one exists; `new: true` forces a fresh tab |
 | POST | `/v1/back` \| `/forward` \| `/refresh` | `{tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/close` | `{tab?}` |
 | POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, role?, mode?, tab?}` — `mode: "text"` returns a reader-mode plain-text dump (no element refs) |
 | POST | `/v1/screenshot` | `{path?, tab?}` |
+| POST | `/v1/viewport` | `{preset?, width?, height?, dpr?, mobile?, touch?, reset?, tab?}` — read or emulate the tab viewport |
 | POST | `/v1/get` | `{attribute, ref?, tab?}` |
 | POST | `/v1/click` \| `/hover` \| `/check` \| `/uncheck` | `{ref, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/fill` \| `/type` | `{ref, text, tab?, waitFor?, timeoutMs?}` |
@@ -502,6 +504,9 @@ borz back
 
 # Wait for a selector before returning (default 10s, override with --timeout <ms>)
 borz open https://app.example.com --wait-for ".dashboard-loaded"
+
+# Open directly in a mobile viewport for responsive layout checks
+borz open http://localhost:3000 --viewport mobile
 ```
 
 `--wait-for <selector>` and `--timeout <ms>` work on **every action that changes the page** — `open`, `click`, `hover`, `fill`, `type`, `check`, `uncheck`, `select`, `press`, `scroll`, `eval`, `back`, `forward`, `refresh`. The daemon runs the action, then polls `document.querySelector(...)` on a 100 ms tick until the node appears or the timeout elapses. Prefer this over `wait <ms>` for any DOM change.
@@ -561,6 +566,24 @@ borz screenshot
 
 # Save to file (use with --json and jq)
 borz screenshot --json --jq ".data.dataUrl"
+```
+
+#### `viewport`
+
+```bash
+# Inspect the current tab viewport
+borz viewport
+
+# Apply common responsive presets
+borz viewport mobile
+borz viewport tablet
+borz viewport desktop
+
+# Tune a custom mobile viewport
+borz viewport 390x844 --dpr 3 --mobile
+
+# Clear viewport and touch emulation
+borz viewport reset
 ```
 
 #### `get` - Get element or page attributes
@@ -1032,6 +1055,9 @@ For agents that use shell-based tool calling, the CLI works just as well:
 ```bash
 # The agent runs snapshot to "see" the page
 borz snapshot -i -c
+
+# For responsive work, switch the tab before inspecting
+borz viewport mobile
 
 # The agent decides which element to interact with based on the ref numbers
 borz click 4

@@ -32,6 +32,7 @@ borz open <url>                              # reuses tab with same URL; --new f
 borz open <url> --wait-for '<selector>' [--timeout <ms>]  # block until selector found (10s default)
 borz snapshot [-i] [-c] [-d N]               # accessibility tree with refs
 borz snapshot --text-only                    # reader-mode plain text (no refs)
+borz viewport [mobile|tablet|desktop|WxH|reset]  # responsive viewport emulation
 borz click <ref>                             # refs come from snapshot
 borz fill <ref> <text>                       # clear + fill
 borz type <ref> <text>                       # append
@@ -81,11 +82,11 @@ MCP client config (e.g. Claude Code `.claude/settings.json`):
 { "mcpServers": { "borz": { "command": "borz", "args": ["mcp"] } } }
 ```
 
-Tools (36 total):
+Tools (37 total):
 
 - **Navigation:** `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close`
 - **Interaction:** `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_press`, `browser_scroll`
-- **Observation:** `browser_snapshot`, `browser_screenshot`, `browser_get`, `browser_eval`, `browser_wait`
+- **Observation:** `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_wait`
 - **Tabs:** `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close`
 - **Diagnostics:** `browser_network`, `browser_console`, `browser_errors`, `browser_doctor`
 - **Extension-backed Chrome APIs:** `browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`
@@ -115,6 +116,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 | POST | `/v1/back` \| `/forward` \| `/refresh` \| `/close` | `{tab?}` |
 | POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, tab?}` |
 | POST | `/v1/screenshot` | `{path?, tab?}` |
+| POST | `/v1/viewport` | `{preset?, width?, height?, dpr?, mobile?, touch?, reset?, tab?}` |
 | POST | `/v1/get` | `{attribute, ref?, tab?}` |
 | POST | `/v1/click` \| `/hover` \| `/check` \| `/uncheck` | `{ref, tab?}` |
 | POST | `/v1/fill` \| `/type` | `{ref, text, tab?}` |
@@ -150,6 +152,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 ## Key behaviors to remember
 
 - **`open` reuses tabs with the exact same URL** (focus only, no reload). Use `--new` / `new: true` to force a fresh tab.
+- **Use viewport emulation for RWD checks.** `borz viewport mobile`, `browser_viewport {preset:"mobile"}`, or `/v1/viewport {preset:"mobile"}` applies a 390x844 mobile/touch viewport to the current tab; reset with `viewport reset`.
 - **`--wait-for <selector>` works on every action that changes the page**, not just `open`: `click`, `hover`, `fill`, `type`, `check`, `uncheck`, `select`, `press`, `scroll`, `eval`, `back`, `forward`, `refresh`. The daemon runs the action, then polls `document.querySelector(...)` on a 100 ms tick until non-null or `--timeout <ms>` elapses (default 10000 ms). Prefer it over `wait <ms>` for any DOM change.
 - **`eval` auto-wraps top-level `await`** in `(async () => { return (<script>) })()` so `await fetch(...).then(...)` works without manual IIFE boilerplate. Disable with `--no-auto-await`. Already-async-IIFE scripts are not double-wrapped.
 - **`eval --unwrap`** prints `resp.data.result` raw — strings without surrounding quotes, everything else JSON-pretty. `--jq` and `--json` still take precedence when set.

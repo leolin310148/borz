@@ -20,7 +20,7 @@ import (
 func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 	// Navigation
 	mux.HandleFunc("/v1/open", s.restJSON(func(body restBody) *protocol.Request {
-		return body.applyWait(&protocol.Request{Action: protocol.ActionOpen, URL: body.URL, New: body.New, TabID: body.tabID()})
+		return body.applyWait(&protocol.Request{Action: protocol.ActionOpen, URL: body.URL, New: body.New, TabID: body.tabID(), Viewport: body.viewportOptions()})
 	}))
 	mux.HandleFunc("/v1/back", s.restJSON(func(body restBody) *protocol.Request {
 		return body.applyWait(&protocol.Request{Action: protocol.ActionBack, TabID: body.tabID()})
@@ -101,6 +101,9 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/wait", s.restJSON(func(body restBody) *protocol.Request {
 		return body.withActivate(&protocol.Request{Action: protocol.ActionWait, Ms: body.Ms, TabID: body.tabID()})
 	}))
+	mux.HandleFunc("/v1/viewport", s.restJSON(func(body restBody) *protocol.Request {
+		return body.withActivate(&protocol.Request{Action: protocol.ActionViewport, TabID: body.tabID(), Viewport: body.viewportOptions()})
+	}))
 
 	// Observation
 	mux.HandleFunc("/v1/snapshot", s.restJSON(func(body restBody) *protocol.Request {
@@ -179,7 +182,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			if url == "" {
 				url = "about:blank"
 			}
-			s.dispatchAndWrite(w, &protocol.Request{ID: newReqID(), Action: protocol.ActionTabNew, URL: url})
+			s.dispatchAndWrite(w, &protocol.Request{ID: newReqID(), Action: protocol.ActionTabNew, URL: url, Viewport: body.viewportOptions()})
 		default:
 			sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
 		}
@@ -248,33 +251,41 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 // restBody is the union of fields accepted by /v1/* POST bodies. Fields not
 // relevant to a given route are simply ignored.
 type restBody struct {
-	URL         string      `json:"url,omitempty"`
-	New         bool        `json:"new,omitempty"`
-	Ref         string      `json:"ref,omitempty"`
-	Text        string      `json:"text,omitempty"`
-	Key         string      `json:"key,omitempty"`
-	Modifiers   []string    `json:"modifiers,omitempty"`
-	Direction   string      `json:"direction,omitempty"`
-	Pixels      *int        `json:"pixels,omitempty"`
-	Attribute   string      `json:"attribute,omitempty"`
-	Interactive bool        `json:"interactive,omitempty"`
-	Compact     bool        `json:"compact,omitempty"`
-	MaxDepth    *int        `json:"maxDepth,omitempty"`
-	Selector    string      `json:"selector,omitempty"`
-	Role        string      `json:"role,omitempty"`
-	Value       string      `json:"value,omitempty"`
-	Script      string      `json:"script,omitempty"`
-	Ms          *int        `json:"ms,omitempty"`
-	Path        string      `json:"path,omitempty"`
-	Method      string      `json:"method,omitempty"`
-	Command     string      `json:"command,omitempty"`
-	Filter      string      `json:"filter,omitempty"`
-	Status      string      `json:"status,omitempty"`
-	WithBody    bool        `json:"withBody,omitempty"`
-	Since       interface{} `json:"since,omitempty"`
-	TabID       interface{} `json:"tabId,omitempty"`
-	Tab         string      `json:"tab,omitempty"`
-	Index       *int        `json:"index,omitempty"`
+	URL         string                    `json:"url,omitempty"`
+	New         bool                      `json:"new,omitempty"`
+	Ref         string                    `json:"ref,omitempty"`
+	Text        string                    `json:"text,omitempty"`
+	Key         string                    `json:"key,omitempty"`
+	Modifiers   []string                  `json:"modifiers,omitempty"`
+	Direction   string                    `json:"direction,omitempty"`
+	Pixels      *int                      `json:"pixels,omitempty"`
+	Attribute   string                    `json:"attribute,omitempty"`
+	Interactive bool                      `json:"interactive,omitempty"`
+	Compact     bool                      `json:"compact,omitempty"`
+	MaxDepth    *int                      `json:"maxDepth,omitempty"`
+	Selector    string                    `json:"selector,omitempty"`
+	Role        string                    `json:"role,omitempty"`
+	Value       string                    `json:"value,omitempty"`
+	Script      string                    `json:"script,omitempty"`
+	Ms          *int                      `json:"ms,omitempty"`
+	Path        string                    `json:"path,omitempty"`
+	Method      string                    `json:"method,omitempty"`
+	Command     string                    `json:"command,omitempty"`
+	Filter      string                    `json:"filter,omitempty"`
+	Status      string                    `json:"status,omitempty"`
+	WithBody    bool                      `json:"withBody,omitempty"`
+	Since       interface{}               `json:"since,omitempty"`
+	TabID       interface{}               `json:"tabId,omitempty"`
+	Tab         string                    `json:"tab,omitempty"`
+	Index       *int                      `json:"index,omitempty"`
+	Viewport    *protocol.ViewportOptions `json:"viewport,omitempty"`
+	Preset      string                    `json:"preset,omitempty"`
+	Width       *int                      `json:"width,omitempty"`
+	Height      *int                      `json:"height,omitempty"`
+	DPR         *float64                  `json:"dpr,omitempty"`
+	Mobile      bool                      `json:"mobile,omitempty"`
+	Touch       *bool                     `json:"touch,omitempty"`
+	Reset       bool                      `json:"reset,omitempty"`
 
 	// After-action wait. WaitFor polls document.querySelector(WaitFor) on a
 	// 100ms tick once the action returns; TimeoutMs caps the wait (default
@@ -326,6 +337,47 @@ func (b restBody) withActivate(req *protocol.Request) *protocol.Request {
 		req.Activate = true
 	}
 	return req
+}
+
+func (b restBody) viewportOptions() *protocol.ViewportOptions {
+	if b.Viewport != nil {
+		return b.Viewport
+	}
+	if b.Reset {
+		return &protocol.ViewportOptions{Reset: true}
+	}
+	var opts protocol.ViewportOptions
+	has := false
+	if b.Preset != "" {
+		if preset, ok := protocol.ViewportPreset(b.Preset); ok {
+			opts = preset
+		}
+		has = true
+	}
+	if b.Width != nil {
+		opts.Width = *b.Width
+		has = true
+	}
+	if b.Height != nil {
+		opts.Height = *b.Height
+		has = true
+	}
+	if b.DPR != nil {
+		opts.DPR = *b.DPR
+		has = true
+	}
+	if b.Mobile {
+		opts.Mobile = true
+		has = true
+	}
+	if b.Touch != nil {
+		opts.Touch = b.Touch
+		has = true
+	}
+	if !has {
+		return nil
+	}
+	return &opts
 }
 
 // tabID returns the tab identifier to pass through to the dispatcher.

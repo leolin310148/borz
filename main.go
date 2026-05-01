@@ -56,7 +56,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval", "--limit", "--id", "--title", "--parent", "--filename", "--state", "--name", "--display-name", "--description", "--out", "--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size", "--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--fps", "--width", "--height", "--ffmpeg", "--chapters", "--selector", "--rect"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused", "--lossless", "--mask-by-default", "--recover", "--baked", "--smooth"})
+	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval", "--limit", "--id", "--title", "--parent", "--filename", "--state", "--name", "--display-name", "--description", "--out", "--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size", "--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--fps", "--width", "--height", "--ffmpeg", "--chapters", "--selector", "--rect"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused", "--lossless", "--mask-by-default", "--recover", "--baked", "--smooth", "--mobile", "--touch", "--no-touch", "--reset"})
 
 	if len(cleanArgs) == 0 {
 		printHelp()
@@ -121,6 +121,7 @@ func main() {
 		if hasFlag(args, "--new") {
 			req.New = true
 		}
+		applyCLIViewport(req, args)
 		applyCLIWaitFor(req, args)
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
 			if resp.Data != nil {
@@ -308,6 +309,9 @@ func main() {
 				fmt.Println("Screenshot captured (data URL available in JSON output)")
 			}
 		})
+
+	case "viewport":
+		handleViewport(cmdArgs, jsonOutput, globalTabID, args)
 
 	case "close":
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionClose}
@@ -608,6 +612,7 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 			url = cmdArgs[1]
 		}
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionTabNew, URL: url}
+		applyCLIViewport(req, rawArgs)
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
 			if resp.Data != nil {
 				fmt.Printf("Created tab: %s (tab: %s)\n", resp.Data.URL, resp.Data.Tab)
@@ -1639,6 +1644,8 @@ Observation:
                                 Get accessibility tree (or reader-mode
                                 plain text with --text-only)
   screenshot [path]             Take screenshot (path saves on the CLI host)
+  viewport [mobile|tablet|desktop|WxH|reset]
+                                Inspect or emulate viewport for responsive UI
   get <attribute> [ref]         Get element attribute
   network [requests|clear] [--tail]
                                 Network traffic; --tail streams new

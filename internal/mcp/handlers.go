@@ -313,6 +313,76 @@ func handleScreenshot(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallTool
 	return formatScreenshot(resp), nil
 }
 
+func handleViewport(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	opts, msg := viewportOptionsFromMCP(r)
+	if msg != "" {
+		return mcp.NewToolResultError(msg), nil
+	}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionViewport, Viewport: opts}
+	setTab(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	return formatViewport(resp), nil
+}
+
+func viewportOptionsFromMCP(r mcp.CallToolRequest) (*protocol.ViewportOptions, string) {
+	args := r.GetArguments()
+	if r.GetBool("reset", false) {
+		return &protocol.ViewportOptions{Reset: true}, ""
+	}
+	var opts protocol.ViewportOptions
+	has := false
+	presetName := r.GetString("preset", "")
+	if presetName == "" && r.GetBool("mobile", false) {
+		if _, widthSet := args["width"]; !widthSet {
+			if _, heightSet := args["height"]; !heightSet {
+				presetName = "mobile"
+			}
+		}
+	}
+	if presetName != "" {
+		preset, ok := protocol.ViewportPreset(presetName)
+		if !ok {
+			return nil, "preset must be mobile, tablet, or desktop"
+		}
+		opts = preset
+		has = true
+	}
+	if _, ok := args["width"]; ok {
+		opts.Width = r.GetInt("width", 0)
+		has = true
+	}
+	if _, ok := args["height"]; ok {
+		opts.Height = r.GetInt("height", 0)
+		has = true
+	}
+	if _, ok := args["dpr"]; ok {
+		opts.DPR = r.GetFloat("dpr", 0)
+		has = true
+	}
+	if _, ok := args["mobile"]; ok {
+		opts.Mobile = r.GetBool("mobile", false)
+		has = true
+	}
+	if _, ok := args["touch"]; ok {
+		touch := r.GetBool("touch", false)
+		opts.Touch = &touch
+		has = true
+	}
+	if !has {
+		return nil, ""
+	}
+	if opts.DPR <= 0 {
+		opts.DPR = 1
+	}
+	if opts.Width <= 0 || opts.Height <= 0 {
+		return nil, "width and height must be positive; use preset=mobile/tablet/desktop or pass both width and height"
+	}
+	return &opts, ""
+}
+
 func handleGet(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	attr, err := r.RequireString("attribute")
 	if err != nil {

@@ -22,6 +22,7 @@ func TestRequest_OmitEmpty(t *testing.T) {
 func TestRequest_RoundTrip(t *testing.T) {
 	px := 5
 	y := 1.5
+	touch := true
 	in := Request{
 		ID:         "id1",
 		Action:     ActionClick,
@@ -41,6 +42,7 @@ func TestRequest_RoundTrip(t *testing.T) {
 		Y:          &y,
 		Button:     "left",
 		ClickCount: &px,
+		Viewport:   &ViewportOptions{Width: 390, Height: 844, DPR: 3, Mobile: true, Touch: &touch},
 	}
 	b, err := json.Marshal(in)
 	if err != nil {
@@ -61,6 +63,9 @@ func TestRequest_RoundTrip(t *testing.T) {
 	}
 	if len(out.Modifiers) != 2 || out.Modifiers[1] != "Alt" {
 		t.Errorf("Modifiers not preserved: %+v", out.Modifiers)
+	}
+	if out.Viewport == nil || out.Viewport.Width != 390 || out.Viewport.Touch == nil || !*out.Viewport.Touch {
+		t.Errorf("Viewport not preserved: %+v", out.Viewport)
 	}
 }
 
@@ -129,6 +134,7 @@ func TestActionTypeConstants(t *testing.T) {
 		ActionSnapshot:   "snapshot",
 		ActionType_:      "type",
 		ActionScreenshot: "screenshot",
+		ActionViewport:   "viewport",
 		ActionTabList:    "tab_list",
 		ActionKey:        "key",
 		ActionMouse:      "mouse",
@@ -137,6 +143,16 @@ func TestActionTypeConstants(t *testing.T) {
 		if string(k) != v {
 			t.Errorf("%v != %q", k, v)
 		}
+	}
+}
+
+func TestViewportPreset(t *testing.T) {
+	mobile, ok := ViewportPreset("mobile")
+	if !ok || mobile.Width != 390 || mobile.Height != 844 || !mobile.Mobile || mobile.Touch == nil || !*mobile.Touch {
+		t.Fatalf("mobile preset = %+v ok=%v", mobile, ok)
+	}
+	if _, ok := ViewportPreset("unknown"); ok {
+		t.Fatal("unknown preset should not resolve")
 	}
 }
 

@@ -197,6 +197,26 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Notes: "With [path], the CLI writes the PNG on the machine running the CLI, including when --remote is used. Without [path] the image is returned as a base64 data URL in the JSON payload.",
 	},
+	"viewport": {
+		Summary: "Inspect or emulate a tab viewport for responsive testing.",
+		Usage:   "borz viewport [mobile|tablet|desktop|reset|<width>x<height>] [--dpr N] [--mobile] [--touch|--no-touch] [--tab <id>]",
+		Flags: []string{
+			"  --viewport <preset|WxH>  Apply a viewport when used with open/tab new",
+			"  --width <px>             Custom width (overrides preset)",
+			"  --height <px>            Custom height (overrides preset)",
+			"  --dpr <n>                Device scale factor (default 1)",
+			"  --mobile                 Enable mobile device metrics",
+			"  --touch / --no-touch     Enable or disable touch emulation",
+			"  --reset                  Clear CDP viewport and touch emulation",
+		},
+		Examples: []string{
+			"  borz viewport mobile",
+			"  borz viewport 390x844 --dpr 3 --mobile",
+			"  borz open http://localhost:3000 --viewport mobile",
+			"  borz viewport reset",
+		},
+		Notes: "Viewport emulation is per tab and persists across navigations in that tab until reset. It changes layout, so refs from previous snapshots should be treated as stale.",
+	},
 	"get": {
 		Summary: "Read a single attribute — page-level or from a ref.",
 		Usage:   "borz get <attribute> [ref] [--tab <id>]",

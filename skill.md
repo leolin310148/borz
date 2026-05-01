@@ -31,18 +31,21 @@ If `borz` is configured as an MCP server, call tools directly. Workflow:
 
 1. `browser_tab_list` — the user may already be on the page, logged in, mid-flow. Reusing a tab preserves scroll/form state.
 2. `browser_navigate {url}` — reuses a tab with the exact same URL unless you pass `new: true`.
-3. `browser_snapshot {interactive: true, compact: true}` — returns an accessibility tree with `[ref=N]` handles.
-4. Act with refs: `browser_click {ref: "5"}`, `browser_fill {ref: "3", text: "..."}`, `browser_press {key: "Enter"}`.
-5. Snapshot again to verify, or read `browser_get {attribute: "text", ref: "..."}`, `browser_network`, `browser_console`, `browser_errors`.
+3. For RWD/mobile work, call `browser_viewport {preset: "mobile"}` before inspecting.
+4. `browser_snapshot {interactive: true, compact: true}` — returns an accessibility tree with `[ref=N]` handles.
+5. Act with refs: `browser_click {ref: "5"}`, `browser_fill {ref: "3", text: "..."}`, `browser_press {key: "Enter"}`.
+6. Snapshot again to verify, or read `browser_get {attribute: "text", ref: "..."}`, `browser_network`, `browser_console`, `browser_errors`.
 
 All tools accept an optional `tab` param (short id from `browser_tab_list`) to target a specific tab.
 
-Tool categories (36 total): navigation, interaction, observation (includes `browser_eval` for arbitrary JS), tab management, diagnostics, extension-backed Chrome APIs (`browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`), site adapters (`browser_site_list`/`_info`/`_run`).
+Tool categories (37 total): navigation, interaction, observation (includes `browser_viewport` for responsive layouts and `browser_eval` for arbitrary JS), tab management, diagnostics, extension-backed Chrome APIs (`browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`), site adapters (`browser_site_list`/`_info`/`_run`).
 
 ### 2. Shell / CLI
 
 ```bash
 borz open <url>                            # reuses tab with same URL; --new forces fresh
+borz open <url> --viewport mobile          # open/apply a mobile viewport for RWD checks
+borz viewport [mobile|tablet|desktop|reset]
 borz open <url> --wait-for '<selector>'    # block until selector exists (default 10s)
 borz click <ref> --wait-for '.modal'       # --wait-for works on most actions, not just open
 borz snapshot -i -c                        # -i: interactive only, -c: compact
@@ -93,11 +96,12 @@ Site adapters over HTTP: `GET /v1/sites`, `POST /v1/sites/info {name}`, `POST /v
 3. **Prefer compact interactive snapshots (`-i -c` or `{interactive: true, compact: true}`)** when you only need clickable/fillable elements — much shorter and cheaper.
 4. **`browser_eval` is the escape hatch** for anything the structured tools can't express — custom DOM queries, reading `localStorage`, calling page APIs with the user's session.
 5. **Use `--since last_action`** on network/console/errors to get only events since your last interaction. Avoids re-reading the full ring buffer.
-6. **For page visuals**, use `browser_screenshot` — it shows the rendered UI (post-JS, post-CSS, with the user's logged-in state) that fetched HTML can't.
-7. **Diagnose failures with `browser_console` + `browser_errors`** before assuming the automation is broken. Pages often log hints.
-8. **Prefer `--wait-for '<selector>'` over `wait <ms>`** for any DOM change. Works on `open`, `click`, `fill`, `press`, `eval`, etc. — the action runs, then the daemon polls `document.querySelector(...)` until non-null or timeout (default 10s, override with `--timeout <ms>`).
-9. **Use `eval --unwrap` to strip `{success, data, result, ...}` envelopes** when you only want the value — strings are emitted unquoted, other shapes as JSON. Combine with `--file <path>` for non-trivial scripts.
-10. **Use extension-backed tools for browser-level state CDP cannot see**: all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser events. Check `browser_extension_status` / `borz extension status` first if one of these reports that no extension is connected.
+6. **For RWD/mobile checks**, set viewport before observing: `browser_viewport {preset: "mobile"}` or `borz viewport mobile`. Re-snapshot afterward because refs can go stale after layout changes.
+7. **For page visuals**, use `browser_screenshot` — it shows the rendered UI (post-JS, post-CSS, with the user's logged-in state) that fetched HTML can't.
+8. **Diagnose failures with `browser_console` + `browser_errors`** before assuming the automation is broken. Pages often log hints.
+9. **Prefer `--wait-for '<selector>'` over `wait <ms>`** for any DOM change. Works on `open`, `click`, `fill`, `press`, `eval`, etc. — the action runs, then the daemon polls `document.querySelector(...)` until non-null or timeout (default 10s, override with `--timeout <ms>`).
+10. **Use `eval --unwrap` to strip `{success, data, result, ...}` envelopes** when you only want the value — strings are emitted unquoted, other shapes as JSON. Combine with `--file <path>` for non-trivial scripts.
+11. **Use extension-backed tools for browser-level state CDP cannot see**: all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser events. Check `browser_extension_status` / `borz extension status` first if one of these reports that no extension is connected.
 
 ## Site adapters
 

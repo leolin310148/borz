@@ -60,6 +60,7 @@ func newMCPServer(version string) *server.MCPServer {
 	// Observation
 	s.AddTool(snapshotTool, handleSnapshot)
 	s.AddTool(screenshotTool, handleScreenshot)
+	s.AddTool(viewportTool, handleViewport)
 	s.AddTool(getTool, handleGet)
 	s.AddTool(evalTool, handleEval)
 	s.AddTool(waitTool, handleWait)

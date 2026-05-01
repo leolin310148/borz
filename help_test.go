@@ -77,7 +77,7 @@ func TestCommandHelpCoversDispatch(t *testing.T) {
 	expected := []string{
 		"open", "back", "forward", "refresh", "close",
 		"click", "hover", "fill", "type", "check", "uncheck", "select",
-		"eval", "get", "screenshot", "press", "scroll", "wait",
+		"eval", "get", "screenshot", "viewport", "press", "scroll", "wait",
 		"snapshot", "tab", "frame", "dialog", "network", "console", "errors", "trace",
 		"fetch", "mcp", "daemon", "server", "service", "client", "status", "site", "update", "history",
 		"cookies", "bookmarks", "browser-history", "downloads", "window", "windows", "extension",

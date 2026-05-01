@@ -599,8 +599,12 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		if url == "" {
 			url = "about:blank"
 		}
+		createURL := url
+		if req.Viewport != nil && url != "about:blank" {
+			createURL = "about:blank"
+		}
 		result, err := cdp.BrowserCommand("Target.createTarget", map[string]interface{}{
-			"url": url, "background": true,
+			"url": createURL, "background": true,
 		})
 		if err != nil {
 			return failResp(req.ID, err)
@@ -610,6 +614,18 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 		json.Unmarshal(result, &created)
 		cdp.AttachAndEnable(created.TargetID)
+		var viewport *protocol.ViewportInfo
+		if req.Viewport != nil {
+			viewport, err = applyViewport(cdp, created.TargetID, req.Viewport)
+			if err != nil {
+				return failResp(req.ID, err)
+			}
+		}
+		if createURL != url {
+			if _, err := cdp.PageCommand(created.TargetID, "Page.navigate", map[string]interface{}{"url": url}); err != nil {
+				return failResp(req.ID, err)
+			}
+		}
 		// Wait for the new tab's page context to leave about:blank so that
 		// follow-up fetch/eval calls don't run in the initial blank context
 		// and fail CORS with a generic "Failed to fetch".
@@ -623,7 +639,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			seq = &s
 		}
 		return okResp(req.ID, &protocol.ResponseData{
-			TabID: created.TargetID, URL: url, Tab: shortID, Seq: seq,
+			TabID: created.TargetID, URL: url, Tab: shortID, Seq: seq, Viewport: viewport,
 		})
 	}
 
@@ -651,15 +667,30 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 					s := reused.RecordAction()
 					seq = &s
 				}
+				var viewport *protocol.ViewportInfo
+				if req.Viewport != nil {
+					var err error
+					viewport, err = applyViewport(cdp, existing.ID, req.Viewport)
+					if err != nil {
+						return failResp(req.ID, err)
+					}
+					if reused != nil {
+						reused.Refs = map[string]*protocol.RefInfo{}
+					}
+				}
 				return withWaitFor(req, cdp, existing.ID, okResp(req.ID, &protocol.ResponseData{
 					TabID: existing.ID, URL: existing.URL, Title: existing.Title,
-					Tab: shortID, Seq: seq,
+					Tab: shortID, Seq: seq, Viewport: viewport,
 				}))
 			}
 		}
 
+		createURL := req.URL
+		if req.Viewport != nil {
+			createURL = "about:blank"
+		}
 		result, err := cdp.BrowserCommand("Target.createTarget", map[string]interface{}{
-			"url": req.URL,
+			"url": createURL,
 		})
 		if err != nil {
 			return failResp(req.ID, err)
@@ -669,7 +700,19 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 		json.Unmarshal(result, &created)
 		cdp.AttachAndEnable(created.TargetID)
+		var viewport *protocol.ViewportInfo
+		if req.Viewport != nil {
+			viewport, err = applyViewport(cdp, created.TargetID, req.Viewport)
+			if err != nil {
+				return failResp(req.ID, err)
+			}
+		}
 		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": created.TargetID})
+		if createURL != req.URL {
+			if _, err := cdp.PageCommand(created.TargetID, "Page.navigate", map[string]interface{}{"url": req.URL}); err != nil {
+				return failResp(req.ID, err)
+			}
+		}
 		// Same readiness wait as ActionTabNew — see waitForTabNavigated.
 		waitForTabNavigated(cdp, created.TargetID, req.URL, newTabReadyTimeout)
 		cdp.CurrentTargetID = created.TargetID
@@ -682,7 +725,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			seq = &s
 		}
 		return withWaitFor(req, cdp, created.TargetID, okResp(req.ID, &protocol.ResponseData{
-			TabID: created.TargetID, URL: req.URL, Tab: shortID, Seq: seq,
+			TabID: created.TargetID, URL: req.URL, Tab: shortID, Seq: seq, Viewport: viewport,
 		}))
 	}
 
@@ -719,6 +762,13 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			return failResp(req.ID, "missing url parameter")
 		}
 		seq := tab.RecordAction()
+		var viewport *protocol.ViewportInfo
+		if req.Viewport != nil {
+			viewport, err = applyViewport(cdp, target.ID, req.Viewport)
+			if err != nil {
+				return failResp(req.ID, err)
+			}
+		}
 		cdp.PageCommand(target.ID, "Page.navigate", map[string]interface{}{"url": req.URL})
 		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": target.ID})
 		// open always activates — pin CurrentTargetID since EnsurePageTarget
@@ -726,7 +776,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		cdp.CurrentTargetID = target.ID
 		tab.Refs = map[string]*protocol.RefInfo{}
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{
-			URL: req.URL, Title: target.Title, TabID: target.ID, Tab: shortID, Seq: intPtr(seq),
+			URL: req.URL, Title: target.Title, TabID: target.ID, Tab: shortID, Seq: intPtr(seq), Viewport: viewport,
 		}))
 
 	case protocol.ActionBack:
@@ -791,6 +841,19 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		return okResp(req.ID, &protocol.ResponseData{
 			DataURL: "data:image/png;base64," + screenshot.Data, Tab: shortID,
 		})
+
+	case protocol.ActionViewport:
+		var seq *int
+		if req.Viewport != nil {
+			s := tab.RecordAction()
+			seq = &s
+			tab.Refs = map[string]*protocol.RefInfo{}
+		}
+		viewport, err := applyViewport(cdp, target.ID, req.Viewport)
+		if err != nil {
+			return failResp(req.ID, err)
+		}
+		return okResp(req.ID, &protocol.ResponseData{Viewport: viewport, Tab: shortID, Seq: seq})
 
 	// --- Element interaction ---
 	case protocol.ActionClick, protocol.ActionHover:
