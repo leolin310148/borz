@@ -140,6 +140,9 @@ func main() {
 		if hasFlag(args, "-c") || hasFlag(args, "--compact") {
 			req.Compact = true
 		}
+		if hasFlag(args, "--diff") {
+			req.Diff = true
+		}
 		if v := getArgValue(args, "-d"); v != "" {
 			if d, err := strconv.Atoi(v); err == nil {
 				req.MaxDepth = &d
@@ -160,7 +163,25 @@ func main() {
 			req.TabID = globalTabID
 		}
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
-			if resp.Data != nil && resp.Data.SnapshotData != nil {
+			if resp.Data == nil {
+				return
+			}
+			// --diff prefers the structured diff text. The first call after
+			// navigation (or the very first ever) is a baseline reset — print
+			// a header so the agent knows it isn't really a "diff".
+			if req.Diff && resp.Data.SnapshotDiffData != nil {
+				dd := resp.Data.SnapshotDiffData
+				if dd.BaselineReset {
+					fmt.Println("(baseline reset — full snapshot follows)")
+				}
+				if dd.Diff != "" {
+					fmt.Println(dd.Diff)
+				} else {
+					fmt.Println("(no changes since last snapshot)")
+				}
+				return
+			}
+			if resp.Data.SnapshotData != nil {
 				fmt.Println(resp.Data.SnapshotData.Snapshot)
 			}
 		})

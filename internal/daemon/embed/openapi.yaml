@@ -430,6 +430,13 @@ paths:
         Returns a YAML-ish snapshot plus a `refs`/`elements` map you can feed
         back into `/v1/click`, `/v1/fill`, etc. Use `interactive: true` to skip
         non-interactive nodes, or `selector` / `role` to filter.
+
+        Pass `diff: true` to also receive a `snapshotDiffData` object that
+        lists only what was added, removed, or whose tracked attributes
+        (aria-pressed, aria-disabled, etc.) or accessible name changed since
+        the previous snapshot of the same tab. The first call after
+        navigation (or the first ever) is a baseline reset:
+        `baselineReset` is true and everything is reported as added.
       requestBody:
         content:
           application/json:
@@ -443,6 +450,12 @@ paths:
                     maxDepth: { type: integer }
                     selector: { type: string, description: CSS selector subtree root }
                     role: { type: string, description: ARIA role filter }
+                    diff:
+                      type: boolean
+                      description: |
+                        When true, include a `snapshotDiffData` object alongside the
+                        regular snapshot, listing only changes since the previous
+                        snapshot of this tab. Not compatible with `mode: text`.
                     mode:
                       type: string
                       enum: [text]
@@ -465,6 +478,7 @@ paths:
                         type: object
                         properties:
                           snapshotData: { $ref: "#/components/schemas/SnapshotData" }
+                          snapshotDiffData: { $ref: "#/components/schemas/SnapshotDiffData" }
 
   /v1/screenshot:
     post:
@@ -1333,6 +1347,76 @@ components:
         elements:
           type: array
           items: { $ref: "#/components/schemas/ElementInfo" }
+
+    AttrDelta:
+      type: object
+      properties:
+        old: { type: string }
+        new: { type: string }
+
+    DiffEntry:
+      type: object
+      properties:
+        ref:
+          type: string
+          description: |
+            For added/changed entries, the CURRENT snapshot's ref (safe to
+            act on). For removed entries, the PREVIOUS ref (informational —
+            the node is gone).
+        role: { type: string }
+        name: { type: string }
+        tagName: { type: string }
+        xpath: { type: string }
+        key:
+          type: string
+          description: Stable cross-snapshot identity key (id:..., sem:..., or xpath:...).
+
+    DiffChange:
+      type: object
+      properties:
+        ref:      { type: string, description: Current ref (safe to act on) }
+        prevRef:  { type: string, description: Ref this node had in the previous snapshot }
+        role:     { type: string }
+        name:     { type: string }
+        tagName:  { type: string }
+        xpath:    { type: string }
+        key:      { type: string }
+        nameChanged: { $ref: "#/components/schemas/AttrDelta" }
+        attrChanges:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/AttrDelta" }
+          description: |
+            Old/new pairs for each tracked attribute that changed between
+            snapshots. Tracked attributes: aria-pressed, aria-checked,
+            aria-expanded, aria-selected, aria-disabled, disabled,
+            aria-hidden, value, checked, aria-current, aria-busy,
+            aria-invalid.
+
+    DiffStats:
+      type: object
+      properties:
+        added:     { type: integer }
+        removed:   { type: integer }
+        changed:   { type: integer }
+        unchanged: { type: integer }
+
+    SnapshotDiffData:
+      type: object
+      description: |
+        Structured diff of the current snapshot against the tab's previous
+        baseline. `diff` is the rendered text (`+` added / `-` removed / `~`
+        changed); the slices contain the same data programmatically.
+      properties:
+        diff:    { type: string }
+        added:   { type: array, items: { $ref: "#/components/schemas/DiffEntry" } }
+        removed: { type: array, items: { $ref: "#/components/schemas/DiffEntry" } }
+        changed: { type: array, items: { $ref: "#/components/schemas/DiffChange" } }
+        stats:   { $ref: "#/components/schemas/DiffStats" }
+        baselineReset:
+          type: boolean
+          description: |
+            True on the first snapshot ever, or when the URL changed since
+            the previous snapshot. In that case `added` lists everything.
 
     NetworkRequestInfo:
       type: object

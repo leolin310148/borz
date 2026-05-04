@@ -146,6 +146,7 @@ var snapshotTool = mcp.NewTool("browser_snapshot",
 	mcp.WithString("selector", mcp.Description("Case-insensitive substring match across tag/role/name/xpath/attribute values. Not CSS. Filters elements; pass e.g. \"submit\" to narrow the snapshot. Combine with role for precision.")),
 	mcp.WithString("role", mcp.Description("Filter to elements of an exact accessibility role (case-insensitive), e.g. \"button\", \"textbox\", \"link\". AND'd with selector.")),
 	mcp.WithBoolean("textOnly", mcp.Description("Reader-mode output: title + URL + visible page text only (nav/header/footer/script/style stripped). No element refs are produced — use for summarization or LLM context, not before interaction.")),
+	mcp.WithBoolean("diff", mcp.Description("Return only what changed since the previous snapshot of this tab: + added, - removed, ~ attribute or name change. Refs in the diff are CURRENT refs (safe to act on). The first call after navigation is a baseline reset that lists everything as added. Not compatible with textOnly.")),
 	tabParam(),
 )
 

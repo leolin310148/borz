@@ -181,17 +181,30 @@ func waitForSelector(cdp *CdpConnection, targetID, selector string, timeout time
 
 // --- Snapshot ---
 
-func buildSnapshot(cdp *CdpConnection, targetID string, tab *TabState, req *protocol.Request) (*protocol.SnapshotData, error) {
+// buildSnapshot returns the regular SnapshotData for the request and, when
+// req.Diff is true, also a SnapshotDiffData computed against the tab's
+// previous baseline. The previous baseline (tab.PrevDiffSnapshot) is
+// rewritten on every successful tree-mode call so the next --diff has
+// something to compare against.
+//
+// Text-mode snapshots cannot be diffed (they have no structural ancestors)
+// and clear the baseline so a subsequent --diff returns a clean reset
+// rather than diffing against a stale tree-mode tree.
+func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req *protocol.Request) (*protocol.SnapshotData, *protocol.SnapshotDiffData, error) {
 	if req.Mode == "text" {
+		if req.Diff {
+			return nil, nil, fmt.Errorf("snapshot --diff is not supported in text mode")
+		}
 		snap, err := buildTextSnapshot(cdp, targetID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// Text mode does not establish refs; clear any stale ones from a
 		// previous tree-mode snapshot so '<text-only>' followed by 'click ref'
 		// fails fast with a clear error instead of acting on a stale handle.
 		tab.Refs = map[string]*protocol.RefInfo{}
-		return snap, nil
+		tab.PrevDiffSnapshot = nil
+		return snap, nil, nil
 	}
 	script := loadBuildDomTreeScript()
 	buildArgs := `{"showHighlightElements":true,"focusHighlightIndex":-1,"viewportExpansion":-1,"debugMode":false,"startId":0,"startHighlightIndex":0}`
@@ -204,18 +217,30 @@ func buildSnapshot(cdp *CdpConnection, targetID string, tab *TabState, req *prot
 		title := ""
 		json.Unmarshal(titleRaw, &title)
 		tab.Refs = map[string]*protocol.RefInfo{}
-		return &protocol.SnapshotData{Snapshot: title, Refs: map[string]*protocol.RefInfo{}}, nil
+		tab.PrevDiffSnapshot = nil
+		return &protocol.SnapshotData{Snapshot: title, Refs: map[string]*protocol.RefInfo{}}, nil, nil
 	}
 
 	var result buildDomTreeResult
 	if err := json.Unmarshal(raw, &result); err != nil || result.RootID == "" {
 		tab.Refs = map[string]*protocol.RefInfo{}
-		return &protocol.SnapshotData{Snapshot: "", Refs: map[string]*protocol.RefInfo{}}, nil
+		tab.PrevDiffSnapshot = nil
+		return &protocol.SnapshotData{Snapshot: "", Refs: map[string]*protocol.RefInfo{}}, nil, nil
 	}
 
 	snapshot := ConvertBuildDomTreeResult(&result, req.Interactive, req.Compact, req.MaxDepth, req.Selector, req.Role)
 	tab.Refs = snapshot.Refs
-	return snapshot, nil
+
+	// Always build the structural DiffSnapshot — it's cheap and being
+	// always-on means whether or not the *current* call asked for --diff,
+	// the *next* call has a baseline.
+	currDiff := BuildDiffSnapshot(&result, url)
+	var diffData *protocol.SnapshotDiffData
+	if req.Diff {
+		diffData = DiffSnapshots(tab.PrevDiffSnapshot, currDiff)
+	}
+	tab.PrevDiffSnapshot = currDiff
+	return snapshot, diffData, nil
 }
 
 // --- Ref resolution ---
@@ -802,12 +827,15 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 
 	// --- Snapshot / Observation ---
 	case protocol.ActionSnapshot:
-		snapshotData, err := buildSnapshot(cdp, target.ID, tab, req)
+		snapshotData, diffData, err := buildSnapshot(cdp, target.ID, target.URL, tab, req)
 		if err != nil {
 			return failResp(req.ID, err)
 		}
 		return okResp(req.ID, &protocol.ResponseData{
-			Title: target.Title, URL: target.URL, SnapshotData: snapshotData, Tab: shortID,
+			Title: target.Title, URL: target.URL,
+			SnapshotData:     snapshotData,
+			SnapshotDiffData: diffData,
+			Tab:              shortID,
 		})
 
 	case protocol.ActionScreenshot:

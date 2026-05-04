@@ -41,6 +41,12 @@ type TabState struct {
 	// Element refs from the most recent snapshot.
 	Refs map[string]*protocol.RefInfo
 
+	// PrevDiffSnapshot is the baseline used by `snapshot --diff`. It is
+	// rewritten after every successful tree-mode snapshot so the next
+	// `--diff` call has something to compare against. Cleared (left as
+	// nil) on text-mode or when the tree build fails.
+	PrevDiffSnapshot *DiffSnapshot
+
 	// Active frame ID for iframe navigation, empty = main frame.
 	ActiveFrameID string
 

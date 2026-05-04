@@ -169,24 +169,31 @@ var commandHelp = map[string]cmdHelp{
 	// --- Observation ---
 	"snapshot": {
 		Summary: "Emit the accessibility tree of the page with [ref=N] handles.",
-		Usage:   "borz snapshot [-i] [-c] [-d N] [-s <selector>] [--text-only] [--tab <id>]",
+		Usage:   "borz snapshot [-i] [-c] [-d N] [-s <selector>] [--text-only] [--diff] [--tab <id>]",
 		Flags: []string{
 			"  -i, --interactive   Include only clickable/fillable elements (much shorter)",
 			"  -c, --compact       Collapse whitespace and redundant nesting",
 			"  -d, --depth N       Limit tree depth to N levels",
 			"  -s, --selector CSS  Snapshot only the subtree matching a CSS selector",
 			"  --text-only         Reader-mode plain text (no refs, no tree); good for LLM context",
+			"  --diff              Print only what changed since the previous snapshot of this tab (+/-/~)",
 		},
 		Examples: []string{
 			"  borz snapshot -i -c",
 			"  borz snapshot -d 4 -s '#app'",
 			"  borz snapshot --text-only",
+			"  borz snapshot --diff",
 		},
 		Notes: "Always snapshot before calling interaction commands — refs are regenerated " +
 			"on every snapshot and go stale across navigations or DOM updates.\n" +
 			"--text-only strips nav/header/footer/script/style and returns the visible text " +
 			"(plus title and URL); refs are NOT produced, so follow with a normal snapshot " +
-			"before any click/fill/etc.",
+			"before any click/fill/etc.\n" +
+			"--diff returns a `+` / `-` / `~` listing of nodes added, removed, or whose tracked " +
+			"attributes (aria-pressed, aria-disabled, etc.) or accessible name changed since the " +
+			"last snapshot of this tab. The very first call (or the first after the URL changes) " +
+			"is a baseline reset: everything is reported as added. Refs in the diff are CURRENT " +
+			"refs — safe to act on. Not supported with --text-only.",
 	},
 	"screenshot": {
 		Summary: "Capture a PNG of the current page.",

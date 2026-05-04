@@ -43,6 +43,24 @@ func TestOpenAPIRoutes(t *testing.T) {
 		}
 	})
 
+	t.Run("spec documents snapshot --diff", func(t *testing.T) {
+		body := string(openAPISpec)
+		// The flag must show up on the request schema for /v1/snapshot.
+		if !strings.Contains(body, "diff:") {
+			t.Fatal("/v1/snapshot request schema must include `diff` field")
+		}
+		// And the response schema must surface the diff data.
+		if !strings.Contains(body, "snapshotDiffData") {
+			t.Fatal("response schema must include `snapshotDiffData`")
+		}
+		if !strings.Contains(body, "SnapshotDiffData:") {
+			t.Fatal("components/schemas must define SnapshotDiffData")
+		}
+		if !strings.Contains(body, "DiffEntry:") || !strings.Contains(body, "DiffChange:") {
+			t.Fatal("components/schemas must define DiffEntry and DiffChange")
+		}
+	})
+
 	t.Run("non-GET rejected", func(t *testing.T) {
 		for _, path := range []string{"/openapi.yaml", "/docs"} {
 			rec := httptest.NewRecorder()

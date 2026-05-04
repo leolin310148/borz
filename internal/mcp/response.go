@@ -33,9 +33,29 @@ func textResult(resp *protocol.Response, message string) *mcp.CallToolResult {
 	return mcp.NewToolResultText(message)
 }
 
-// formatSnapshot formats a snapshot response as text.
+// formatSnapshot formats a snapshot response as text. When the response
+// carries a SnapshotDiffData (i.e. the request set diff=true), the diff
+// text is preferred over the full snapshot — including a baseline-reset
+// header on the first call so callers know the next call is the real
+// diff.
 func formatSnapshot(resp *protocol.Response) *mcp.CallToolResult {
-	if resp.Data == nil || resp.Data.SnapshotData == nil {
+	if resp.Data == nil {
+		return mcp.NewToolResultText("(empty snapshot)")
+	}
+	if dd := resp.Data.SnapshotDiffData; dd != nil {
+		if dd.BaselineReset {
+			body := "(baseline reset — full snapshot follows)"
+			if dd.Diff != "" {
+				body += "\n" + dd.Diff
+			}
+			return mcp.NewToolResultText(body)
+		}
+		if dd.Diff == "" {
+			return mcp.NewToolResultText("(no changes since last snapshot)")
+		}
+		return mcp.NewToolResultText(dd.Diff)
+	}
+	if resp.Data.SnapshotData == nil {
 		return mcp.NewToolResultText("(empty snapshot)")
 	}
 	return mcp.NewToolResultText(resp.Data.SnapshotData.Snapshot)

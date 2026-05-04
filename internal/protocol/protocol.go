@@ -74,6 +74,11 @@ type Request struct {
 	MaxDepth    *int   `json:"maxDepth,omitempty"`
 	Selector    string `json:"selector,omitempty"`
 	Role        string `json:"role,omitempty"`
+	// Diff, when true on a snapshot request, returns SnapshotDiffData
+	// computed against the previous snapshot of the same tab/URL. The
+	// regular snapshot text/refs are still produced and remain available
+	// in SnapshotData for ref lookup.
+	Diff bool `json:"diff,omitempty"`
 
 	// Tab/Frame
 	TabID interface{} `json:"tabId,omitempty"` // number or string
@@ -219,6 +224,60 @@ type SnapshotData struct {
 	Elements []*ElementInfo      `json:"elements"`
 }
 
+// AttrDelta is one attribute's old→new transition inside SnapshotDiffData.
+type AttrDelta struct {
+	Old string `json:"old"`
+	New string `json:"new"`
+}
+
+// DiffEntry is a single element in the Added or Removed list of a snapshot
+// diff. For Removed entries, Ref carries the *previous* ref purely as an
+// informational hint — the node no longer exists, so the ref is not
+// actionable.
+type DiffEntry struct {
+	Ref     string `json:"ref,omitempty"`
+	Role    string `json:"role,omitempty"`
+	Name    string `json:"name,omitempty"`
+	TagName string `json:"tagName,omitempty"`
+	XPath   string `json:"xpath,omitempty"`
+	Key     string `json:"key,omitempty"`
+}
+
+// DiffChange is a single element matched across snapshots whose tracked
+// attributes or accessible name changed. Ref is the *current* snapshot's
+// ref, so the agent can act on it; PrevRef is informational.
+type DiffChange struct {
+	Ref         string               `json:"ref,omitempty"`
+	PrevRef     string               `json:"prevRef,omitempty"`
+	Role        string               `json:"role,omitempty"`
+	Name        string               `json:"name,omitempty"`
+	TagName     string               `json:"tagName,omitempty"`
+	XPath       string               `json:"xpath,omitempty"`
+	Key         string               `json:"key,omitempty"`
+	NameChanged *AttrDelta           `json:"nameChanged,omitempty"`
+	AttrChanges map[string]AttrDelta `json:"attrChanges,omitempty"`
+}
+
+// DiffStats is the per-category count summary in SnapshotDiffData.
+type DiffStats struct {
+	Added     int `json:"added"`
+	Removed   int `json:"removed"`
+	Changed   int `json:"changed"`
+	Unchanged int `json:"unchanged"`
+}
+
+// SnapshotDiffData is the structured diff produced when snapshot is called
+// with diff=true. Diff is the formatted text with `+`/`-`/`~` lines; the
+// slices contain the same data in machine-readable form.
+type SnapshotDiffData struct {
+	Diff          string        `json:"diff"`
+	Added         []*DiffEntry  `json:"added,omitempty"`
+	Removed       []*DiffEntry  `json:"removed,omitempty"`
+	Changed       []*DiffChange `json:"changed,omitempty"`
+	Stats         DiffStats     `json:"stats"`
+	BaselineReset bool          `json:"baselineReset,omitempty"`
+}
+
 // NetworkRequestInfo represents a captured network request.
 type NetworkRequestInfo struct {
 	RequestID             string            `json:"requestId"`
@@ -297,7 +356,8 @@ type ResponseData struct {
 	Seq    *int        `json:"seq,omitempty"`
 	Cursor *int        `json:"cursor,omitempty"`
 
-	SnapshotData   *SnapshotData `json:"snapshotData,omitempty"`
+	SnapshotData     *SnapshotData     `json:"snapshotData,omitempty"`
+	SnapshotDiffData *SnapshotDiffData `json:"snapshotDiffData,omitempty"`
 	Viewport       *ViewportInfo `json:"viewport,omitempty"`
 	Value          string        `json:"value,omitempty"`
 	ScreenshotPath string        `json:"screenshotPath,omitempty"`

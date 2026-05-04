@@ -104,6 +104,41 @@ func TestFormatSnapshot_WithData(t *testing.T) {
 	}
 }
 
+func TestFormatSnapshot_DiffPreferred(t *testing.T) {
+	resp := &protocol.Response{Data: &protocol.ResponseData{
+		SnapshotData:     &protocol.SnapshotData{Snapshot: "FULL"},
+		SnapshotDiffData: &protocol.SnapshotDiffData{Diff: "+ button [ref=1]"},
+	}}
+	if got := firstText(t, formatSnapshot(resp)); got != "+ button [ref=1]" {
+		t.Errorf("diff should win over full snapshot, got %q", got)
+	}
+}
+
+func TestFormatSnapshot_DiffBaselineResetAddsHeader(t *testing.T) {
+	resp := &protocol.Response{Data: &protocol.ResponseData{
+		SnapshotDiffData: &protocol.SnapshotDiffData{
+			BaselineReset: true,
+			Diff:          "+ button [ref=1]",
+		},
+	}}
+	got := firstText(t, formatSnapshot(resp))
+	if !strings.Contains(got, "baseline reset") {
+		t.Errorf("expected baseline-reset header, got %q", got)
+	}
+	if !strings.Contains(got, "+ button [ref=1]") {
+		t.Errorf("expected diff body, got %q", got)
+	}
+}
+
+func TestFormatSnapshot_DiffEmpty_NoChangesMessage(t *testing.T) {
+	resp := &protocol.Response{Data: &protocol.ResponseData{
+		SnapshotDiffData: &protocol.SnapshotDiffData{Diff: ""},
+	}}
+	if got := firstText(t, formatSnapshot(resp)); got != "(no changes since last snapshot)" {
+		t.Errorf("text = %q", got)
+	}
+}
+
 // --- formatScreenshot ---
 
 func TestFormatScreenshot_NoData(t *testing.T) {
