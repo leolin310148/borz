@@ -358,11 +358,11 @@ type ResponseData struct {
 
 	SnapshotData     *SnapshotData     `json:"snapshotData,omitempty"`
 	SnapshotDiffData *SnapshotDiffData `json:"snapshotDiffData,omitempty"`
-	Viewport       *ViewportInfo `json:"viewport,omitempty"`
-	Value          string        `json:"value,omitempty"`
-	ScreenshotPath string        `json:"screenshotPath,omitempty"`
-	DataURL        string        `json:"dataUrl,omitempty"`
-	Result         interface{}   `json:"result,omitempty"`
+	Viewport         *ViewportInfo     `json:"viewport,omitempty"`
+	Value            string            `json:"value,omitempty"`
+	ScreenshotPath   string            `json:"screenshotPath,omitempty"`
+	DataURL          string            `json:"dataUrl,omitempty"`
+	Result           interface{}       `json:"result,omitempty"`
 
 	Tabs        []TabInfo `json:"tabs,omitempty"`
 	ActiveIndex *int      `json:"activeIndex,omitempty"`
@@ -406,4 +406,5 @@ type DaemonStatus struct {
 	CurrentSeq      int         `json:"currentSeq,omitempty"`
 	CurrentTargetID string      `json:"currentTargetId,omitempty"`
 	Tabs            interface{} `json:"tabs,omitempty"`
+	Version         string      `json:"version,omitempty"`
 }

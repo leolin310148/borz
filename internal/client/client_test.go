@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +23,8 @@ func resetState() {
 	cachedInfo = nil
 	daemonReady = false
 	useRemote = false
+	localVersion = ""
+	versionWarningShown = false
 }
 
 // stubDiscover replaces discoverCDPPort for the test duration.
@@ -789,6 +793,68 @@ func TestEnsureDaemon_UsesExistingDaemonJSON(t *testing.T) {
 	if cachedInfo == nil || !daemonReady {
 		t.Fatalf("daemon state not cached: cachedInfo=%+v daemonReady=%v", cachedInfo, daemonReady)
 	}
+}
+
+func TestEnsureDaemon_VersionMismatchWarnsButAdopts(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	SetLocalVersion("2.0.0")
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Write([]byte(`{"running":true,"version":"1.0.0"}`))
+	}))
+	defer ts.Close()
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	info := infoForServer(t, ts, "")
+	data, _ := json.Marshal(info)
+	os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600)
+
+	errOut := captureClientStderr(t, func() {
+		if err := EnsureDaemon(); err != nil {
+			t.Fatalf("EnsureDaemon: %v", err)
+		}
+	})
+	if !strings.Contains(errOut, "daemon is version 1.0.0") || !strings.Contains(errOut, "CLI is version 2.0.0") {
+		t.Fatalf("stderr warning = %q", errOut)
+	}
+	if cachedInfo == nil || !daemonReady {
+		t.Fatalf("daemon should be adopted despite mismatch: cachedInfo=%+v ready=%v", cachedInfo, daemonReady)
+	}
+
+	errOut = captureClientStderr(t, func() {
+		if err := EnsureDaemon(); err != nil {
+			t.Fatalf("EnsureDaemon cached: %v", err)
+		}
+	})
+	if errOut != "" {
+		t.Fatalf("warning should be emitted once, got %q", errOut)
+	}
+}
+
+func captureClientStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+	fn()
+	_ = w.Close()
+	return <-done
 }
 
 func TestEnsureDaemon_ClearsCachedStoppedDaemon(t *testing.T) {

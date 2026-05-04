@@ -203,6 +203,7 @@ func TestHandleHealthz(t *testing.T) {
 
 func TestHandleStatus(t *testing.T) {
 	s := newTestServer(t, "")
+	s.opts.Version = "test-version"
 	s.cdp.TabManager.AddTab("target-1")
 
 	// Wrong method.
@@ -227,6 +228,9 @@ func TestHandleStatus(t *testing.T) {
 	}
 	if body["running"] != true {
 		t.Fatalf("running: %+v", body)
+	}
+	if body["version"] != "test-version" {
+		t.Fatalf("version: %+v", body)
 	}
 	tabs, ok := body["tabs"].([]interface{})
 	if !ok || len(tabs) != 1 {

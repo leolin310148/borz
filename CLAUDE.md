@@ -73,6 +73,7 @@ Keep these in sync; tests assert this (e.g. MCP handler tests, REST tests, OpenA
 - `--wait-for <selector>` and `--timeout <ms>` are honored on **every page-changing action**, not just `open`. The daemon polls `document.querySelector` on a 100 ms tick.
 - `borz eval` auto-wraps top-level `await` in an async IIFE (CLI + MCP only — REST `/v1/eval` does NOT auto-wrap; clients are responsible).
 - `borz server` refuses to bind a non-loopback host without `--token` / `BORZ_TOKEN`.
+- Daemon/client version mismatch is warning-only; never auto-restart, rediscover CDP, or launch Chrome from mismatch handling.
 - Site adapters are arbitrary JS in the user's real Chrome session; changed SHA256 must be re-trusted (`borz site trust`) or run once with `--force`.
 
 ## Conventions

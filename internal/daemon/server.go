@@ -310,6 +310,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"currentSeq":      s.cdp.TabManager.CurrentSeq(),
 		"currentTargetId": s.cdp.CurrentTargetID,
 		"tabs":            tabs,
+		"version":         s.opts.Version,
 	})
 }
 

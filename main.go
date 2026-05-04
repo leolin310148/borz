@@ -40,6 +40,8 @@ var newDaemonServer = func(opts daemon.ServerOptions) daemonRunner {
 }
 
 func main() {
+	client.SetLocalVersion(version)
+
 	args := os.Args[1:]
 	if len(args) == 0 {
 		printHelp()

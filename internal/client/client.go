@@ -22,9 +22,11 @@ import (
 )
 
 var (
-	cachedInfo  *protocol.DaemonInfo
-	daemonReady bool
-	useRemote   bool
+	cachedInfo          *protocol.DaemonInfo
+	daemonReady         bool
+	useRemote           bool
+	localVersion        string
+	versionWarningShown bool
 
 	// discoverCDPPort is indirected so tests can bypass real CDP discovery.
 	discoverCDPPort = DiscoverCDPPort
@@ -34,6 +36,10 @@ var (
 	browserExecutableFinder = findBrowserExecutable
 	canConnect              = defaultCanConnect
 )
+
+// SetLocalVersion records the CLI version so daemon mismatches can be warned
+// without changing daemon/browser lifecycle.
+func SetLocalVersion(v string) { localVersion = v }
 
 // RemoteConfig is persisted by `borz client setup` and stores the server
 // used when a CLI invocation opts into remote routing with --remote.
@@ -49,6 +55,8 @@ func ResetForTests() {
 	cachedInfo = nil
 	daemonReady = false
 	useRemote = false
+	localVersion = ""
+	versionWarningShown = false
 }
 
 // SetRemoteRouting controls whether this process sends browser actions to the
@@ -278,17 +286,24 @@ func httpJSON(method, urlPath string, info *protocol.DaemonInfo, body interface{
 	return httpJSONEndpoint(method, fmt.Sprintf("http://%s:%d", info.Host, info.Port), info.Token, urlPath, body, timeout)
 }
 
+func warnDaemonVersionMismatch(daemonVersion string) {
+	if versionWarningShown || localVersion == "" || daemonVersion == "" || daemonVersion == localVersion {
+		return
+	}
+	versionWarningShown = true
+	fmt.Fprintf(os.Stderr, "Warning: borz daemon is version %s, but CLI is version %s; run `borz daemon stop` to refresh when convenient.\n", daemonVersion, localVersion)
+}
+
 // EnsureDaemon makes sure the daemon is running and ready.
 func EnsureDaemon() error {
 	if daemonReady && cachedInfo != nil {
 		// Quick re-check
 		raw, err := httpJSON("GET", "/status", cachedInfo, nil, 2*time.Second)
 		if err == nil {
-			var status struct {
-				Running bool `json:"running"`
-			}
+			var status protocol.DaemonStatus
 			json.Unmarshal(raw, &status)
 			if status.Running {
+				warnDaemonVersionMismatch(status.Version)
 				return nil
 			}
 		}
@@ -305,11 +320,10 @@ func EnsureDaemon() error {
 		} else {
 			raw, err := httpJSON("GET", "/status", info, nil, 2*time.Second)
 			if err == nil {
-				var status struct {
-					Running bool `json:"running"`
-				}
+				var status protocol.DaemonStatus
 				json.Unmarshal(raw, &status)
 				if status.Running {
+					warnDaemonVersionMismatch(status.Version)
 					cachedInfo = info
 					daemonReady = true
 					return nil

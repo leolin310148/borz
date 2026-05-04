@@ -55,6 +55,7 @@ Read `llm.txt` before changing commands, endpoints, tools, or documented behavio
 - `--wait-for <selector>` and `--timeout <ms>` apply to every page-changing action, not just `open`.
 - CLI and MCP `eval` auto-wrap top-level `await`; REST `/v1/eval` does not.
 - `borz server` must not bind non-loopback without a token.
+- Daemon/client version mismatch is warning-only; never auto-restart, rediscover CDP, or launch Chrome from mismatch handling.
 - Site adapters are arbitrary JS on the daemon filesystem and require trust when their SHA256 changes.
 - Network, console, and error buffers are per-tab ring buffers.
 
