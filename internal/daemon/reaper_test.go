@@ -102,8 +102,26 @@ func TestReapOnce_NoActionFallsBackToCreatedAt(t *testing.T) {
 	closer := &fakeCloser{}
 	closed := reapOnce(tm, closer, 30*time.Minute, "", now)
 
-	if len(closed) != 1 || closed[0] != "t1" {
-		t.Fatalf("closed=%v want [t1]", closed)
+	if len(closed) != 0 {
+		t.Fatalf("closed=%v want none; unknown active target should preserve the last tab", closed)
+	}
+}
+
+func TestReapOnce_UnknownActiveKeepsMostRecentTab(t *testing.T) {
+	tm := NewTabStateManager()
+	older := tm.AddTab("older-tab")
+	newer := tm.AddTab("newer-tab")
+	now := time.Now()
+	older.CreatedAt = now.Add(-2 * time.Hour)
+	older.lastActionUnixNano.Store(now.Add(-90 * time.Minute).UnixNano())
+	newer.CreatedAt = now.Add(-2 * time.Hour)
+	newer.lastActionUnixNano.Store(now.Add(-70 * time.Minute).UnixNano())
+
+	closer := &fakeCloser{}
+	closed := reapOnce(tm, closer, 30*time.Minute, "", now)
+
+	if len(closed) != 1 || closed[0] != "older-tab" {
+		t.Fatalf("closed=%v want [older-tab]", closed)
 	}
 }
 
@@ -162,8 +180,10 @@ func TestRecordAction_StampsLastActionAt(t *testing.T) {
 func TestRunIdleTabReaperLoop(t *testing.T) {
 	tm := NewTabStateManager()
 	tab := tm.AddTab("loop-tab")
+	keep := tm.AddTab("keep-tab")
 	now := time.Now()
 	tab.CreatedAt = now.Add(-time.Hour)
+	keep.CreatedAt = now
 
 	closer := &fakeCloser{}
 	ctx, cancel := context.WithCancel(context.Background())

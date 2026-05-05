@@ -442,7 +442,7 @@ func (s *Server) dispatchAndWrite(w http.ResponseWriter, req *protocol.Request) 
 				"id":      req.ID,
 				"success": false,
 				"error":   fmt.Sprintf("Chrome not connected (CDP at %s)", cdpTarget),
-				"reason":  s.cdp.LastError,
+				"reason":  s.cdp.GetLastError(),
 			})
 			return
 		}
@@ -512,8 +512,8 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 		checks = append(checks, doctorCheck{Name: "CDP connected", Status: "ok", Detail: cdpTarget + " attached"})
 	} else {
 		detail := cdpTarget + " not attached"
-		if s.cdp.LastError != "" {
-			detail += " (" + s.cdp.LastError + ")"
+		if lastErr := s.cdp.GetLastError(); lastErr != "" {
+			detail += " (" + lastErr + ")"
 		}
 		checks = append(checks, doctorCheck{Name: "CDP connected", Status: "fail", Detail: detail})
 	}

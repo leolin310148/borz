@@ -138,7 +138,7 @@ func (s *Server) RunContext(ctx context.Context) error {
 			s.cdp,
 			threshold,
 			reaperTickInterval,
-			func() string { return s.cdp.CurrentTargetID },
+			func() string { return s.cdp.GetCurrentTargetID() },
 			time.Now,
 		)
 	}
@@ -261,7 +261,7 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 				"id":      req.ID,
 				"success": false,
 				"error":   fmt.Sprintf("Chrome not connected (CDP at %s)", cdpTarget),
-				"reason":  s.cdp.LastError,
+				"reason":  s.cdp.GetLastError(),
 				"hint":    "Make sure Chrome is running. Try: borz daemon shutdown && borz tab list",
 			})
 			return
@@ -308,7 +308,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"cdpConnected":    s.cdp.Connected(),
 		"uptime":          s.uptime(),
 		"currentSeq":      s.cdp.TabManager.CurrentSeq(),
-		"currentTargetId": s.cdp.CurrentTargetID,
+		"currentTargetId": s.cdp.GetCurrentTargetID(),
 		"tabs":            tabs,
 		"version":         s.opts.Version,
 	})

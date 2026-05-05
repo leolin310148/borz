@@ -56,8 +56,8 @@ func TestDispatch_Open_NewTab(t *testing.T) {
 	if resp.Data.URL != "https://ex.test" {
 		t.Fatalf("url: %q", resp.Data.URL)
 	}
-	if c.CurrentTargetID != "T-NEW" {
-		t.Fatalf("open should set current target to new tab, got %q", c.CurrentTargetID)
+	if got := c.GetCurrentTargetID(); got != "T-NEW" {
+		t.Fatalf("open should set current target to new tab, got %q", got)
 	}
 }
 
@@ -405,24 +405,24 @@ func TestEnsurePageTarget_DoesNotMutateCurrentWhenTabRefSet(t *testing.T) {
 	c := connectCdp(t, f)
 
 	// Seed CurrentTargetID to T1, then route a command at T2 explicitly.
-	c.CurrentTargetID = "T1"
+	c.SetCurrentTargetID("T1")
 	target, err := c.EnsurePageTarget("T2")
 	if err != nil || target.ID != "T2" {
 		t.Fatalf("EnsurePageTarget(T2) = (%v, %v)", target, err)
 	}
 	// CurrentTargetID must NOT change — explicit-tab requests should not
 	// race-shift the implicit "current tab" used by other concurrent callers.
-	if c.CurrentTargetID != "T1" {
-		t.Fatalf("CurrentTargetID mutated to %q after explicit-tab routing; want T1", c.CurrentTargetID)
+	if got := c.GetCurrentTargetID(); got != "T1" {
+		t.Fatalf("CurrentTargetID mutated to %q after explicit-tab routing; want T1", got)
 	}
 
 	// Conversely, an empty tabRef MAY update CurrentTargetID (no caller is
 	// claiming a specific tab, so the daemon's notion of "current" may follow).
-	c.CurrentTargetID = ""
+	c.SetCurrentTargetID("")
 	if _, err := c.EnsurePageTarget(""); err != nil {
 		t.Fatal(err)
 	}
-	if c.CurrentTargetID == "" {
+	if c.GetCurrentTargetID() == "" {
 		t.Fatal("EnsurePageTarget(\"\") with no current should seed CurrentTargetID")
 	}
 }

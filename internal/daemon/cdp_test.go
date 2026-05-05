@@ -58,8 +58,8 @@ func TestCdp_WaitUntilReady(t *testing.T) {
 	// readyCh closed path.
 	c2 := NewCdpConnection("h", 1, NewTabStateManager())
 	c2.readyOnce.Do(func() { close(c2.readyCh) })
-	if err := c2.WaitUntilReady(time.Second); err != nil {
-		t.Fatalf("ready path: %v", err)
+	if err := c2.WaitUntilReady(time.Second); err == nil {
+		t.Fatalf("ready-but-disconnected path: %v", err)
 	}
 
 	// Already connected path.
@@ -67,6 +67,34 @@ func TestCdp_WaitUntilReady(t *testing.T) {
 	c3.connected.Store(true)
 	if err := c3.WaitUntilReady(time.Second); err != nil {
 		t.Fatalf("connected path: %v", err)
+	}
+}
+
+func TestCdp_Disconnect_RejectsSessionListeners(t *testing.T) {
+	c := NewCdpConnection("h", 1, NewTabStateManager())
+	listener := sessionListener{
+		sessionID: "S1",
+		ch:        make(chan json.RawMessage, 1),
+		errCh:     make(chan error, 1),
+	}
+	c.sessionListeners[int64(7)] = listener
+
+	c.Disconnect()
+
+	select {
+	case err := <-listener.errCh:
+		if err == nil || !strings.Contains(err.Error(), "closed") {
+			t.Fatalf("errCh: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session listener was not rejected")
+	}
+
+	c.sessionMu.Lock()
+	_, ok := c.sessionListeners[int64(7)]
+	c.sessionMu.Unlock()
+	if ok {
+		t.Fatal("session listener should be removed")
 	}
 }
 
@@ -133,7 +161,7 @@ func TestHandleDetached_CleansUp(t *testing.T) {
 	c.TabManager.AddTab("T1")
 	c.sessions.Store("T1", "S1")
 	c.attached.Store("S1", "T1")
-	c.CurrentTargetID = "T1"
+	c.SetCurrentTargetID("T1")
 
 	c.handleDetached(rawMsg(t, map[string]interface{}{
 		"params": map[string]interface{}{"sessionId": "S1"},
@@ -148,8 +176,8 @@ func TestHandleDetached_CleansUp(t *testing.T) {
 	if c.TabManager.GetTab("T1") != nil {
 		t.Fatal("tab should be removed")
 	}
-	if c.CurrentTargetID != "" {
-		t.Fatalf("current should be cleared: %q", c.CurrentTargetID)
+	if got := c.GetCurrentTargetID(); got != "" {
+		t.Fatalf("current should be cleared: %q", got)
 	}
 
 	// Empty session id: no-op.
@@ -179,7 +207,7 @@ func TestHandleTargetDestroyed_CleansUp(t *testing.T) {
 	c.TabManager.AddTab("T1")
 	c.sessions.Store("T1", "S1")
 	c.attached.Store("S1", "T1")
-	c.CurrentTargetID = "T1"
+	c.SetCurrentTargetID("T1")
 
 	c.handleTargetDestroyed(rawMsg(t, map[string]interface{}{
 		"params": map[string]interface{}{"targetId": "T1"},
@@ -194,7 +222,7 @@ func TestHandleTargetDestroyed_CleansUp(t *testing.T) {
 	if c.TabManager.GetTab("T1") != nil {
 		t.Fatal("tab should be removed")
 	}
-	if c.CurrentTargetID != "" {
+	if c.GetCurrentTargetID() != "" {
 		t.Fatal("current should be cleared")
 	}
 

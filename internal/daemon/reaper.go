@@ -57,7 +57,20 @@ func reapOnce(
 	now time.Time,
 ) []string {
 	var closed []string
-	for _, tab := range tm.AllTabs() {
+	tabs := tm.AllTabs()
+	if activeTargetID == "" && len(tabs) > 0 {
+		// If Chrome has not told us which page is foregrounded, keep the most
+		// recently touched tab as a fallback so an idle scan cannot close every
+		// page in the browser.
+		var keep *TabState
+		for _, tab := range tabs {
+			if keep == nil || tab.IdleSince().After(keep.IdleSince()) {
+				keep = tab
+			}
+		}
+		activeTargetID = keep.TargetID
+	}
+	for _, tab := range tabs {
 		if tab.TargetID == activeTargetID {
 			continue
 		}

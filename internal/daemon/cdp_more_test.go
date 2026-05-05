@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,8 +34,8 @@ func TestCdpConnectAndCommandErrorBranches(t *testing.T) {
 	defer badJSON.Close()
 	host, port, _ := splitHostPort(strings.TrimPrefix(badJSON.URL, "http://"))
 	c = NewCdpConnection(host, port, tabs)
-	if err := c.Connect(); err == nil || !strings.Contains(err.Error(), "invalid CDP") || c.LastError == "" {
-		t.Fatalf("bad json Connect err=%v last=%q", err, c.LastError)
+	if err := c.Connect(); err == nil || !strings.Contains(err.Error(), "invalid CDP") || c.GetLastError() == "" {
+		t.Fatalf("bad json Connect err=%v last=%q", err, c.GetLastError())
 	}
 
 	missingWS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,8 +44,8 @@ func TestCdpConnectAndCommandErrorBranches(t *testing.T) {
 	defer missingWS.Close()
 	host, port, _ = splitHostPort(strings.TrimPrefix(missingWS.URL, "http://"))
 	c = NewCdpConnection(host, port, tabs)
-	if err := c.Connect(); err == nil || !strings.Contains(err.Error(), "missing") || c.LastError == "" {
-		t.Fatalf("missing ws Connect err=%v last=%q", err, c.LastError)
+	if err := c.Connect(); err == nil || !strings.Contains(err.Error(), "missing") || c.GetLastError() == "" {
+		t.Fatalf("missing ws Connect err=%v last=%q", err, c.GetLastError())
 	}
 
 	dialFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,8 +54,57 @@ func TestCdpConnectAndCommandErrorBranches(t *testing.T) {
 	defer dialFail.Close()
 	host, port, _ = splitHostPort(strings.TrimPrefix(dialFail.URL, "http://"))
 	c = NewCdpConnection(host, port, tabs)
-	if err := c.Connect(); err == nil || !strings.Contains(err.Error(), "WebSocket") || c.LastError == "" {
-		t.Fatalf("dial fail Connect err=%v last=%q", err, c.LastError)
+	if err := c.Connect(); err == nil || !strings.Contains(err.Error(), "WebSocket") || c.GetLastError() == "" {
+		t.Fatalf("dial fail Connect err=%v last=%q", err, c.GetLastError())
+	}
+}
+
+func TestCdpConnectSetupFailureDisconnects(t *testing.T) {
+	f := newFakeCDP(t)
+	f.On("Target.setDiscoverTargets", func(json.RawMessage) (interface{}, error) {
+		return nil, errors.New("discover failed")
+	})
+
+	c := NewCdpConnection(f.Host(), f.Port(), NewTabStateManager())
+	if err := c.Connect(); err == nil || !strings.Contains(err.Error(), "discover failed") {
+		t.Fatalf("Connect err=%v, want discover failure", err)
+	}
+	if c.Connected() {
+		t.Fatal("Connect setup failure should leave CDP disconnected")
+	}
+	if err := c.WaitUntilReady(time.Second); err == nil || !strings.Contains(err.Error(), "discover failed") {
+		t.Fatalf("WaitUntilReady err=%v, want discover failure", err)
+	}
+}
+
+func TestCdpWaitUntilReadyReconnectsDroppedSocket(t *testing.T) {
+	f := newFakeCDP(t)
+	c := connectCdp(t, f)
+
+	f.mu.Lock()
+	if f.ws == nil {
+		f.mu.Unlock()
+		t.Fatal("fake CDP websocket was not connected")
+	}
+	_ = f.ws.Close()
+	f.mu.Unlock()
+
+	deadline := time.Now().Add(time.Second)
+	for c.Connected() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if c.Connected() {
+		t.Fatal("CDP connection did not notice dropped websocket")
+	}
+
+	if err := c.WaitUntilReady(time.Second); err != nil {
+		t.Fatalf("WaitUntilReady reconnect: %v", err)
+	}
+	if !c.Connected() {
+		t.Fatal("CDP should be connected after reconnect")
+	}
+	if _, err := c.BrowserCommand("Target.getTargets", nil); err != nil {
+		t.Fatalf("BrowserCommand after reconnect: %v", err)
 	}
 }
 

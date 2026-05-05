@@ -37,6 +37,8 @@ type CdpConnection struct {
 	TabManager      *TabStateManager
 	CurrentTargetID string
 
+	currentMu sync.RWMutex
+	connectMu sync.Mutex
 	socket    *websocket.Conn
 	writeMu   sync.Mutex // serializes socket.WriteMessage calls (gorilla requires one writer)
 	pending   sync.Map   // id -> *pendingCommand
@@ -46,6 +48,7 @@ type CdpConnection struct {
 	connected atomic.Bool
 
 	LastError string
+	lastErrMu sync.RWMutex
 
 	readyMu   sync.Mutex
 	readyCh   chan struct{}
@@ -81,54 +84,125 @@ func (c *CdpConnection) Connected() bool {
 	return c.connected.Load()
 }
 
+func (c *CdpConnection) setLastError(err string) {
+	c.lastErrMu.Lock()
+	defer c.lastErrMu.Unlock()
+	c.LastError = err
+}
+
+func (c *CdpConnection) GetLastError() string {
+	c.lastErrMu.RLock()
+	defer c.lastErrMu.RUnlock()
+	return c.LastError
+}
+
+func (c *CdpConnection) GetCurrentTargetID() string {
+	c.currentMu.RLock()
+	defer c.currentMu.RUnlock()
+	return c.CurrentTargetID
+}
+
+func (c *CdpConnection) SetCurrentTargetID(targetID string) {
+	c.currentMu.Lock()
+	defer c.currentMu.Unlock()
+	c.CurrentTargetID = targetID
+}
+
+func (c *CdpConnection) ClearCurrentTargetIDIf(targetID string) {
+	c.currentMu.Lock()
+	defer c.currentMu.Unlock()
+	if c.CurrentTargetID == targetID {
+		c.CurrentTargetID = ""
+	}
+}
+
+func (c *CdpConnection) completeReady(err error) {
+	c.readyMu.Lock()
+	c.readyErr = err
+	c.readyMu.Unlock()
+	c.readyOnce.Do(func() {
+		close(c.readyCh)
+	})
+}
+
+func (c *CdpConnection) readyError() error {
+	c.readyMu.Lock()
+	defer c.readyMu.Unlock()
+	return c.readyErr
+}
+
 // Connect establishes the WebSocket connection to Chrome.
 func (c *CdpConnection) Connect() error {
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+
 	if c.connected.Load() {
 		return nil
 	}
 
 	// Fetch the WebSocket debugger URL
 	versionURL := fmt.Sprintf("http://%s:%d/json/version", c.Host, c.Port)
-	resp, err := http.Get(versionURL)
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	resp, err := httpClient.Get(versionURL)
 	if err != nil {
-		c.LastError = err.Error()
-		return fmt.Errorf("cannot reach Chrome CDP at %s:%d: %w", c.Host, c.Port, err)
+		c.setLastError(err.Error())
+		err = fmt.Errorf("cannot reach Chrome CDP at %s:%d: %w", c.Host, c.Port, err)
+		c.completeReady(err)
+		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		err := fmt.Errorf("cannot reach Chrome CDP at %s:%d: /json/version returned HTTP %d", c.Host, c.Port, resp.StatusCode)
+		c.setLastError(err.Error())
+		c.completeReady(err)
+		return err
+	}
 	body, _ := io.ReadAll(resp.Body)
 
 	var version struct {
 		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 	}
 	if err := json.Unmarshal(body, &version); err != nil {
-		c.LastError = "invalid JSON from /json/version"
-		return fmt.Errorf("invalid CDP version response: %w", err)
+		c.setLastError("invalid JSON from /json/version")
+		err = fmt.Errorf("invalid CDP version response: %w", err)
+		c.completeReady(err)
+		return err
 	}
 	if version.WebSocketDebuggerURL == "" {
-		c.LastError = "missing webSocketDebuggerUrl"
-		return fmt.Errorf("CDP endpoint missing webSocketDebuggerUrl")
+		c.setLastError("missing webSocketDebuggerUrl")
+		err := fmt.Errorf("CDP endpoint missing webSocketDebuggerUrl")
+		c.completeReady(err)
+		return err
 	}
 
 	// Connect WebSocket
 	ws, _, err := websocket.DefaultDialer.Dial(version.WebSocketDebuggerURL, nil)
 	if err != nil {
-		c.LastError = err.Error()
-		return fmt.Errorf("WebSocket dial failed: %w", err)
+		c.setLastError(err.Error())
+		err = fmt.Errorf("WebSocket dial failed: %w", err)
+		c.completeReady(err)
+		return err
 	}
 	c.socket = ws
 	c.connected.Store(true)
-	c.LastError = ""
+	c.setLastError("")
 
 	// Start message reader
 	go c.readLoop()
 
 	// Discover and auto-attach existing page targets
 	if _, err := c.BrowserCommand("Target.setDiscoverTargets", map[string]interface{}{"discover": true}); err != nil {
+		c.setLastError(err.Error())
+		c.Disconnect()
+		c.completeReady(err)
 		return err
 	}
 
 	result, err := c.BrowserCommand("Target.getTargets", nil)
 	if err != nil {
+		c.setLastError(err.Error())
+		c.Disconnect()
+		c.completeReady(err)
 		return err
 	}
 
@@ -150,9 +224,7 @@ func (c *CdpConnection) Connect() error {
 	}
 
 	// Signal ready
-	c.readyOnce.Do(func() {
-		close(c.readyCh)
-	})
+	c.completeReady(nil)
 
 	return nil
 }
@@ -164,7 +236,21 @@ func (c *CdpConnection) WaitUntilReady(timeout time.Duration) error {
 	}
 	select {
 	case <-c.readyCh:
-		return c.readyErr
+		if !c.connected.Load() {
+			if err := c.Connect(); err == nil {
+				return nil
+			}
+		}
+		if c.connected.Load() {
+			return nil
+		}
+		if err := c.readyError(); err != nil {
+			return err
+		}
+		if lastErr := c.GetLastError(); lastErr != "" {
+			return fmt.Errorf("CDP not connected: %s", lastErr)
+		}
+		return fmt.Errorf("CDP not connected")
 	case <-time.After(timeout):
 		return fmt.Errorf("CDP connection timeout after %v", timeout)
 	}
@@ -182,13 +268,33 @@ func (c *CdpConnection) Disconnect() {
 	if c.socket != nil {
 		c.socket.Close()
 	}
-	// Reject all pending
+	c.rejectInflight(fmt.Errorf("CDP connection closed"))
+}
+
+func (c *CdpConnection) rejectInflight(err error) {
 	c.pending.Range(func(key, value interface{}) bool {
 		cmd := value.(*pendingCommand)
-		cmd.errCh <- fmt.Errorf("CDP connection closed")
 		c.pending.Delete(key)
+		select {
+		case cmd.errCh <- err:
+		default:
+		}
 		return true
 	})
+
+	var listeners []sessionListener
+	c.sessionMu.Lock()
+	for id, listener := range c.sessionListeners {
+		listeners = append(listeners, listener)
+		delete(c.sessionListeners, id)
+	}
+	c.sessionMu.Unlock()
+	for _, listener := range listeners {
+		select {
+		case listener.errCh <- err:
+		default:
+		}
+	}
 }
 
 func (c *CdpConnection) readLoop() {
@@ -198,15 +304,12 @@ func (c *CdpConnection) readLoop() {
 		}
 		_, raw, err := c.socket.ReadMessage()
 		if err != nil {
+			if !c.connected.Load() {
+				return
+			}
 			c.connected.Store(false)
-			c.LastError = "CDP WebSocket closed unexpectedly"
-			// Reject all pending
-			c.pending.Range(func(key, value interface{}) bool {
-				cmd := value.(*pendingCommand)
-				cmd.errCh <- fmt.Errorf("CDP connection closed")
-				c.pending.Delete(key)
-				return true
-			})
+			c.setLastError("CDP WebSocket closed unexpectedly")
+			c.rejectInflight(fmt.Errorf("CDP connection closed"))
 			return
 		}
 
@@ -341,9 +444,7 @@ func (c *CdpConnection) handleDetached(msg map[string]json.RawMessage) {
 		targetID := v.(string)
 		c.sessions.Delete(targetID)
 		c.TabManager.RemoveTab(targetID)
-		if c.CurrentTargetID == targetID {
-			c.CurrentTargetID = ""
-		}
+		c.ClearCurrentTargetIDIf(targetID)
 	}
 }
 
@@ -377,9 +478,7 @@ func (c *CdpConnection) handleTargetDestroyed(msg map[string]json.RawMessage) {
 		c.attached.Delete(sessionID)
 	}
 	c.TabManager.RemoveTab(params.TargetID)
-	if c.CurrentTargetID == params.TargetID {
-		c.CurrentTargetID = ""
-	}
+	c.ClearCurrentTargetIDIf(params.TargetID)
 }
 
 func normalizeHeaders(raw json.RawMessage) map[string]string {
@@ -713,9 +812,9 @@ func (c *CdpConnection) EnsurePageTarget(tabRef string) (*CdpTargetInfo, error) 
 		if target == nil {
 			return nil, fmt.Errorf("tab not found: %s", tabRef)
 		}
-	} else if c.CurrentTargetID != "" {
+	} else if currentTargetID := c.GetCurrentTargetID(); currentTargetID != "" {
 		for i, t := range pages {
-			if t.ID == c.CurrentTargetID {
+			if t.ID == currentTargetID {
 				target = &pages[i]
 				break
 			}
@@ -733,7 +832,7 @@ func (c *CdpConnection) EnsurePageTarget(tabRef string) (*CdpTargetInfo, error) 
 	// switch focus (open, tab_select, Activate=true) update CurrentTargetID
 	// themselves at the dispatch site.
 	if tabRef == "" {
-		c.CurrentTargetID = target.ID
+		c.SetCurrentTargetID(target.ID)
 	}
 	// Best-effort attach — the target may already be attached via auto-attach
 	c.AttachAndEnable(target.ID)
@@ -776,6 +875,8 @@ func (c *CdpConnection) BrowserCommand(method string, params interface{}) (json.
 	c.writeMu.Unlock()
 	if err != nil {
 		c.pending.Delete(id)
+		c.connected.Store(false)
+		c.rejectInflight(fmt.Errorf("CDP connection closed"))
 		return nil, err
 	}
 
@@ -843,6 +944,8 @@ func (c *CdpConnection) SessionCommandWithTimeout(targetID, method string, param
 		c.sessionMu.Lock()
 		delete(c.sessionListeners, id)
 		c.sessionMu.Unlock()
+		c.connected.Store(false)
+		c.rejectInflight(fmt.Errorf("CDP connection closed"))
 		return nil, err
 	}
 

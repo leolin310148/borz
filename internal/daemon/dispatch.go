@@ -599,11 +599,12 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if tState != nil {
 				tabShort = tState.ShortID
 			}
+			currentTargetID := cdp.GetCurrentTargetID()
 			tabs = append(tabs, protocol.TabInfo{
 				Index:  idx,
 				URL:    t.URL,
 				Title:  t.Title,
-				Active: t.ID == cdp.CurrentTargetID || (cdp.CurrentTargetID == "" && idx == 0),
+				Active: t.ID == currentTargetID || (currentTargetID == "" && idx == 0),
 				TabID:  t.ID,
 				Tab:    tabShort,
 			})
@@ -681,7 +682,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		// with --new (or `new: true` on the wire).
 		if !req.New {
 			if existing := findTargetByExactURL(cdp, req.URL); existing != nil {
-				cdp.CurrentTargetID = existing.ID
+				cdp.SetCurrentTargetID(existing.ID)
 				cdp.AttachAndEnable(existing.ID)
 				cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": existing.ID})
 				reused := cdp.TabManager.GetTab(existing.ID)
@@ -740,7 +741,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 		// Same readiness wait as ActionTabNew — see waitForTabNavigated.
 		waitForTabNavigated(cdp, created.TargetID, req.URL, newTabReadyTimeout)
-		cdp.CurrentTargetID = created.TargetID
+		cdp.SetCurrentTargetID(created.TargetID)
 		newTab := cdp.TabManager.GetTab(created.TargetID)
 		shortID := ""
 		var seq *int
@@ -776,7 +777,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 	if req.Activate {
 		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": target.ID})
 		cdp.SessionCommand(target.ID, "Page.bringToFront", nil)
-		cdp.CurrentTargetID = target.ID
+		cdp.SetCurrentTargetID(target.ID)
 	}
 
 	switch req.Action {
@@ -798,7 +799,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": target.ID})
 		// open always activates — pin CurrentTargetID since EnsurePageTarget
 		// no longer mutates it for explicit-tab requests.
-		cdp.CurrentTargetID = target.ID
+		cdp.SetCurrentTargetID(target.ID)
 		tab.Refs = map[string]*protocol.RefInfo{}
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{
 			URL: req.URL, Title: target.Title, TabID: target.ID, Tab: shortID, Seq: intPtr(seq), Viewport: viewport,
@@ -1257,11 +1258,12 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			if tState != nil {
 				tabShort = tState.ShortID
 			}
+			currentTargetID := cdp.GetCurrentTargetID()
 			tabs = append(tabs, protocol.TabInfo{
 				Index:  idx,
 				URL:    t.URL,
 				Title:  t.Title,
-				Active: t.ID == cdp.CurrentTargetID || (cdp.CurrentTargetID == "" && idx == 0),
+				Active: t.ID == currentTargetID || (currentTargetID == "" && idx == 0),
 				TabID:  t.ID,
 				Tab:    tabShort,
 			})
@@ -1324,7 +1326,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		if selected == nil {
 			return failResp(req.ID, "tab not found")
 		}
-		cdp.CurrentTargetID = selected.ID
+		cdp.SetCurrentTargetID(selected.ID)
 		cdp.AttachAndEnable(selected.ID)
 		// tab_select is a focus switch — bring the tab to the foreground in
 		// Chrome's UI, not just route the daemon's command stream.
@@ -1394,9 +1396,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			closedShort = closedTab.ShortID
 		}
 		cdp.BrowserCommand("Target.closeTarget", map[string]interface{}{"targetId": selected.ID})
-		if cdp.CurrentTargetID == selected.ID {
-			cdp.CurrentTargetID = ""
-		}
+		cdp.ClearCurrentTargetIDIf(selected.ID)
 		return okResp(req.ID, &protocol.ResponseData{TabID: selected.ID, Tab: closedShort})
 
 	// --- Frame ---
