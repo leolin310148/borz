@@ -66,19 +66,34 @@ func formatScreenshot(resp *protocol.Response) *mcp.CallToolResult {
 	if resp.Data == nil || resp.Data.DataURL == "" {
 		return mcp.NewToolResultText("Screenshot captured (no image data returned)")
 	}
-	base64Data := resp.Data.DataURL
-	base64Data = strings.TrimPrefix(base64Data, "data:image/png;base64,")
-	base64Data = strings.TrimPrefix(base64Data, "data:image/jpeg;base64,")
+	base64Data, mimeType := parseImageDataURL(resp.Data.DataURL)
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			mcp.ImageContent{
 				Type:     "image",
 				Data:     base64Data,
-				MIMEType: "image/png",
+				MIMEType: mimeType,
 			},
 		},
 	}
+}
+
+func parseImageDataURL(dataURL string) (data string, mimeType string) {
+	const defaultMIME = "image/png"
+	if !strings.HasPrefix(dataURL, "data:") {
+		return dataURL, defaultMIME
+	}
+	header, data, ok := strings.Cut(dataURL, ",")
+	if !ok {
+		return dataURL, defaultMIME
+	}
+	meta := strings.TrimPrefix(header, "data:")
+	parts := strings.Split(meta, ";")
+	if len(parts) == 0 || parts[0] == "" {
+		return data, defaultMIME
+	}
+	return data, parts[0]
 }
 
 func formatViewport(resp *protocol.Response) *mcp.CallToolResult {

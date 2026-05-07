@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -104,9 +105,15 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 		var results []interface{}
 		for _, item := range inputs {
 			if m, ok := item.(map[string]interface{}); ok {
-				var keys []interface{}
+				names := make([]string, 0, len(m))
 				for k := range m {
-					keys = append(keys, k)
+					names = append(names, k)
+				}
+				sort.Strings(names)
+
+				keys := make([]interface{}, len(names))
+				for i, k := range names {
+					keys[i] = k
 				}
 				results = append(results, keys)
 			}
@@ -274,10 +281,6 @@ func splitTopLevel(input, separator string) []string {
 				depth--
 			}
 			if depth == 0 {
-				s := current.String()
-				rest := s + string(ch)
-				_ = rest
-				// Check if separator starts here
 				if len(separator) == 1 && ch == rune(separator[0]) {
 					parts = append(parts, strings.TrimSpace(current.String()))
 					current.Reset()

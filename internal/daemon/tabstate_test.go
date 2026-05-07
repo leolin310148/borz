@@ -117,7 +117,6 @@ func TestTabState_NetworkLifecycle(t *testing.T) {
 		t.Fatalf("GetNetworkRequests len: got %d want 2", len(got))
 	}
 
-	// The RingBuffer returns copies, so verify via the stored pointer values.
 	var r1, r2 *protocol.NetworkRequestInfo
 	for _, it := range got {
 		switch it.RequestID {
@@ -133,12 +132,12 @@ func TestTabState_NetworkLifecycle(t *testing.T) {
 		t.Fatal("missing r1/r2 in results")
 	}
 
-	// Note: UpdateNetworkResponse mutates the map-stored pointer, not the ring-buffer
-	// slice entry. The ring-buffer slice entries therefore will not reflect the response
-	// update. What we CAN check is that status/body updates on unknown ids do not panic,
-	// and that filtering + status matching below works with an explicit status value.
-	_ = r1
-	_ = r2
+	if r1.Status == nil || *r1.Status != 200 || r1.StatusText != "OK" || r1.ResponseHeaders["x"] != "y" || r1.MimeType != "application/json" {
+		t.Fatalf("r1 response fields not updated: %+v", *r1)
+	}
+	if !r2.Failed || r2.FailureReason != "net::ERR_FAIL" {
+		t.Fatalf("r2 failure fields not updated: %+v", *r2)
+	}
 }
 
 func TestTabState_GetNetworkRequests_Filters(t *testing.T) {

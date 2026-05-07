@@ -629,6 +629,7 @@ borz network requests --since last_action
 # Live stream new requests as they arrive (Ctrl+C to stop).
 # Pairs with --filter / --method / --status and --json (JSONL output).
 borz network requests --tail
+borz network requests --tail --interval 1s
 borz network requests --tail --filter /api/ --method POST
 
 # Clear captured requests

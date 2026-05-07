@@ -1,6 +1,9 @@
 package mcp
 
-import "github.com/mark3labs/mcp-go/mcp"
+import (
+	"github.com/leolin310148/borz/internal/protocol"
+	"github.com/mark3labs/mcp-go/mcp"
+)
 
 // tabParam is reused across most tools.
 func tabParam() mcp.ToolOption {
@@ -157,7 +160,7 @@ var screenshotTool = mcp.NewTool("browser_screenshot",
 
 var viewportTool = mcp.NewTool("browser_viewport",
 	mcp.WithDescription("Inspect or emulate the tab viewport for responsive design testing. Use preset=mobile before checking mobile/RWD layouts, or pass width/height/dpr for a custom viewport. reset=true clears CDP viewport and touch emulation."),
-	mcp.WithString("preset", mcp.Description("Named viewport preset"), mcp.Enum("mobile", "tablet", "desktop")),
+	mcp.WithString("preset", mcp.Description("Named viewport preset"), mcp.Enum(protocol.ViewportPresetNames()...)),
 	mcp.WithNumber("width", mcp.Description("Viewport width in CSS pixels")),
 	mcp.WithNumber("height", mcp.Description("Viewport height in CSS pixels")),
 	mcp.WithNumber("dpr", mcp.Description("Device scale factor (default 1)")),

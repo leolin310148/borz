@@ -799,11 +799,12 @@ func fuzzyContains(s, query string) bool {
 	if query == "" {
 		return true
 	}
+	queryRunes := []rune(query)
 	pos := 0
 	for _, r := range s {
-		if rune(query[pos]) == r {
+		if queryRunes[pos] == r {
 			pos++
-			if pos == len(query) {
+			if pos == len(queryRunes) {
 				return true
 			}
 		}

@@ -53,6 +53,26 @@ func TestRingBuffer_WrapAroundEvictsOldest(t *testing.T) {
 	}
 }
 
+func TestRingBuffer_Find(t *testing.T) {
+	rb := NewRingBuffer[int](3)
+	for i := 1; i <= 5; i++ {
+		rb.Push(i)
+	}
+
+	item := rb.Find(func(v *int) bool { return *v == 4 })
+	if item == nil {
+		t.Fatal("Find(4) returned nil")
+	}
+	*item = 40
+	if got := rb.ToSlice(); !reflect.DeepEqual(got, []int{3, 40, 5}) {
+		t.Errorf("ToSlice after Find mutation = %v, want [3 40 5]", got)
+	}
+
+	if item := rb.Find(func(v *int) bool { return *v == 2 }); item != nil {
+		t.Errorf("Find(2) = %v, want nil for evicted item", *item)
+	}
+}
+
 func TestRingBuffer_Clear(t *testing.T) {
 	rb := NewRingBuffer[string](2)
 	rb.Push("a")

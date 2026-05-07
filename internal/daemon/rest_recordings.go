@@ -89,6 +89,10 @@ func (s *Server) registerRecordingRoutes(mux *http.ServeMux) {
 			}
 			sendJSON(w, 200, info)
 		case "pause":
+			if r.Method != http.MethodPost {
+				sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+				return
+			}
 			info, err := s.recordManager().Pause(id)
 			if err != nil {
 				sendJSON(w, 400, map[string]string{"error": err.Error()})
@@ -96,6 +100,10 @@ func (s *Server) registerRecordingRoutes(mux *http.ServeMux) {
 			}
 			sendJSON(w, 200, info)
 		case "resume":
+			if r.Method != http.MethodPost {
+				sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+				return
+			}
 			info, err := s.recordManager().Resume(id)
 			if err != nil {
 				sendJSON(w, 400, map[string]string{"error": err.Error()})

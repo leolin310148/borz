@@ -3,6 +3,7 @@
 package selfupdate
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -239,22 +240,31 @@ func splitVersion(v string) []int {
 // line. Leading "*" on the filename (binary mode) is stripped.
 func ParseChecksums(r io.Reader) (map[string]string, error) {
 	out := make(map[string]string)
-	buf, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-	for _, line := range strings.Split(string(buf), "\n") {
-		line = strings.TrimSpace(line)
+	scanner := bufio.NewScanner(r)
+	for lineNo := 1; scanner.Scan(); lineNo++ {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
-			continue
+			return nil, fmt.Errorf("checksums line %d: expected checksum and filename", lineNo)
 		}
-		sum := fields[0]
+		sum := strings.ToLower(fields[0])
+		if len(sum) != sha256.Size*2 {
+			return nil, fmt.Errorf("checksums line %d: invalid sha256 length", lineNo)
+		}
+		if _, err := hex.DecodeString(sum); err != nil {
+			return nil, fmt.Errorf("checksums line %d: invalid sha256: %w", lineNo, err)
+		}
 		name := strings.TrimPrefix(fields[1], "*")
+		if name == "" {
+			return nil, fmt.Errorf("checksums line %d: empty filename", lineNo)
+		}
 		out[name] = sum
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

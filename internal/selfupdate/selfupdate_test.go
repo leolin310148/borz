@@ -55,20 +55,23 @@ func TestNewerVersion(t *testing.T) {
 }
 
 func TestParseChecksums(t *testing.T) {
-	input := `# comment line
-abc123  borz-linux-amd64
-def456 *borz-windows-amd64.exe
+	sumA := strings.Repeat("a", 64)
+	sumB := strings.Repeat("b", 64)
+	sumC := strings.Repeat("c", 64)
+	input := fmt.Sprintf(`# comment line
+%s  borz-linux-amd64
+%s *borz-windows-amd64.exe
 
-   deadbeef  borz-darwin-arm64
-`
+   %s  borz-darwin-arm64
+`, sumA, sumB, sumC)
 	got, err := ParseChecksums(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"borz-linux-amd64":       "abc123",
-		"borz-windows-amd64.exe": "def456",
-		"borz-darwin-arm64":      "deadbeef",
+		"borz-linux-amd64":       sumA,
+		"borz-windows-amd64.exe": sumB,
+		"borz-darwin-arm64":      sumC,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("len=%d, want %d: %v", len(got), len(want), got)
@@ -77,6 +80,27 @@ def456 *borz-windows-amd64.exe
 		if got[k] != v {
 			t.Errorf("%s = %q, want %q", k, got[k], v)
 		}
+	}
+}
+
+func TestParseChecksumsRejectsMalformedRows(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"missing filename", strings.Repeat("a", 64) + "\n", "expected checksum and filename"},
+		{"short checksum", "abc123  borz-linux-amd64\n", "invalid sha256 length"},
+		{"non-hex checksum", strings.Repeat("z", 64) + "  borz-linux-amd64\n", "invalid sha256"},
+		{"empty binary filename", strings.Repeat("a", 64) + "  *\n", "empty filename"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := ParseChecksums(strings.NewReader(c.input))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("expected %q error, got %v", c.want, err)
+			}
+		})
 	}
 }
 
@@ -444,7 +468,7 @@ func TestFetchChecksumsErrors(t *testing.T) {
 
 func TestRunMissingChecksumEntry(t *testing.T) {
 	assetName := AssetName(runtime.GOOS, runtime.GOARCH)
-	srv := newFakeReleaseServer(t, "v2.0.0", "abc123", []byte("payload"), "other-name")
+	srv := newFakeReleaseServer(t, "v2.0.0", strings.Repeat("a", 64), []byte("payload"), "other-name")
 	defer srv.Close()
 
 	// Override the release endpoint to publish the current platform asset while
@@ -459,7 +483,7 @@ func TestRunMissingChecksumEntry(t *testing.T) {
 		case r.URL.Path == "/bin":
 			w.Write([]byte("payload"))
 		case r.URL.Path == "/checksums.txt":
-			fmt.Fprintf(w, "abc123  other-name\n")
+			fmt.Fprintf(w, "%s  other-name\n", strings.Repeat("a", 64))
 		default:
 			http.NotFound(w, r)
 		}

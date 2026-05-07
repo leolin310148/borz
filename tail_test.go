@@ -84,6 +84,13 @@ func TestParseTailInterval_Override(t *testing.T) {
 	}
 }
 
+func TestParseTailInterval_Duration(t *testing.T) {
+	got := parseTailInterval([]string{"--interval", "1.5s"})
+	if got != 1500*time.Millisecond {
+		t.Errorf("duration mismatch: got %v", got)
+	}
+}
+
 func TestParseTailInterval_BadValue(t *testing.T) {
 	// Capture stderr-ish: parseTailInterval uses fmt.Fprintf to stderr but
 	// the contract is that we fall back to default — assert that.

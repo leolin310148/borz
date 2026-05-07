@@ -173,6 +173,21 @@ func TestFormatScreenshot_WithJPEG(t *testing.T) {
 	if img.Data != "AAAA" {
 		t.Errorf("jpeg prefix not stripped: %q", img.Data)
 	}
+	if img.MIMEType != "image/jpeg" {
+		t.Errorf("mime = %q", img.MIMEType)
+	}
+}
+
+func TestFormatScreenshot_WithRawBase64DefaultsToPNG(t *testing.T) {
+	resp := &protocol.Response{Data: &protocol.ResponseData{DataURL: "AAAA"}}
+	res := formatScreenshot(resp)
+	img := res.Content[0].(mcp.ImageContent)
+	if img.Data != "AAAA" {
+		t.Errorf("raw base64 changed: %q", img.Data)
+	}
+	if img.MIMEType != "image/png" {
+		t.Errorf("mime = %q", img.MIMEType)
+	}
 }
 
 // --- formatTabList ---

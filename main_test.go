@@ -120,12 +120,15 @@ func TestHasFlag(t *testing.T) {
 }
 
 func TestGetArgValue(t *testing.T) {
-	args := []string{"cmd", "--id", "42", "--name", "foo"}
+	args := []string{"cmd", "--id", "42", "--name=foo", "--empty="}
 	if got := getArgValue(args, "--id"); got != "42" {
 		t.Errorf("--id: got %q want 42", got)
 	}
 	if got := getArgValue(args, "--name"); got != "foo" {
 		t.Errorf("--name: got %q want foo", got)
+	}
+	if got := getArgValue(args, "--empty"); got != "" {
+		t.Errorf("--empty: got %q want empty", got)
 	}
 	if got := getArgValue(args, "--missing"); got != "" {
 		t.Errorf("missing: got %q want empty", got)
@@ -133,6 +136,15 @@ func TestGetArgValue(t *testing.T) {
 	// Flag at the end with no following value returns empty.
 	if got := getArgValue([]string{"--id"}, "--id"); got != "" {
 		t.Errorf("trailing flag: got %q want empty", got)
+	}
+}
+
+func TestGetAllArgValues(t *testing.T) {
+	args := []string{"cmd", "--json-arg", "user={}", "--json-arg=limit=3"}
+	got := getAllArgValues(args, "--json-arg")
+	want := []string{"user={}", "limit=3"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("getAllArgValues: got %v want %v", got, want)
 	}
 }
 
@@ -151,6 +163,18 @@ func TestStripFlags(t *testing.T) {
 	got = stripFlags(in, []string{"--custom"}, nil)
 	if !reflect.DeepEqual(got, []string{"cmd", "keep"}) {
 		t.Errorf("custom value flag: %v", got)
+	}
+
+	in = []string{"cmd", "--custom=val", "keep"}
+	got = stripFlags(in, []string{"--custom"}, nil)
+	if !reflect.DeepEqual(got, []string{"cmd", "keep"}) {
+		t.Errorf("inline custom value flag: %v", got)
+	}
+
+	in = []string{"snapshot", "-d=3", "--selector=main", "keep"}
+	got = stripFlags(in, nil, nil)
+	if !reflect.DeepEqual(got, []string{"snapshot", "keep"}) {
+		t.Errorf("inline built-in value flags: %v", got)
 	}
 
 	// Custom bool flag strips just the flag.

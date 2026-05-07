@@ -37,6 +37,12 @@ func TestSiteScoringCommentsAndOrderingBranches(t *testing.T) {
 	if !fuzzyContains("abc", "") || fuzzyContains("abc", "acx") {
 		t.Fatal("fuzzyContains edge mismatch")
 	}
+	if !fuzzyContains("cafe recherche", "cr") {
+		t.Fatal("fuzzyContains ASCII regression mismatch")
+	}
+	if !fuzzyContains("café recherche", "cé") {
+		t.Fatal("fuzzyContains should match non-ASCII runes")
+	}
 	if !looksLikeFunctionExpression("// leading\nasync (args) => args") {
 		t.Fatal("line comments should be stripped before function detection")
 	}

@@ -195,14 +195,13 @@ func nukeAndExtract(zipPath, destDir string) error {
 }
 
 func extractFile(destDir string, f *zip.File) error {
-	// Reject zip slips: ensure the cleaned path stays under destDir.
-	cleaned := filepath.Clean(f.Name)
-	if strings.HasPrefix(cleaned, "..") || filepath.IsAbs(cleaned) {
+	cleaned, err := cleanZipEntryName(f.Name)
+	if err != nil {
 		return fmt.Errorf("invalid zip entry %q", f.Name)
 	}
 	target := filepath.Join(destDir, cleaned)
 	rel, err := filepath.Rel(destDir, target)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("invalid zip entry %q", f.Name)
 	}
 	if f.FileInfo().IsDir() {
@@ -225,4 +224,18 @@ func extractFile(destDir string, f *zip.File) error {
 		return err
 	}
 	return out.Close()
+}
+
+func cleanZipEntryName(name string) (string, error) {
+	if name == "" || strings.Contains(name, "\\") {
+		return "", errors.New("invalid zip entry")
+	}
+	cleaned := filepath.Clean(name)
+	if cleaned == "." || cleaned == ".." || filepath.IsAbs(cleaned) {
+		return "", errors.New("invalid zip entry")
+	}
+	if strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return "", errors.New("invalid zip entry")
+	}
+	return cleaned, nil
 }

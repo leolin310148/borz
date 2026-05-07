@@ -76,6 +76,24 @@ func TestHomeDir_PrefersCurrentDirOverLegacyDir(t *testing.T) {
 	}
 }
 
+func TestHomeDir_IgnoresNonDirectoryHomes(t *testing.T) {
+	home := t.TempDir()
+	current := filepath.Join(home, ".borz")
+	legacy := filepath.Join(home, ".bb-browser")
+	if err := os.WriteFile(current, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BORZ_HOME", "")
+	t.Setenv("BB_BROWSER_HOME", "")
+	t.Setenv("HOME", home)
+	if got := HomeDir(); got != legacy {
+		t.Fatalf("HomeDir with file current and legacy dir = %q, want %q", got, legacy)
+	}
+}
+
 func TestEnsureHomeDir_MigratesLegacyDir(t *testing.T) {
 	home := t.TempDir()
 	legacy := filepath.Join(home, ".bb-browser")
@@ -102,6 +120,21 @@ func TestEnsureHomeDir_MigratesLegacyDir(t *testing.T) {
 	}
 	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
 		t.Fatalf("legacy dir still exists after migration: %v", err)
+	}
+}
+
+func TestEnsureHomeDir_CurrentPathMustBeDirectory(t *testing.T) {
+	home := t.TempDir()
+	current := filepath.Join(home, ".borz")
+	if err := os.WriteFile(current, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BORZ_HOME", "")
+	t.Setenv("BB_BROWSER_HOME", "")
+	t.Setenv("HOME", home)
+
+	if _, err := EnsureHomeDir(); err == nil {
+		t.Fatal("EnsureHomeDir with file current path succeeded, want error")
 	}
 }
 

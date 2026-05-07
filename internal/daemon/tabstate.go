@@ -25,9 +25,6 @@ type TabState struct {
 	ConsoleMessages *RingBuffer[protocol.ConsoleMessageInfo]
 	JSErrors        *RingBuffer[protocol.JSErrorInfo]
 
-	// Lookup in-flight network requests by requestId for response/failure updates.
-	networkByRequestID sync.Map // requestId -> *protocol.NetworkRequestInfo
-
 	// Seq of the last user-initiated action on this tab.
 	LastActionSeq int
 
@@ -105,16 +102,14 @@ func (ts *TabState) AddNetworkRequest(requestID string, info protocol.NetworkReq
 	info.RequestID = requestID
 	info.Seq = seq
 	ts.NetworkRequests.Push(info)
-	ts.networkByRequestID.Store(requestID, &info)
 }
 
 // UpdateNetworkResponse updates an in-flight request with response data.
 func (ts *TabState) UpdateNetworkResponse(requestID string, status *int, statusText string, headers map[string]string, mimeType string) {
-	v, ok := ts.networkByRequestID.Load(requestID)
-	if !ok {
+	entry := ts.findNetworkRequest(requestID)
+	if entry == nil {
 		return
 	}
-	entry := v.(*protocol.NetworkRequestInfo)
 	if status != nil {
 		entry.Status = status
 	}
@@ -131,13 +126,21 @@ func (ts *TabState) UpdateNetworkResponse(requestID string, status *int, statusT
 
 // UpdateNetworkFailure marks a request as failed.
 func (ts *TabState) UpdateNetworkFailure(requestID, reason string) {
-	v, ok := ts.networkByRequestID.Load(requestID)
-	if !ok {
+	entry := ts.findNetworkRequest(requestID)
+	if entry == nil {
 		return
 	}
-	entry := v.(*protocol.NetworkRequestInfo)
 	entry.Failed = true
 	entry.FailureReason = reason
+}
+
+func (ts *TabState) findNetworkRequest(requestID string) *protocol.NetworkRequestInfo {
+	if requestID == "" {
+		return nil
+	}
+	return ts.NetworkRequests.Find(func(info *protocol.NetworkRequestInfo) bool {
+		return info.RequestID == requestID
+	})
 }
 
 // AddConsoleMessage adds a console message event.
@@ -287,7 +290,6 @@ func (ts *TabState) GetJSErrors(opts QueryOptions) QueryResult[protocol.JSErrorI
 
 func (ts *TabState) ClearNetwork() {
 	ts.NetworkRequests.Clear()
-	ts.networkByRequestID = sync.Map{}
 }
 
 func (ts *TabState) ClearConsole() {

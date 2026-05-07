@@ -5,15 +5,23 @@ package diagnostics
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/protocol"
+)
+
+var (
+	randomReader      io.Reader = rand.Reader
+	fallbackIDCounter atomic.Uint64
 )
 
 // Check is one row of doctor output.
@@ -225,6 +233,9 @@ func RenderJSON(checks []Check) string {
 
 func newID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := io.ReadFull(randomReader, b); err != nil {
+		fallback := uint64(os.Getpid())<<32 ^ fallbackIDCounter.Add(1)
+		binary.BigEndian.PutUint64(b, fallback)
+	}
 	return hex.EncodeToString(b)
 }

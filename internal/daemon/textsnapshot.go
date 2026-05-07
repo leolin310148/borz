@@ -63,6 +63,10 @@ func buildTextSnapshot(cdp *CdpConnection, targetID string) (*protocol.SnapshotD
 // formatTextSnapshot composes the title, URL, and body text into a single
 // string. Kept as a pure function so it is unit-testable without CDP.
 func formatTextSnapshot(title, url, text string) string {
+	title = strings.TrimSpace(title)
+	url = strings.TrimSpace(url)
+	text = strings.TrimSpace(text)
+
 	var b strings.Builder
 	if title != "" {
 		b.WriteString("# ")
@@ -76,6 +80,6 @@ func formatTextSnapshot(title, url, text string) string {
 	if b.Len() > 0 && text != "" {
 		b.WriteByte('\n')
 	}
-	b.WriteString(strings.TrimSpace(text))
+	b.WriteString(text)
 	return b.String()
 }

@@ -46,7 +46,7 @@ borz eval "await fetch('/x').then(...)"      # top-level await auto-wraps in asy
 borz screenshot                              # base64 PNG in JSON
 borz get <url|title|text|href|value|class> [ref]
 borz network [requests|clear] [--filter] [--method] [--status] [--with-body]
-borz network requests --tail [--interval ms]   # live stream of new requests (Ctrl+C to stop)
+borz network requests --tail [--interval duration|ms]   # live stream of new requests (Ctrl+C to stop)
 borz console [--clear] [--filter]
 borz errors [--clear] [--filter]
 borz fetch <url> [--method POST]             # authenticated HTTP via page

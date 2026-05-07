@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -90,17 +91,22 @@ func emitNetworkTail(resp *protocol.Response, jsonOutput bool) int {
 	return len(resp.Data.NetworkRequests)
 }
 
-// parseTailInterval reads --interval <ms>. Returns defaultTailInterval when
-// the flag is absent or invalid (we'd rather keep tailing than fatal on a
-// typo'd interval).
+// parseTailInterval reads --interval as a duration ("250ms", "1s") or as
+// bare milliseconds. Returns defaultTailInterval when the flag is absent or
+// invalid (we'd rather keep tailing than fatal on a typo'd interval).
 func parseTailInterval(args []string) time.Duration {
-	v := getArgValue(args, "--interval")
+	v := strings.TrimSpace(getArgValue(args, "--interval"))
 	if v == "" {
 		return defaultTailInterval
 	}
+
+	if d, err := time.ParseDuration(v); err == nil && d > 0 {
+		return d
+	}
+
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
-		fmt.Fprintf(os.Stderr, "tail: ignoring --interval %q (want a positive integer ms)\n", v)
+		fmt.Fprintf(os.Stderr, "tail: ignoring --interval %q (want a positive duration or integer ms)\n", v)
 		return defaultTailInterval
 	}
 	return time.Duration(n) * time.Millisecond

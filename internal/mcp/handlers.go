@@ -346,7 +346,7 @@ func viewportOptionsFromMCP(r mcp.CallToolRequest) (*protocol.ViewportOptions, s
 	if presetName != "" {
 		preset, ok := protocol.ViewportPreset(presetName)
 		if !ok {
-			return nil, "preset must be mobile, tablet, or desktop"
+			return nil, "preset must be one of: " + strings.Join(protocol.ViewportPresetNames(), ", ")
 		}
 		opts = preset
 		has = true

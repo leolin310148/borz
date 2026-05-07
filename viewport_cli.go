@@ -127,11 +127,11 @@ func parseViewportSize(raw string) (int, int, bool) {
 	if len(parts) != 2 {
 		return 0, 0, false
 	}
-	width, err := strconv.Atoi(parts[0])
+	width, err := strconv.Atoi(strings.TrimSpace(parts[0]))
 	if err != nil || width <= 0 {
 		return 0, 0, false
 	}
-	height, err := strconv.Atoi(parts[1])
+	height, err := strconv.Atoi(strings.TrimSpace(parts[1]))
 	if err != nil || height <= 0 {
 		return 0, 0, false
 	}

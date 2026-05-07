@@ -24,6 +24,21 @@ func TestAutoWrapAwait(t *testing.T) {
 			want: "(async () => { return (await fetch('/x').then(r=>r.json())) })()",
 		},
 		{
+			name: "leading whitespace before single-expression await keeps return",
+			in:   "\n  await fetch('/x').then(r=>r.json())",
+			want: "(async () => { return (await fetch('/x').then(r=>r.json())) })()",
+		},
+		{
+			name: "multi-line awaited property chain keeps return",
+			in:   "await fetch('/x')\n  .then(r=>r.json())",
+			want: "(async () => { return (await fetch('/x')\n  .then(r=>r.json())) })()",
+		},
+		{
+			name: "multi-line awaited binary expression keeps return",
+			in:   "await foo() +\n  1",
+			want: "(async () => { return (await foo() +\n  1) })()",
+		},
+		{
 			name: "multi-statement await is wrapped without forced return",
 			in:   "var x = await fetch('/x'); x.status",
 			want: "(async () => { var x = await fetch('/x'); x.status })()",

@@ -544,17 +544,26 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	}
 
 	userDataDir := config.ManagedUserDataDir()
-	os.MkdirAll(userDataDir, 0755)
+	if err := os.MkdirAll(userDataDir, 0o755); err != nil {
+		return nil, fmt.Errorf("prepare managed browser profile: %w", err)
+	}
 
 	// Write profile preferences
 	defaultProfileDir := filepath.Join(userDataDir, "Default")
-	os.MkdirAll(defaultProfileDir, 0755)
+	if err := os.MkdirAll(defaultProfileDir, 0o755); err != nil {
+		return nil, fmt.Errorf("prepare managed browser default profile: %w", err)
+	}
 	prefsPath := filepath.Join(defaultProfileDir, "Preferences")
 	prefs := map[string]interface{}{
 		"profile": map[string]interface{}{"name": "borz"},
 	}
-	prefsJSON, _ := json.Marshal(prefs)
-	os.WriteFile(prefsPath, prefsJSON, 0644)
+	prefsJSON, err := json.Marshal(prefs)
+	if err != nil {
+		return nil, fmt.Errorf("encode managed browser preferences: %w", err)
+	}
+	if err := os.WriteFile(prefsPath, prefsJSON, 0o644); err != nil {
+		return nil, fmt.Errorf("write managed browser preferences: %w", err)
+	}
 
 	args := []string{
 		fmt.Sprintf("--remote-debugging-port=%d", port),
@@ -591,8 +600,12 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	cmd.Process.Release()
 
 	// Write port file
-	os.MkdirAll(config.ManagedBrowserDir(), 0755)
-	os.WriteFile(config.ManagedPortFile(), []byte(strconv.Itoa(port)), 0644)
+	if err := os.MkdirAll(config.ManagedBrowserDir(), 0o755); err != nil {
+		return nil, fmt.Errorf("prepare managed browser directory: %w", err)
+	}
+	if err := os.WriteFile(config.ManagedPortFile(), []byte(strconv.Itoa(port)), 0o644); err != nil {
+		return nil, fmt.Errorf("write managed browser port file: %w", err)
+	}
 
 	// Wait for browser to become reachable
 	deadline := time.Now().Add(8 * time.Second)

@@ -50,7 +50,8 @@ func isAsyncIIFE(s string) bool {
 
 // scanTopLevel walks the script ignoring strings, template literals, and
 // comments. It reports whether a top-level (depth 0) `await` keyword is
-// present and whether any top-level `;` or newline separates statements.
+// present and whether any top-level `;` or statement-separating newline is
+// present.
 func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 	const (
 		stCode = iota
@@ -91,8 +92,13 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 					depth--
 				}
 				i++
-			case depth == 0 && (c == ';' || c == '\n'):
+			case depth == 0 && c == ';':
 				hasTopSemi = true
+				i++
+			case depth == 0 && c == '\n':
+				if isStatementNewline(src, i) {
+					hasTopSemi = true
+				}
 				i++
 			case depth == 0 && c == 'a' && matchKeyword(src, i, "await"):
 				hasAwait = true
@@ -159,6 +165,48 @@ func matchKeyword(src string, i int, kw string) bool {
 		return false
 	}
 	return true
+}
+
+func isStatementNewline(src string, i int) bool {
+	prev, ok := prevSignificantByte(src, i-1)
+	if !ok {
+		return false
+	}
+	next, ok := nextSignificantByte(src, i+1)
+	if !ok {
+		return false
+	}
+	if strings.ContainsRune("+-*/%&|^!<>?:.,", rune(prev)) {
+		return false
+	}
+	if strings.ContainsRune(".[+-*/%&|^!<>?:,)]}", rune(next)) {
+		return false
+	}
+	return true
+}
+
+func prevSignificantByte(src string, i int) (byte, bool) {
+	for i >= 0 {
+		switch src[i] {
+		case ' ', '\t', '\r', '\n':
+			i--
+		default:
+			return src[i], true
+		}
+	}
+	return 0, false
+}
+
+func nextSignificantByte(src string, i int) (byte, bool) {
+	for i < len(src) {
+		switch src[i] {
+		case ' ', '\t', '\r', '\n':
+			i++
+		default:
+			return src[i], true
+		}
+	}
+	return 0, false
 }
 
 func isIdentChar(c byte) bool {

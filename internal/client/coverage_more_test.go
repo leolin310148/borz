@@ -204,3 +204,24 @@ func TestLocalJSONFallbackAndLaunchManagedBrowserBranches(t *testing.T) {
 		t.Fatalf("managed port data=%q err=%v", data, err)
 	}
 }
+
+func TestLaunchManagedBrowserReportsProfileSetupErrors(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "browser"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldFinder := browserExecutableFinder
+	browserExecutableFinder = func() string { return "/bin/echo" }
+	t.Cleanup(func() {
+		browserExecutableFinder = oldFinder
+	})
+
+	_, err := launchManagedBrowser(33335)
+	if err == nil || !strings.Contains(err.Error(), "prepare managed browser profile") {
+		t.Fatalf("profile setup error = %v", err)
+	}
+}

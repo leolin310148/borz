@@ -165,7 +165,7 @@ func TestRunChecksumActualMismatch(t *testing.T) {
 	})
 	mux.HandleFunc("/zip", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write(zipBytes) })
 	mux.HandleFunc("/sums", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, "deadbeef  borz-extension.zip\n")
+		_, _ = io.WriteString(w, strings.Repeat("0", 64)+"  borz-extension.zip\n")
 	})
 	server = httptest.NewServer(mux)
 	defer server.Close()
@@ -277,6 +277,43 @@ func TestExtractFileRejectsZipSlip(t *testing.T) {
 	}
 }
 
+func TestExtractFilePathValidationEdges(t *testing.T) {
+	t.Run("allows dot-prefixed ordinary directory", func(t *testing.T) {
+		zipBytes := makeZip(t, map[string]string{"..assets/file.txt": "ok"})
+		dir := t.TempDir()
+		zipPath := filepath.Join(dir, "assets.zip")
+		if err := os.WriteFile(zipPath, zipBytes, 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		dest := filepath.Join(dir, "out")
+		if err := nukeAndExtract(zipPath, dest); err != nil {
+			t.Fatalf("nukeAndExtract: %v", err)
+		}
+		got, err := os.ReadFile(filepath.Join(dest, "..assets", "file.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "ok" {
+			t.Fatalf("file content = %q, want ok", got)
+		}
+	})
+
+	t.Run("rejects backslash traversal", func(t *testing.T) {
+		zipBytes := makeZip(t, map[string]string{`..\evil.txt`: "nope"})
+		dir := t.TempDir()
+		zipPath := filepath.Join(dir, "evil.zip")
+		if err := os.WriteFile(zipPath, zipBytes, 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := nukeAndExtract(zipPath, filepath.Join(dir, "out"))
+		if err == nil || !strings.Contains(err.Error(), "invalid zip entry") {
+			t.Fatalf("want invalid-zip-entry error, got %v", err)
+		}
+	})
+}
+
 func TestRunZipDownloadFails(t *testing.T) {
 	// Release JSON points the zip URL at a 500 endpoint.
 	mux := http.NewServeMux()
@@ -294,7 +331,7 @@ func TestRunZipDownloadFails(t *testing.T) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	})
 	mux.HandleFunc("/sums", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, "deadbeef  borz-extension.zip\n")
+		_, _ = io.WriteString(w, strings.Repeat("0", 64)+"  borz-extension.zip\n")
 	})
 	server = httptest.NewServer(mux)
 	defer server.Close()

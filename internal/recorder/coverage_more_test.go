@@ -182,6 +182,10 @@ func TestRenderHelperBranches(t *testing.T) {
 	if opts.Height != 100 || opts.Format != "webp" || opts.FPS != 24 {
 		t.Fatalf("loop defaults = %+v", opts)
 	}
+	opts = fillRenderDefaults(b, RenderOptions{Out: "clip.GIF"})
+	if opts.Format != "gif" {
+		t.Fatalf("output extension should set missing format, got %+v", opts)
+	}
 	opts = fillRenderDefaults(b, RenderOptions{Preset: "archive", Width: 0, Height: 25, FPS: 12, Format: "gif", Annotations: []string{"cursor"}})
 	if opts.Width != 50 || opts.Height != 25 || opts.Format != "gif" || opts.FPS != 12 || len(opts.Annotations) != 1 {
 		t.Fatalf("height-derived defaults = %+v", opts)

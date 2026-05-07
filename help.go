@@ -241,7 +241,7 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"network": {
 		Summary: "List, clear, or live-tail network requests captured for the current tab.",
-		Usage:   "borz network [requests|clear] [--tail] [--interval <ms>] [flags]",
+		Usage:   "borz network [requests|clear] [--tail] [--interval <duration|ms>] [flags]",
 		Flags: []string{
 			"  --filter <substr>    Only requests whose URL contains <substr>",
 			"  --method <M>         Only requests with HTTP method M (GET, POST, ...)",
@@ -249,7 +249,7 @@ var commandHelp = map[string]cmdHelp{
 			"  --with-body          Include response bodies (heavier payload)",
 			"  --since <seq|last_action>   Only events newer than this checkpoint",
 			"  --tail               Stream new requests as they arrive (Ctrl+C to stop)",
-			"  --interval <ms>      Polling interval in --tail mode (default 500)",
+			"  --interval <duration|ms>  Polling interval in --tail mode (default 500ms)",
 		},
 		Examples: []string{
 			"  borz network",
@@ -259,7 +259,7 @@ var commandHelp = map[string]cmdHelp{
 			"  borz network --tail --json | jq -c 'select(.status>=400)'",
 			"  borz network clear",
 		},
-		Notes: "--tail polls the daemon every --interval ms, advancing the cursor so each\n" +
+		Notes: "--tail polls the daemon every --interval, advancing the cursor so each\n" +
 			"request is printed at most once. Combine with --json for JSONL output suitable\n" +
 			"for piping into jq -c, or with --filter/--method/--status to narrow the stream.",
 	},

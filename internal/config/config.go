@@ -44,11 +44,11 @@ func HomeDir() string {
 	}
 	home, _ := os.UserHomeDir()
 	current := filepath.Join(home, HomeName)
-	if pathExists(current) {
+	if dirExists(current) {
 		return current
 	}
 	legacy := filepath.Join(home, LegacyHomeName)
-	if pathExists(legacy) {
+	if dirExists(legacy) {
 		return legacy
 	}
 	return current
@@ -66,7 +66,10 @@ func EnsureHomeDir() (string, error) {
 	home, _ := os.UserHomeDir()
 	current := filepath.Join(home, HomeName)
 	legacy := filepath.Join(home, LegacyHomeName)
-	if !pathExists(current) && pathExists(legacy) {
+	if st, err := os.Stat(current); err == nil && !st.IsDir() {
+		return "", fmt.Errorf("%s exists and is not a directory", current)
+	}
+	if !dirExists(current) && dirExists(legacy) {
 		if err := os.Rename(legacy, current); err != nil {
 			return "", fmt.Errorf("migrate %s to %s: %w", legacy, current, err)
 		}
@@ -78,9 +81,9 @@ func EnsureHomeDir() (string, error) {
 	return current, nil
 }
 
-func pathExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+func dirExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
 }
 
 // DaemonJSONPath returns the path to daemon.json.

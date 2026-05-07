@@ -36,3 +36,18 @@ func TestFormatTextSnapshot_TrimsBody(t *testing.T) {
 		t.Errorf("body trailing whitespace not trimmed; got %q", got)
 	}
 }
+
+func TestFormatTextSnapshot_TrimsMetadata(t *testing.T) {
+	got := formatTextSnapshot("  Title  ", "  https://example.com/  ", "body")
+	want := "# Title\nhttps://example.com/\n\nbody"
+	if got != want {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+}
+
+func TestFormatTextSnapshot_IgnoresWhitespaceOnlyMetadata(t *testing.T) {
+	got := formatTextSnapshot(" \t\n", " \n", "body")
+	if got != "body" {
+		t.Errorf("got %q, want %q", got, "body")
+	}
+}

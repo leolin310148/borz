@@ -309,6 +309,11 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 				t.Fatalf("viewport output = %q", out)
 			}
 		}},
+		{name: "viewport custom size with spaces", args: []string{"viewport", " 800 x 600 "}, action: protocol.ActionViewport, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.Viewport == nil || req.Viewport.Width != 800 || req.Viewport.Height != 600 || req.Viewport.DPR != 1 {
+				t.Fatalf("viewport request = %+v", req)
+			}
+		}},
 		{name: "close", args: []string{"close"}, action: protocol.ActionClose, check: expectOutput("Tab closed")},
 		{name: "back", args: []string{"back"}, action: protocol.ActionBack, check: expectOutput("Back")},
 		{name: "forward", args: []string{"forward"}, action: protocol.ActionForward, check: expectOutput("Forward")},

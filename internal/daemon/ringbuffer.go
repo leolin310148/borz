@@ -30,6 +30,24 @@ func (rb *RingBuffer[T]) Push(item T) {
 	}
 }
 
+// Find returns the first stored element matching match.
+func (rb *RingBuffer[T]) Find(match func(*T) bool) *T {
+	if rb.count == 0 {
+		return nil
+	}
+	start := 0
+	if rb.count == rb.capacity {
+		start = rb.head
+	}
+	for i := 0; i < rb.count; i++ {
+		item := &rb.items[(start+i)%rb.capacity]
+		if match(item) {
+			return item
+		}
+	}
+	return nil
+}
+
 // ToSlice returns all stored elements in insertion order (oldest first).
 func (rb *RingBuffer[T]) ToSlice() []T {
 	if rb.count == 0 {

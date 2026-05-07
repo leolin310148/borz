@@ -95,6 +95,9 @@ func fillRenderDefaults(b *Bundle, opts RenderOptions) RenderOptions {
 	if opts.FPS <= 0 {
 		opts.FPS = preset.FPS
 	}
+	if opts.Format == "" && opts.Out != "" {
+		opts.Format = strings.TrimPrefix(strings.ToLower(filepath.Ext(opts.Out)), ".")
+	}
 	if opts.Format == "" {
 		opts.Format = preset.Format
 	}
@@ -120,9 +123,6 @@ func fillRenderDefaults(b *Bundle, opts RenderOptions) RenderOptions {
 	}
 	if opts.Height <= 0 {
 		opts.Height = nativeH
-	}
-	if opts.Format == "" && opts.Out != "" {
-		opts.Format = strings.TrimPrefix(strings.ToLower(filepath.Ext(opts.Out)), ".")
 	}
 	return opts
 }

@@ -151,8 +151,36 @@ func TestViewportPreset(t *testing.T) {
 	if !ok || mobile.Width != 390 || mobile.Height != 844 || !mobile.Mobile || mobile.Touch == nil || !*mobile.Touch {
 		t.Fatalf("mobile preset = %+v ok=%v", mobile, ok)
 	}
+	// Presets should return independent Touch pointers so callers can tweak
+	// options without mutating later preset lookups.
+	*mobile.Touch = false
+	mobileAgain, ok := ViewportPreset(" mobile ")
+	if !ok || mobileAgain.Touch == nil || !*mobileAgain.Touch {
+		t.Fatalf("mobile preset was mutated across calls: %+v ok=%v", mobileAgain, ok)
+	}
+	ipad, ok := ViewportPreset("IPAD")
+	if !ok || ipad.Width != 768 || ipad.Height != 1024 || !ipad.Mobile || ipad.Touch == nil || !*ipad.Touch {
+		t.Fatalf("ipad alias preset = %+v ok=%v", ipad, ok)
+	}
 	if _, ok := ViewportPreset("unknown"); ok {
 		t.Fatal("unknown preset should not resolve")
+	}
+}
+
+func TestViewportPresetNames(t *testing.T) {
+	names := ViewportPresetNames()
+	want := []string{"mobile", "tablet", "desktop"}
+	if len(names) != len(want) {
+		t.Fatalf("names = %+v, want %+v", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("names = %+v, want %+v", names, want)
+		}
+	}
+	names[0] = "changed"
+	if got := ViewportPresetNames()[0]; got != "mobile" {
+		t.Fatalf("ViewportPresetNames exposed mutable backing array: %q", got)
 	}
 }
 

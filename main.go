@@ -1569,6 +1569,9 @@ func hasFlag(args []string, flag string) bool {
 
 func getArgValue(args []string, flag string) string {
 	for i, a := range args {
+		if value, ok := inlineArgValue(a, flag); ok {
+			return value
+		}
 		if a == flag && i+1 < len(args) {
 			return args[i+1]
 		}
@@ -1581,11 +1584,32 @@ func getArgValue(args []string, flag string) string {
 func getAllArgValues(args []string, flag string) []string {
 	var out []string
 	for i, a := range args {
+		if value, ok := inlineArgValue(a, flag); ok {
+			out = append(out, value)
+			continue
+		}
 		if a == flag && i+1 < len(args) {
 			out = append(out, args[i+1])
 		}
 	}
 	return out
+}
+
+func inlineArgValue(arg, flag string) (string, bool) {
+	prefix := flag + "="
+	if strings.HasPrefix(arg, prefix) {
+		return strings.TrimPrefix(arg, prefix), true
+	}
+	return "", false
+}
+
+func hasInlineValueFlag(arg string, flags map[string]bool) bool {
+	for flag := range flags {
+		if _, ok := inlineArgValue(arg, flag); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func stripFlags(args []string, valueFlags, boolFlags []string) []string {
@@ -1597,6 +1621,16 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 	for _, f := range boolFlags {
 		boolFlagSet[f] = true
 	}
+	handledValueFlagSet := map[string]bool{
+		"-d":         true,
+		"--depth":    true,
+		"-s":         true,
+		"--selector": true,
+		"--filter":   true,
+		"--method":   true,
+		"--status":   true,
+		"--id":       true,
+	}
 
 	var result []string
 	skip := false
@@ -1605,8 +1639,11 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 			skip = false
 			continue
 		}
-		if valueFlagSet[a] {
+		if valueFlagSet[a] || handledValueFlagSet[a] {
 			skip = true
+			continue
+		}
+		if hasInlineValueFlag(a, valueFlagSet) || hasInlineValueFlag(a, handledValueFlagSet) {
 			continue
 		}
 		if boolFlagSet[a] {
@@ -1616,11 +1653,6 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 		if a == "-i" || a == "-c" || a == "--interactive" || a == "--compact" ||
 			a == "--with-body" || a == "--clear" || a == "--json" || a == "--new" ||
 			a == "--text-only" || a == "--text" {
-			continue
-		}
-		if a == "-d" || a == "--depth" || a == "-s" || a == "--selector" ||
-			a == "--filter" || a == "--method" || a == "--status" || a == "--id" {
-			skip = true
 			continue
 		}
 		result = append(result, a)
