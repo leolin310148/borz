@@ -793,22 +793,27 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 // are clamped to 0. Non-numeric inputs fall back to the next source.
 func resolveIdleTabTimeout(rawArgs []string) int {
 	if v := getArgValue(rawArgs, "--idle-tab-timeout"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			if n < 0 {
-				n = 0
-			}
+		if n, ok := parseIdleTabTimeout(v); ok {
 			return n
 		}
 	}
 	if v := config.Env("BORZ_TAB_IDLE_TIMEOUT", "BB_BROWSER_TAB_IDLE_TIMEOUT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			if n < 0 {
-				n = 0
-			}
+		if n, ok := parseIdleTabTimeout(v); ok {
 			return n
 		}
 	}
 	return config.DefaultIdleTabCloseMinutes
+}
+
+func parseIdleTabTimeout(v string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return 0, false
+	}
+	if n < 0 {
+		n = 0
+	}
+	return n, true
 }
 
 // --- Daemon handling ---

@@ -284,11 +284,18 @@ func TestResolveIdleTabTimeout(t *testing.T) {
 	if got := resolveIdleTabTimeout([]string{"--idle-tab-timeout", "5"}); got != 5 {
 		t.Errorf("flag: got %d, want 5", got)
 	}
+	if got := resolveIdleTabTimeout([]string{"--idle-tab-timeout", " 6 "}); got != 6 {
+		t.Errorf("whitespace flag: got %d, want 6", got)
+	}
 
 	// 0 disables.
 	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "0")
 	if got := resolveIdleTabTimeout(nil); got != 0 {
 		t.Errorf("env=0: got %d, want 0", got)
+	}
+	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", " 9 ")
+	if got := resolveIdleTabTimeout(nil); got != 9 {
+		t.Errorf("whitespace env: got %d, want 9", got)
 	}
 
 	// Negative clamps to 0.
