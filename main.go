@@ -1748,6 +1748,7 @@ Observation:
   errors [--clear] [--tail]     JavaScript errors; --tail streams new
                                 errors live
   trace [start|stop|status]     Record user actions
+  record start|stop|render      Capture browser flows into .borzrec bundles
 
 Tab Management:
   tab                           List tabs

@@ -307,10 +307,11 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"record": {
 		Summary: "Capture a browser flow into a .borzrec bundle and render it to video/image.",
-		Usage:   "borz record [start|stop|list|info|verify|render|redact|export|edit|play]",
+		Usage:   "borz record [start|stop|pause|resume|list|info|verify|render|redact|export|edit|play]",
 		Flags: []string{
 			"  start --url <url> [--mode cdp|client] [--out <path.borzrec>] [--fps N]",
 			"  stop [id] [--recover]        Finalize the active recording",
+			"  pause|resume [id]            Temporarily pause or resume capture",
 			"  render <bundle> --preset share [--out demo.mp4]",
 			"  redact <bundle> --selector <css> | --rect x,y,w,h",
 		},
@@ -915,6 +916,71 @@ var commandHelp = map[string]cmdHelp{
 	"trace.status": {
 		Summary: "Report whether recording is active and how many events are captured so far.",
 		Usage:   "borz trace status [--tab <id>]",
+	},
+
+	// --- Subcommand pages: record.* ---
+	"record.start": {
+		Summary: "Start a daemon-managed recording bundle.",
+		Usage:   "borz record start [url] [--url <url>] [--mode cdp|client] [--out <path.borzrec>] [--fps N]",
+		Flags: []string{
+			"  --id <id>              Recording id",
+			"  --url <url>            URL to open before recording",
+			"  --mode cdp|client      Capture via CDP tab or extension client",
+			"  --out <path.borzrec>   Bundle output path",
+			"  --viewport <WxH>       Viewport preset or size for capture",
+			"  --fps N                Capture frame rate",
+		},
+	},
+	"record.stop": {
+		Summary: "Finalize the active recording.",
+		Usage:   "borz record stop [id] [--recover]",
+		Flags:   []string{"  --recover   Finalize a partially written recording when possible"},
+	},
+	"record.pause": {
+		Summary: "Pause capture for the active recording.",
+		Usage:   "borz record pause [id]",
+	},
+	"record.resume": {
+		Summary: "Resume capture for the active recording.",
+		Usage:   "borz record resume [id]",
+	},
+	"record.list": {
+		Summary: "List active and recently completed recordings.",
+		Usage:   "borz record list [--json]",
+	},
+	"record.info": {
+		Summary: "Inspect a recording bundle or daemon recording.",
+		Usage:   "borz record info <bundle|recording-id> [--json]",
+	},
+	"record.verify": {
+		Summary: "Validate a .borzrec bundle's schema, ordering, and checksums.",
+		Usage:   "borz record verify <bundle> [--json]",
+	},
+	"record.render": {
+		Summary: "Render a .borzrec bundle to video or image output.",
+		Usage:   "borz record render <bundle> [--preset share] [--out demo.mp4]",
+		Flags: []string{
+			"  --format <fmt>       Output format, inferred from --out when omitted",
+			"  --fps N              Output frame rate",
+			"  --width/--height N   Output dimensions",
+			"  --ffmpeg <path>      ffmpeg binary path",
+		},
+	},
+	"record.redact": {
+		Summary: "Add a render-time redaction to a .borzrec bundle.",
+		Usage:   "borz record redact <bundle> --selector <css> | --rect x,y,w,h",
+	},
+	"record.export": {
+		Summary: "Export a stable JSON trace from a .borzrec bundle.",
+		Usage:   "borz record export <bundle> --format trace.json [--out trace.json]",
+	},
+	"record.edit": {
+		Summary: "Show bundle details or a daemon preview URL for editing.",
+		Usage:   "borz record edit <bundle|recording-id>",
+	},
+	"record.play": {
+		Summary: "Show bundle details or a daemon preview URL for playback.",
+		Usage:   "borz record play <bundle|recording-id>",
 	},
 
 	// --- Subcommand pages: network.* ---

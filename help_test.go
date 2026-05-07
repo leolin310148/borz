@@ -79,7 +79,7 @@ func TestCommandHelpCoversDispatch(t *testing.T) {
 		"click", "hover", "fill", "type", "check", "uncheck", "select",
 		"eval", "get", "screenshot", "viewport", "press", "scroll", "wait",
 		"snapshot", "tab", "frame", "dialog", "network", "console", "errors", "trace",
-		"fetch", "mcp", "daemon", "server", "service", "client", "status", "site", "update", "history",
+		"fetch", "mcp", "daemon", "server", "service", "client", "status", "doctor", "site", "update", "record", "history",
 		"cookies", "bookmarks", "browser-history", "downloads", "window", "windows", "extension",
 		"help", "version",
 	}
@@ -110,6 +110,9 @@ func TestCommandHelpCoversSubcommands(t *testing.T) {
 		"client.setup", "client.enable", "client.disable", "client.status",
 		// trace
 		"trace.start", "trace.stop", "trace.status",
+		// record
+		"record.start", "record.stop", "record.pause", "record.resume", "record.list", "record.info",
+		"record.verify", "record.render", "record.redact", "record.export", "record.edit", "record.play",
 		// network (handleNetwork)
 		"network.requests", "network.clear",
 		// dialog
@@ -212,6 +215,7 @@ func TestPrintAllHelp(t *testing.T) {
 		"## snapshot",
 		"## tab",
 		"## tab.new",
+		"## record.pause",
 		"## tab.events",
 		"--unwrap",
 		"--wait-for",
@@ -228,6 +232,7 @@ func TestTopLevelHelpMentionsNewFlags(t *testing.T) {
 		"--wait-for",
 		"--unwrap",
 		"--file",
+		"record start|stop|render",
 		"help --all",
 	} {
 		if !strings.Contains(out, want) {
