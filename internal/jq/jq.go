@@ -276,8 +276,10 @@ func parseLiteral(value string) interface{} {
 	trimmed := strings.TrimSpace(value)
 	if strings.HasPrefix(trimmed, `"`) && strings.HasSuffix(trimmed, `"`) {
 		var s string
-		json.Unmarshal([]byte(trimmed), &s)
-		return s
+		if err := json.Unmarshal([]byte(trimmed), &s); err == nil {
+			return s
+		}
+		return trimmed
 	}
 	if trimmed == "true" {
 		return true

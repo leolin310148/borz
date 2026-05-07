@@ -361,6 +361,7 @@ func TestParseLiteral(t *testing.T) {
 		{`42`, float64(42)},
 		{`3.14`, 3.14},
 		{`bareword`, "bareword"},
+		{`"\z"`, `"\z"`},
 	}
 	for _, c := range cases {
 		if got := parseLiteral(c.in); !reflect.DeepEqual(got, c.want) {
