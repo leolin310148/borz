@@ -308,7 +308,15 @@ func parseBytes(s string) (int64, error) {
 	if math.IsNaN(n) || math.IsInf(n, 0) || n <= 0 {
 		return 0, fmt.Errorf("size must be positive")
 	}
-	return int64(n * float64(mult)), nil
+	bytes := n * float64(mult)
+	if bytes >= float64(math.MaxInt64) {
+		return 0, fmt.Errorf("size too large")
+	}
+	size := int64(bytes)
+	if size <= 0 {
+		return 0, fmt.Errorf("size too small")
+	}
+	return size, nil
 }
 
 func parseMask(s string) (recorder.RedactionMask, error) {

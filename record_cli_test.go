@@ -98,6 +98,9 @@ func TestRecordCLILocalBundleCommandsAndHelpers(t *testing.T) {
 	if got, err := parseBytes("1.5MB"); err != nil || got != 1572864 {
 		t.Fatalf("parseBytes: got %d err=%v", got, err)
 	}
+	if _, err := parseBytes("9223372036854775808B"); err == nil {
+		t.Fatal("parseBytes should reject values larger than int64")
+	}
 	if _, err := parseMask("1,2,3"); err == nil {
 		t.Fatal("parseMask should reject short rect")
 	}
