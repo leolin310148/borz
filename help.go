@@ -986,18 +986,21 @@ var commandHelp = map[string]cmdHelp{
 	// --- Subcommand pages: network.* ---
 	"network.requests": {
 		Summary: "List network requests captured for the current tab.",
-		Usage:   "borz network requests [--filter S] [--method M] [--status C] [--with-body] [--since <seq|last_action>] [--tab <id>]",
+		Usage:   "borz network requests [--filter S] [--method M] [--status C] [--with-body] [--since <seq|last_action>] [--tail] [--interval <duration|ms>] [--tab <id>]",
 		Flags: []string{
 			"  --filter <substr>    Only requests whose URL contains <substr>",
 			"  --method <M>         Only requests with HTTP method M (GET, POST, ...)",
 			"  --status <code>      Only requests whose response status matches <code>",
 			"  --with-body          Include response bodies (heavier payload)",
 			"  --since <seq|last_action>   Only requests newer than this checkpoint",
+			"  --tail               Stream new requests as they arrive (Ctrl+C to stop)",
+			"  --interval <duration|ms>  Polling interval in --tail mode (default 500ms)",
 		},
 		Examples: []string{
 			"  borz network requests",
 			"  borz network requests --filter /api/ --method POST",
 			"  borz network requests --since last_action --with-body",
+			"  borz network requests --tail --filter /api/",
 		},
 	},
 	"network.clear": {

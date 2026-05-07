@@ -58,6 +58,23 @@ func TestPrintCommandHelpAlias(t *testing.T) {
 	}
 }
 
+func TestNetworkRequestsHelpMentionsTailFlags(t *testing.T) {
+	out := captureStdout(t, func() {
+		if !printCommandHelp("network.requests") {
+			t.Fatal("printCommandHelp should return true for network.requests")
+		}
+	})
+	for _, want := range []string{
+		"--tail",
+		"--interval <duration|ms>",
+		"borz network requests --tail --filter /api/",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("network.requests help missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestPrintCommandHelpUnknownFallsBack(t *testing.T) {
 	out := captureStdout(t, func() {
 		if printCommandHelp("notarealcommand") {
