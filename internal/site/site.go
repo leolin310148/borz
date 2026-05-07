@@ -372,6 +372,15 @@ func ParseAdapterArgs(meta *SiteMeta, cliArgs []string) (map[string]interface{},
 		arg := cliArgs[i]
 		if strings.HasPrefix(arg, "--") {
 			key := strings.TrimPrefix(arg, "--")
+			if eq := strings.IndexByte(key, '='); eq >= 0 {
+				value := key[eq+1:]
+				key = key[:eq]
+				if key == "" {
+					return nil, fmt.Errorf("invalid empty adapter arg flag")
+				}
+				result[key] = value
+				continue
+			}
 			if key == "" {
 				return nil, fmt.Errorf("invalid empty adapter arg flag")
 			}

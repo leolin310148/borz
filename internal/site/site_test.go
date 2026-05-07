@@ -316,6 +316,17 @@ func TestParseAdapterArgs_Flags(t *testing.T) {
 	}
 }
 
+func TestParseAdapterArgs_FlagsEqualsForm(t *testing.T) {
+	meta := &SiteMeta{Args: map[string]ArgDef{"q": {}, "limit": {}, "prefix": {}}}
+	got, err := ParseAdapterArgs(meta, []string{"--q=cats", "--limit=10", "--prefix=--literal"})
+	if err != nil {
+		t.Fatalf("ParseAdapterArgs: %v", err)
+	}
+	if got["q"] != "cats" || got["limit"] != "10" || got["prefix"] != "--literal" {
+		t.Errorf("equals flag parsing = %+v", got)
+	}
+}
+
 func TestParseAdapterArgs_FlagMissingValue(t *testing.T) {
 	meta := &SiteMeta{Args: map[string]ArgDef{}}
 	if _, err := ParseAdapterArgs(meta, []string{"--dangling"}); err == nil || !strings.Contains(err.Error(), "missing value") {
