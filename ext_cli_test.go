@@ -562,6 +562,41 @@ func TestHandleTabEvents_TailStopsOnSignal(t *testing.T) {
 	}
 }
 
+func TestHandleTabEvents_TailHonorsExplicitSince(t *testing.T) {
+	requests := 0
+	extDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			w.Write([]byte(`{"running":true}`))
+			return
+		}
+		if r.URL.Path != "/v1/tabs/events" {
+			w.WriteHeader(404)
+			return
+		}
+		requests++
+		if got := r.URL.Query().Get("since"); got != "7" {
+			t.Errorf("request %d since = %q, want 7", requests, got)
+		}
+		proc, err := os.FindProcess(os.Getpid())
+		if err != nil {
+			t.Errorf("FindProcess: %v", err)
+		} else if err := proc.Signal(os.Interrupt); err != nil {
+			t.Errorf("signal interrupt: %v", err)
+		}
+		w.Write([]byte(`{"events":[{"seq":8,"name":"tabs.updated","data":{"id":1}}],"latest_seq":8,"connected":true}`))
+	})
+
+	out := withCapturedStdout(t, func() {
+		handleTabEvents([]string{"events", "--tail", "--since", "7", "--interval", "1"}, false)
+	})
+	if !strings.Contains(out, "tabs.updated") {
+		t.Fatalf("tail output = %q", out)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+}
+
 func TestHandleCookies_All_InvalidJSONFallsBackToRaw(t *testing.T) {
 	extDaemon(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {

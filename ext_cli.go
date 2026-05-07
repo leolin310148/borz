@@ -138,12 +138,17 @@ func handleTabEvents(rawArgs []string, jsonOutput bool) {
 		return
 	}
 
-	// Prime cursor so --tail only shows new events.
-	_, latest, err := fetchTabEvents(^uint64(0))
-	if err != nil {
-		fatal(err.Error())
+	cursor := since
+	if cursor == 0 {
+		// Prime cursor so default --tail only shows new events. An explicit
+		// --since cursor is honored so callers can replay buffered events before
+		// continuing to stream.
+		_, latest, err := fetchTabEvents(^uint64(0))
+		if err != nil {
+			fatal(err.Error())
+		}
+		cursor = latest
 	}
-	cursor := latest
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
