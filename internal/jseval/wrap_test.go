@@ -99,6 +99,16 @@ func TestAutoWrapAwait(t *testing.T) {
 			want: "awaiter()",
 		},
 		{
+			name: "property named await is ignored",
+			in:   "obj.await + 1",
+			want: "obj.await + 1",
+		},
+		{
+			name: "optional-chain property named await is ignored",
+			in:   "obj?.await()",
+			want: "obj?.await()",
+		},
+		{
 			name: "trailing semicolon on single expression is preserved as no-op",
 			in:   "await foo();",
 			want: "(async () => { return (await foo()) })()",

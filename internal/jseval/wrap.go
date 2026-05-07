@@ -178,6 +178,9 @@ func matchKeyword(src string, i int, kw string) bool {
 	if i > 0 && isIdentChar(src[i-1]) {
 		return false
 	}
+	if i > 0 && src[i-1] == '.' {
+		return false
+	}
 	if i+len(kw) < len(src) && isIdentChar(src[i+len(kw)]) {
 		return false
 	}
