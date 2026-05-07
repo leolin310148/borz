@@ -1321,9 +1321,13 @@ func handleSiteRun(name string, cmdArgs []string, jsonOutput bool, globalTabID s
 			fatal(err.Error())
 		}
 	}
+	timeoutMs, err := parsePositiveIntArg("--timeout", getArgValue(rawArgs, "--timeout"))
+	if err != nil {
+		fatal(err.Error())
+	}
 	evalReq, err := site.BuildEvalRequestWithOptions(meta, args, globalTabID, site.EvalOptions{
 		Force:     force,
-		TimeoutMs: parsePositiveInt(getArgValue(rawArgs, "--timeout")),
+		TimeoutMs: timeoutMs,
 	})
 	if err != nil {
 		fatal(err.Error())
@@ -1397,16 +1401,16 @@ func orderedSiteArgNames(meta *site.SiteMeta) []string {
 	return names
 }
 
-func parsePositiveInt(raw string) int {
+func parsePositiveIntArg(name, raw string) (int, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return 0
+		return 0, nil
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
-		return 0
+		return 0, fmt.Errorf("%s must be a positive integer", name)
 	}
-	return n
+	return n, nil
 }
 
 // --- Helpers ---

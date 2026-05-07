@@ -168,6 +168,26 @@ func TestGetAllArgValues(t *testing.T) {
 	}
 }
 
+func TestParsePositiveIntArg(t *testing.T) {
+	got, err := parsePositiveIntArg("--timeout", " 2500 ")
+	if err != nil {
+		t.Fatalf("parsePositiveIntArg returned error: %v", err)
+	}
+	if got != 2500 {
+		t.Fatalf("parsePositiveIntArg = %d, want 2500", got)
+	}
+
+	if got, err := parsePositiveIntArg("--timeout", ""); err != nil || got != 0 {
+		t.Fatalf("empty parsePositiveIntArg = %d, %v; want 0, nil", got, err)
+	}
+
+	for _, raw := range []string{"0", "-1", "abc"} {
+		if _, err := parsePositiveIntArg("--timeout", raw); err == nil || !strings.Contains(err.Error(), "--timeout must be a positive integer") {
+			t.Fatalf("parsePositiveIntArg(%q) error = %v", raw, err)
+		}
+	}
+}
+
 func TestStripFlags(t *testing.T) {
 	in := []string{"open", "--json", "--id", "1", "https://x", "--filter", "foo", "arg2"}
 	got := stripFlags(in, nil, nil)

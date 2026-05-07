@@ -826,7 +826,7 @@ func TestStopDaemonAfterUpdateBranches(t *testing.T) {
 }
 
 func TestHandleSiteRunWithLocalAdapter(t *testing.T) {
-	newFakeDaemon(t)
+	fd := newFakeDaemon(t)
 	sitesDir := filepath.Join(os.Getenv("BORZ_HOME"), "sites", "demo")
 	if err := os.MkdirAll(sitesDir, 0o755); err != nil {
 		t.Fatalf("mkdir sites: %v", err)
@@ -859,6 +859,20 @@ async function(args) { return args.q; }`
 	})
 	if !strings.Contains(out, `"ok": true`) {
 		t.Fatalf("site run output = %q", out)
+	}
+
+	oldArgs := os.Args
+	os.Args = []string{"borz", "site", "run", "demo/search", "kittens", "--timeout", "44"}
+	t.Cleanup(func() { os.Args = oldArgs })
+	out = captureStdout(t, func() {
+		handleSiteRun("demo/search", []string{"kittens"}, false, "tab-1")
+	})
+	if !strings.Contains(out, `"ok": true`) {
+		t.Fatalf("site run with timeout output = %q", out)
+	}
+	req := fd.requests[len(fd.requests)-1]
+	if req.EvalTimeoutMs == nil || *req.EvalTimeoutMs != 44 {
+		t.Fatalf("site run timeout request = %+v", req)
 	}
 }
 
