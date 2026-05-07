@@ -550,6 +550,16 @@ func TestMainStatusAndHelpCommands(t *testing.T) {
 
 	out = captureStdout(t, func() {
 		oldArgs := os.Args
+		os.Args = []string{"borz", "--version"}
+		defer func() { os.Args = oldArgs }()
+		main()
+	})
+	if !strings.Contains(out, "borz") || strings.Contains(out, "Usage:") {
+		t.Fatalf("--version output = %q", out)
+	}
+
+	out = captureStdout(t, func() {
+		oldArgs := os.Args
 		os.Args = []string{"borz", "help", "tab", "new"}
 		defer func() { os.Args = oldArgs }()
 		main()

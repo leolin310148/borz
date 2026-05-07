@@ -69,6 +69,10 @@ func main() {
 	cleanArgs := stripFlags(args, []string{"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval", "--limit", "--id", "--title", "--parent", "--filename", "--state", "--name", "--display-name", "--description", "--out", "--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size", "--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--fps", "--width", "--height", "--ffmpeg", "--chapters", "--selector", "--rect"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused", "--lossless", "--mask-by-default", "--recover", "--baked", "--smooth", "--mobile", "--touch", "--no-touch", "--reset"})
 
 	if len(cleanArgs) == 0 {
+		if hasFlag(args, "--version") {
+			fmt.Println("borz", version)
+			return
+		}
 		printHelp()
 		exitFunc(0)
 	}
