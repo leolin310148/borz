@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 )
 
+var userHomeDir = os.UserHomeDir
+
 const (
 	DaemonPort     = 19824
 	DaemonHost     = "127.0.0.1"
@@ -42,12 +44,13 @@ func HomeDir() string {
 	if env := os.Getenv(LegacyHomeEnv); env != "" {
 		return env
 	}
-	home, _ := os.UserHomeDir()
-	current := filepath.Join(home, HomeName)
+	current, legacy, err := defaultHomeDirs()
+	if err != nil {
+		return HomeName
+	}
 	if dirExists(current) {
 		return current
 	}
-	legacy := filepath.Join(home, LegacyHomeName)
 	if dirExists(legacy) {
 		return legacy
 	}
@@ -63,9 +66,10 @@ func EnsureHomeDir() (string, error) {
 	if env := os.Getenv(LegacyHomeEnv); env != "" {
 		return env, os.MkdirAll(env, 0o755)
 	}
-	home, _ := os.UserHomeDir()
-	current := filepath.Join(home, HomeName)
-	legacy := filepath.Join(home, LegacyHomeName)
+	current, legacy, err := defaultHomeDirs()
+	if err != nil {
+		return "", err
+	}
 	if st, err := os.Stat(current); err == nil && !st.IsDir() {
 		return "", fmt.Errorf("%s exists and is not a directory", current)
 	}
@@ -79,6 +83,14 @@ func EnsureHomeDir() (string, error) {
 		return "", err
 	}
 	return current, nil
+}
+
+func defaultHomeDirs() (current string, legacy string, err error) {
+	home, err := userHomeDir()
+	if err != nil {
+		return "", "", fmt.Errorf("find user home directory: %w", err)
+	}
+	return filepath.Join(home, HomeName), filepath.Join(home, LegacyHomeName), nil
 }
 
 func dirExists(path string) bool {

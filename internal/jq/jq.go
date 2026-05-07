@@ -10,6 +10,12 @@ import (
 	"strings"
 )
 
+var (
+	selectExprRegexp = regexp.MustCompile(`^select\((.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)\)$`)
+	arrayIndexRegexp = regexp.MustCompile(`^\[(-?\d+)\]`)
+	fieldNameRegexp  = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)`)
+)
+
 // Apply applies a jq expression to data and returns matching results.
 func Apply(data interface{}, expression string) []interface{} {
 	results := applyExpression([]interface{}{data}, expression)
@@ -38,8 +44,7 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 
 	// select(...)
 	if strings.HasPrefix(expr, "select(") {
-		re := regexp.MustCompile(`^select\((.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)\)$`)
-		matches := re.FindStringSubmatch(expr)
+		matches := selectExprRegexp.FindStringSubmatch(expr)
 		if matches == nil {
 			return inputs
 		}
@@ -79,15 +84,15 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 			obj := map[string]interface{}{}
 			for _, entry := range entries {
 				entry = strings.TrimSpace(entry)
-				colonIdx := strings.Index(entry, ":")
+				colonIdx := indexTopLevel(entry, ':')
 				if colonIdx == -1 {
-					key := strings.TrimPrefix(strings.TrimSpace(entry), ".")
-					vals := applyExpression([]interface{}{item}, "."+key)
+					key := projectionKeyFromExpression(entry)
+					vals := applyExpression([]interface{}{item}, ensureFieldExpression(entry))
 					if len(vals) > 0 {
 						obj[key] = vals[0]
 					}
 				} else {
-					key := strings.TrimSpace(entry[:colonIdx])
+					key := projectionKey(entry[:colonIdx])
 					valueExpr := strings.TrimSpace(entry[colonIdx+1:])
 					vals := applyExpression([]interface{}{item}, valueExpr)
 					if len(vals) > 0 {
@@ -158,10 +163,16 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 			}
 			current = spread
 			remaining = remaining[2:]
+		} else if strings.HasPrefix(remaining, `["`) {
+			field, consumed, ok := parseBracketField(remaining)
+			if !ok {
+				break
+			}
+			current = applyField(current, field)
+			remaining = remaining[consumed:]
 		} else if strings.HasPrefix(remaining, "[") {
 			// Array index
-			re := regexp.MustCompile(`^\[(-?\d+)\]`)
-			matches := re.FindStringSubmatch(remaining)
+			matches := arrayIndexRegexp.FindStringSubmatch(remaining)
 			if matches == nil {
 				break
 			}
@@ -182,24 +193,61 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 			remaining = remaining[len(matches[0]):]
 		} else if strings.HasPrefix(remaining, ".") {
 			remaining = remaining[1:]
+		} else if strings.HasPrefix(remaining, `"`) {
+			field, consumed, ok := parseQuotedField(remaining)
+			if !ok {
+				break
+			}
+			current = applyField(current, field)
+			remaining = remaining[consumed:]
 		} else {
 			// Field access
-			re := regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)`)
-			matches := re.FindStringSubmatch(remaining)
+			matches := fieldNameRegexp.FindStringSubmatch(remaining)
 			if matches == nil {
 				break
 			}
 			field := matches[1]
-			var results []interface{}
-			for _, item := range current {
-				results = append(results, getField(item, field))
-			}
-			current = results
+			current = applyField(current, field)
 			remaining = remaining[len(field):]
 		}
 	}
 
 	return current
+}
+
+func applyField(inputs []interface{}, field string) []interface{} {
+	var results []interface{}
+	for _, item := range inputs {
+		results = append(results, getField(item, field))
+	}
+	return results
+}
+
+func ensureFieldExpression(expr string) string {
+	expr = strings.TrimSpace(expr)
+	if strings.HasPrefix(expr, ".") {
+		return expr
+	}
+	return "." + expr
+}
+
+func projectionKey(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if field, consumed, ok := parseQuotedField(raw); ok && consumed == len(raw) {
+		return field
+	}
+	return raw
+}
+
+func projectionKeyFromExpression(expr string) string {
+	key := strings.TrimPrefix(strings.TrimSpace(expr), ".")
+	if field, consumed, ok := parseQuotedField(key); ok && consumed == len(key) {
+		return field
+	}
+	if field, consumed, ok := parseBracketField(key); ok && consumed == len(key) {
+		return field
+	}
+	return key
 }
 
 func getField(value interface{}, field string) interface{} {
@@ -262,35 +310,126 @@ func toFloat(v interface{}) float64 {
 	return 0
 }
 
+func parseBracketField(input string) (string, int, bool) {
+	if !strings.HasPrefix(input, `["`) {
+		return "", 0, false
+	}
+	field, consumed, ok := parseQuotedField(input[1:])
+	if !ok {
+		return "", 0, false
+	}
+	consumed++
+	if consumed >= len(input) || input[consumed] != ']' {
+		return "", 0, false
+	}
+	return field, consumed + 1, true
+}
+
+func parseQuotedField(input string) (string, int, bool) {
+	if !strings.HasPrefix(input, `"`) {
+		return "", 0, false
+	}
+	escaped := false
+	for i := 1; i < len(input); i++ {
+		ch := input[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' {
+			escaped = true
+			continue
+		}
+		if ch != '"' {
+			continue
+		}
+		var field string
+		if err := json.Unmarshal([]byte(input[:i+1]), &field); err != nil {
+			return "", 0, false
+		}
+		return field, i + 1, true
+	}
+	return "", 0, false
+}
+
+func indexTopLevel(input string, separator rune) int {
+	depth := 0
+	inString := false
+	escapeNext := false
+
+	for i, ch := range input {
+		if inString {
+			if escapeNext {
+				escapeNext = false
+				continue
+			}
+			if ch == '\\' {
+				escapeNext = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '"':
+			inString = true
+		case '{', '(', '[':
+			depth++
+		case '}', ')', ']':
+			depth--
+		default:
+			if depth == 0 && ch == separator {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 func splitTopLevel(input, separator string) []string {
 	var parts []string
 	var current strings.Builder
 	depth := 0
 	inString := false
-	prevChar := rune(0)
+	escapeNext := false
 
 	for _, ch := range input {
-		if ch == '"' && prevChar != '\\' {
-			inString = !inString
+		if inString {
+			current.WriteRune(ch)
+			if escapeNext {
+				escapeNext = false
+				continue
+			}
+			if ch == '\\' {
+				escapeNext = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
 		}
-		if !inString {
-			if ch == '{' || ch == '(' || ch == '[' {
-				depth++
-			}
-			if ch == '}' || ch == ')' || ch == ']' {
-				depth--
-			}
-			if depth == 0 {
-				if len(separator) == 1 && ch == rune(separator[0]) {
-					parts = append(parts, strings.TrimSpace(current.String()))
-					current.Reset()
-					prevChar = ch
-					continue
-				}
-			}
+
+		if ch == '"' {
+			inString = true
+			current.WriteRune(ch)
+			continue
+		}
+		if ch == '{' || ch == '(' || ch == '[' {
+			depth++
+		}
+		if ch == '}' || ch == ')' || ch == ']' {
+			depth--
+		}
+		if depth == 0 && len(separator) == 1 && ch == rune(separator[0]) {
+			parts = append(parts, strings.TrimSpace(current.String()))
+			current.Reset()
+			continue
 		}
 		current.WriteRune(ch)
-		prevChar = ch
 	}
 
 	if s := strings.TrimSpace(current.String()); s != "" {

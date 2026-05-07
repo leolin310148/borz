@@ -461,43 +461,11 @@ func main() {
 
 	// --- Console ---
 	case "console":
-		clear := hasFlag(args, "--clear")
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionConsole}
-		if clear {
-			req.ConsoleCommand = "clear"
-		} else {
-			req.ConsoleCommand = "get"
-		}
-		req.Filter = getArgValue(args, "--filter")
-		setSince(req, globalSince)
-		setTab(req, globalTabID)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
-			if resp.Data != nil {
-				for _, msg := range resp.Data.ConsoleMessages {
-					fmt.Printf("[%s] %s\n", msg.Type, msg.Text)
-				}
-			}
-		})
+		handleConsole(jsonOutput, globalTabID, globalSince, args)
 
 	// --- Errors ---
 	case "errors":
-		clear := hasFlag(args, "--clear")
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionErrors}
-		if clear {
-			req.ErrorsCommand = "clear"
-		} else {
-			req.ErrorsCommand = "get"
-		}
-		req.Filter = getArgValue(args, "--filter")
-		setSince(req, globalSince)
-		setTab(req, globalTabID)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
-			if resp.Data != nil {
-				for _, err := range resp.Data.JSErrors {
-					fmt.Printf("[error] %s\n", err.Message)
-				}
-			}
-		})
+		handleErrors(jsonOutput, globalTabID, globalSince, args)
 
 	// --- Trace ---
 	case "trace":
@@ -727,6 +695,50 @@ func handleNetwork(cmdArgs []string, jsonOutput bool, globalTabID, globalSince s
 				fmt.Printf("[%s] %s %s %s\n", status, nr.Method, nr.URL, nr.Type)
 			}
 		}
+	})
+}
+
+func handleConsole(jsonOutput bool, globalTabID, globalSince string, rawArgs []string) {
+	clear := hasFlag(rawArgs, "--clear")
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionConsole}
+	if clear {
+		req.ConsoleCommand = "clear"
+	} else {
+		req.ConsoleCommand = "get"
+	}
+	req.Filter = getArgValue(rawArgs, "--filter")
+	setSince(req, globalSince)
+	setTab(req, globalTabID)
+
+	if !clear && hasFlag(rawArgs, "--tail") {
+		runTail(req, jsonOutput, parseTailInterval(rawArgs), emitConsoleTail)
+		return
+	}
+
+	sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		emitConsoleTail(resp, false)
+	})
+}
+
+func handleErrors(jsonOutput bool, globalTabID, globalSince string, rawArgs []string) {
+	clear := hasFlag(rawArgs, "--clear")
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionErrors}
+	if clear {
+		req.ErrorsCommand = "clear"
+	} else {
+		req.ErrorsCommand = "get"
+	}
+	req.Filter = getArgValue(rawArgs, "--filter")
+	setSince(req, globalSince)
+	setTab(req, globalTabID)
+
+	if !clear && hasFlag(rawArgs, "--tail") {
+		runTail(req, jsonOutput, parseTailInterval(rawArgs), emitErrorsTail)
+		return
+	}
+
+	sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		emitErrorsTail(resp, false)
 	})
 }
 
@@ -1705,8 +1717,10 @@ Observation:
   network [requests|clear] [--tail]
                                 Network traffic; --tail streams new
                                 requests live (Ctrl+C to stop)
-  console [--clear]             Console messages
-  errors [--clear]              JavaScript errors
+  console [--clear] [--tail]    Console messages; --tail streams new
+                                messages live
+  errors [--clear] [--tail]     JavaScript errors; --tail streams new
+                                errors live
   trace [start|stop|status]     Record user actions
 
 Tab Management:

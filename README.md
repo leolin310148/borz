@@ -648,6 +648,10 @@ borz console --filter "error"
 # Only messages since last action
 borz console --since last_action
 
+# Live stream new console messages as they arrive
+borz console --tail
+borz console --tail --interval 1s --json
+
 # Clear console buffer
 borz console --clear
 ```
@@ -660,6 +664,10 @@ borz errors
 
 # Filter errors
 borz errors --filter "TypeError"
+
+# Live stream new JS errors as they arrive
+borz errors --tail
+borz errors --tail --filter "TypeError"
 
 # Clear error buffer
 borz errors --clear

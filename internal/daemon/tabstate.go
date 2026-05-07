@@ -178,7 +178,8 @@ func (ts *TabState) sinceThreshold(since interface{}) int {
 	}
 	switch v := since.(type) {
 	case string:
-		if v == "last_action" {
+		v = strings.TrimSpace(v)
+		if strings.EqualFold(v, "last_action") {
 			return ts.LastActionSeq
 		}
 		n, _ := strconv.Atoi(v)
@@ -196,36 +197,22 @@ func (ts *TabState) GetNetworkRequests(opts QueryOptions) QueryResult[protocol.N
 	items := ts.NetworkRequests.ToSlice()
 	threshold := ts.sinceThreshold(opts.Since)
 
-	var filtered []protocol.NetworkRequestInfo
-	for _, item := range items {
-		if threshold > 0 && item.Seq <= threshold {
-			continue
-		}
+	return queryEvents(items, threshold, opts.Limit, func(item protocol.NetworkRequestInfo) int {
+		return item.Seq
+	}, func(item protocol.NetworkRequestInfo) bool {
 		if opts.Filter != "" && !strings.Contains(item.URL, opts.Filter) {
-			continue
+			return false
 		}
 		if opts.Method != "" && !strings.EqualFold(item.Method, opts.Method) {
-			continue
+			return false
 		}
 		if opts.Status != "" {
 			if !matchStatus(item.Status, opts.Status) {
-				continue
+				return false
 			}
 		}
-		filtered = append(filtered, item)
-	}
-
-	if opts.Limit > 0 && len(filtered) > opts.Limit {
-		filtered = filtered[len(filtered)-opts.Limit:]
-	}
-
-	cursor := threshold
-	for _, item := range filtered {
-		if item.Seq > cursor {
-			cursor = item.Seq
-		}
-	}
-	return QueryResult[protocol.NetworkRequestInfo]{Items: filtered, Cursor: cursor}
+		return true
+	})
 }
 
 // GetConsoleMessages returns filtered console messages.
@@ -233,28 +220,14 @@ func (ts *TabState) GetConsoleMessages(opts QueryOptions) QueryResult[protocol.C
 	items := ts.ConsoleMessages.ToSlice()
 	threshold := ts.sinceThreshold(opts.Since)
 
-	var filtered []protocol.ConsoleMessageInfo
-	for _, item := range items {
-		if threshold > 0 && item.Seq <= threshold {
-			continue
-		}
+	return queryEvents(items, threshold, opts.Limit, func(item protocol.ConsoleMessageInfo) int {
+		return item.Seq
+	}, func(item protocol.ConsoleMessageInfo) bool {
 		if opts.Filter != "" && !strings.Contains(item.Text, opts.Filter) {
-			continue
+			return false
 		}
-		filtered = append(filtered, item)
-	}
-
-	if opts.Limit > 0 && len(filtered) > opts.Limit {
-		filtered = filtered[len(filtered)-opts.Limit:]
-	}
-
-	cursor := threshold
-	for _, item := range filtered {
-		if item.Seq > cursor {
-			cursor = item.Seq
-		}
-	}
-	return QueryResult[protocol.ConsoleMessageInfo]{Items: filtered, Cursor: cursor}
+		return true
+	})
 }
 
 // GetJSErrors returns filtered JavaScript errors.
@@ -262,30 +235,41 @@ func (ts *TabState) GetJSErrors(opts QueryOptions) QueryResult[protocol.JSErrorI
 	items := ts.JSErrors.ToSlice()
 	threshold := ts.sinceThreshold(opts.Since)
 
-	var filtered []protocol.JSErrorInfo
-	for _, item := range items {
-		if threshold > 0 && item.Seq <= threshold {
-			continue
-		}
+	return queryEvents(items, threshold, opts.Limit, func(item protocol.JSErrorInfo) int {
+		return item.Seq
+	}, func(item protocol.JSErrorInfo) bool {
 		if opts.Filter != "" && !strings.Contains(item.Message, opts.Filter) {
 			if item.URL == "" || !strings.Contains(item.URL, opts.Filter) {
-				continue
+				return false
 			}
+		}
+		return true
+	})
+}
+
+func queryEvents[T any](items []T, threshold, limit int, seq func(T) int, match func(T) bool) QueryResult[T] {
+	var filtered []T
+	for _, item := range items {
+		if threshold > 0 && seq(item) <= threshold {
+			continue
+		}
+		if match != nil && !match(item) {
+			continue
 		}
 		filtered = append(filtered, item)
 	}
 
-	if opts.Limit > 0 && len(filtered) > opts.Limit {
-		filtered = filtered[len(filtered)-opts.Limit:]
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[len(filtered)-limit:]
 	}
 
 	cursor := threshold
 	for _, item := range filtered {
-		if item.Seq > cursor {
-			cursor = item.Seq
+		if itemSeq := seq(item); itemSeq > cursor {
+			cursor = itemSeq
 		}
 	}
-	return QueryResult[protocol.JSErrorInfo]{Items: filtered, Cursor: cursor}
+	return QueryResult[T]{Items: filtered, Cursor: cursor}
 }
 
 func (ts *TabState) ClearNetwork() {

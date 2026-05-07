@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -182,6 +183,19 @@ func TestEnsureHomeDir_DefaultCreatesCurrentDir(t *testing.T) {
 	}
 }
 
+func TestEnsureHomeDir_ReturnsUserHomeError(t *testing.T) {
+	wantErr := errors.New("no home")
+	prev := userHomeDir
+	userHomeDir = func() (string, error) { return "", wantErr }
+	t.Cleanup(func() { userHomeDir = prev })
+
+	t.Setenv("BORZ_HOME", "")
+	t.Setenv("BB_BROWSER_HOME", "")
+	if got, err := EnsureHomeDir(); err == nil || !errors.Is(err, wantErr) || got != "" {
+		t.Fatalf("EnsureHomeDir with missing user home = %q, %v; want empty path wrapping %v", got, err, wantErr)
+	}
+}
+
 func TestDerivedPaths(t *testing.T) {
 	t.Setenv("BORZ_HOME", "/tmp/borz")
 	t.Setenv("BB_BROWSER_HOME", "")
@@ -195,6 +209,9 @@ func TestDerivedPaths(t *testing.T) {
 		{"ClientJSONPath", ClientJSONPath, "/tmp/borz/client.json"},
 		{"SitesDir", SitesDir, "/tmp/borz/sites"},
 		{"CommunitySitesDir", CommunitySitesDir, "/tmp/borz/bb-sites"},
+		{"CommunityLockPath", CommunityLockPath, "/tmp/borz/community.lock"},
+		{"SiteTrustPath", SiteTrustPath, "/tmp/borz/sites-trust.json"},
+		{"SitesUsagePath", SitesUsagePath, "/tmp/borz/sites-usage.json"},
 		{"ManagedBrowserDir", ManagedBrowserDir, "/tmp/borz/browser"},
 		{"ManagedPortFile", ManagedPortFile, "/tmp/borz/browser/cdp-port"},
 		{"ManagedUserDataDir", ManagedUserDataDir, "/tmp/borz/browser/user-data"},

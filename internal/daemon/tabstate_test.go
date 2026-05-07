@@ -198,12 +198,20 @@ func TestTabState_GetNetworkRequests_Filters(t *testing.T) {
 	if len(res.Items) != 2 {
 		t.Fatalf("since string: got %d want 2", len(res.Items))
 	}
+	res = tab.GetNetworkRequests(QueryOptions{Since: " 2 "})
+	if len(res.Items) != 2 {
+		t.Fatalf("since string with spaces: got %d want 2", len(res.Items))
+	}
 
 	// Since "last_action" uses LastActionSeq.
 	tab.LastActionSeq = 2
 	res = tab.GetNetworkRequests(QueryOptions{Since: "last_action"})
 	if len(res.Items) != 2 {
 		t.Fatalf("since last_action: got %d want 2", len(res.Items))
+	}
+	res = tab.GetNetworkRequests(QueryOptions{Since: " LAST_ACTION "})
+	if len(res.Items) != 2 {
+		t.Fatalf("since last_action case/space: got %d want 2", len(res.Items))
 	}
 
 	// Unknown since type falls through to 0.

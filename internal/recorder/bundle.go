@@ -560,19 +560,46 @@ func redactNetwork(v any) any {
 
 // DecodeDataURL returns media bytes and extension from a browser data URL.
 func DecodeDataURL(dataURL string) ([]byte, string, error) {
-	prefix, encoded, ok := strings.Cut(dataURL, ",")
-	if !ok || !strings.Contains(prefix, ";base64") {
+	prefix, encoded, ok := strings.Cut(strings.TrimSpace(dataURL), ",")
+	ext, ok := dataURLImageExtension(prefix)
+	if !ok {
 		return nil, "", errors.New("expected base64 data URL")
 	}
-	data, err := base64.StdEncoding.DecodeString(encoded)
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
 	if err != nil {
 		return nil, "", err
 	}
-	ext := "png"
-	if strings.Contains(prefix, "image/jpeg") {
-		ext = "jpg"
-	}
 	return data, ext, nil
+}
+
+func dataURLImageExtension(prefix string) (string, bool) {
+	metadata := strings.TrimSpace(prefix)
+	if !strings.HasPrefix(strings.ToLower(metadata), "data:") {
+		return "", false
+	}
+	metadata = metadata[len("data:"):]
+	parts := strings.Split(metadata, ";")
+	if len(parts) < 2 {
+		return "", false
+	}
+	hasBase64 := false
+	for _, part := range parts[1:] {
+		if strings.EqualFold(strings.TrimSpace(part), "base64") {
+			hasBase64 = true
+			break
+		}
+	}
+	if !hasBase64 {
+		return "", false
+	}
+	switch strings.ToLower(strings.TrimSpace(parts[0])) {
+	case "image/png":
+		return "png", true
+	case "image/jpeg", "image/jpg":
+		return "jpg", true
+	default:
+		return "", false
+	}
 }
 
 func appendJSONLine(w io.Writer, v any) error {

@@ -86,8 +86,18 @@ func TestDecodeDataURLAndPrivacyRedaction(t *testing.T) {
 	if err != nil || ext != "jpg" || string(data) != "hello" {
 		t.Fatalf("DecodeDataURL = %q %s %v", data, ext, err)
 	}
+	data, ext, err = DecodeDataURL(" data:image/png;charset=utf-8;BASE64, " + base64.StdEncoding.EncodeToString(raw) + " ")
+	if err != nil || ext != "png" || string(data) != "hello" {
+		t.Fatalf("DecodeDataURL with parameters = %q %s %v", data, ext, err)
+	}
 	if _, _, err := DecodeDataURL("not-a-data-url"); err == nil {
 		t.Fatal("DecodeDataURL should reject invalid input")
+	}
+	if _, _, err := DecodeDataURL("data:text/plain;base64," + base64.StdEncoding.EncodeToString(raw)); err == nil {
+		t.Fatal("DecodeDataURL should reject non-image data URLs")
+	}
+	if _, _, err := DecodeDataURL("data:image/png," + base64.StdEncoding.EncodeToString(raw)); err == nil {
+		t.Fatal("DecodeDataURL should reject non-base64 data URLs")
 	}
 	ev := RedactEvent(Event{Type: "network.request", Data: json.RawMessage(`{"headers":{"Authorization":"bearer x","ok":"1"},"token":"abc"}`)})
 	if strings.Contains(string(ev.Data), "bearer x") || strings.Contains(string(ev.Data), "abc") {

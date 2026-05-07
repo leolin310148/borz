@@ -622,16 +622,8 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 func DiscoverCDPPort() (*CDPEndpoint, error) {
 	// Priority 1: BORZ_CDP_URL env var (legacy BB_BROWSER_CDP_URL supported).
 	if envURL := config.Env("BORZ_CDP_URL", "BB_BROWSER_CDP_URL"); envURL != "" {
-		// Parse URL to extract host:port
-		envURL = strings.TrimPrefix(envURL, "http://")
-		envURL = strings.TrimPrefix(envURL, "https://")
-		parts := strings.SplitN(envURL, ":", 2)
-		if len(parts) == 2 {
-			host := parts[0]
-			portStr := strings.Split(parts[1], "/")[0]
-			if port, err := strconv.Atoi(portStr); err == nil && canConnect(host, port) {
-				return &CDPEndpoint{Host: host, Port: port}, nil
-			}
+		if host, port, ok := parseCDPEndpointURL(envURL); ok && canConnect(host, port) {
+			return &CDPEndpoint{Host: host, Port: port}, nil
 		}
 	}
 
@@ -656,4 +648,28 @@ func DiscoverCDPPort() (*CDPEndpoint, error) {
 	}
 
 	return nil, fmt.Errorf("no CDP endpoint found")
+}
+
+func parseCDPEndpointURL(raw string) (host string, port int, ok bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", 0, false
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", 0, false
+	}
+	host = u.Hostname()
+	portStr := u.Port()
+	if host == "" || portStr == "" {
+		return "", 0, false
+	}
+	port, err = strconv.Atoi(portStr)
+	if err != nil || port <= 0 || port > 65535 {
+		return "", 0, false
+	}
+	return host, port, true
 }

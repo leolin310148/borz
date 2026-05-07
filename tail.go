@@ -91,6 +91,40 @@ func emitNetworkTail(resp *protocol.Response, jsonOutput bool) int {
 	return len(resp.Data.NetworkRequests)
 }
 
+// emitConsoleTail prints newly-observed console messages using the same human
+// format as 'borz console'. JSON mode emits one message object per line.
+func emitConsoleTail(resp *protocol.Response, jsonOutput bool) int {
+	if resp.Data == nil {
+		return 0
+	}
+	for _, msg := range resp.Data.ConsoleMessages {
+		if jsonOutput {
+			b, _ := json.Marshal(msg)
+			fmt.Println(string(b))
+			continue
+		}
+		fmt.Printf("[%s] %s\n", msg.Type, msg.Text)
+	}
+	return len(resp.Data.ConsoleMessages)
+}
+
+// emitErrorsTail prints newly-observed JavaScript errors using the same human
+// format as 'borz errors'. JSON mode emits one error object per line.
+func emitErrorsTail(resp *protocol.Response, jsonOutput bool) int {
+	if resp.Data == nil {
+		return 0
+	}
+	for _, jsErr := range resp.Data.JSErrors {
+		if jsonOutput {
+			b, _ := json.Marshal(jsErr)
+			fmt.Println(string(b))
+			continue
+		}
+		fmt.Printf("[error] %s\n", jsErr.Message)
+	}
+	return len(resp.Data.JSErrors)
+}
+
 // parseTailInterval reads --interval as a duration ("250ms", "1s") or as
 // bare milliseconds. Returns defaultTailInterval when the flag is absent or
 // invalid (we'd rather keep tailing than fatal on a typo'd interval).

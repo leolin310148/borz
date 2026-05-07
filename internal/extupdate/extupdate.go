@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -53,7 +52,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	fmt.Fprintf(opts.Stderr, "Checking latest release from %s...\n", opts.Repo)
-	rel, err := latestRelease(ctx, opts.APIBaseURL, opts.Repo, opts.HTTPClient)
+	rel, err := selfupdate.LatestReleaseFrom(ctx, opts.APIBaseURL, opts.Repo, opts.HTTPClient)
 	if err != nil {
 		return nil, fmt.Errorf("fetch latest release: %w", err)
 	}
@@ -63,7 +62,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("release %s has no %s asset", rel.TagName, ExtensionAssetName)
 	}
 
-	checksums, err := fetchChecksums(ctx, rel, opts.HTTPClient)
+	checksums, err := selfupdate.FetchChecksums(ctx, rel, opts.HTTPClient)
 	if err != nil {
 		return nil, fmt.Errorf("fetch checksums: %w", err)
 	}
@@ -85,52 +84,6 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 
 	fmt.Fprintf(opts.Stderr, "Extracted extension %s to %s\n", rel.TagName, opts.DestDir)
 	return &Result{Tag: rel.TagName, DestDir: opts.DestDir}, nil
-}
-
-func latestRelease(ctx context.Context, baseURL, repo string, client *http.Client) (*selfupdate.Release, error) {
-	if baseURL == "" {
-		return selfupdate.LatestRelease(ctx, repo, client)
-	}
-	url := fmt.Sprintf("%s/repos/%s/releases/latest", baseURL, repo)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("github api %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var rel selfupdate.Release
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return nil, err
-	}
-	return &rel, nil
-}
-
-func fetchChecksums(ctx context.Context, rel *selfupdate.Release, client *http.Client) (map[string]string, error) {
-	asset := selfupdate.FindAsset(rel, "checksums.txt")
-	if asset == nil {
-		return nil, fmt.Errorf("release %s has no checksums.txt", rel.TagName)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, asset.DownloadURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download checksums.txt: http %d", resp.StatusCode)
-	}
-	return selfupdate.ParseChecksums(resp.Body)
 }
 
 func downloadVerified(ctx context.Context, client *http.Client, url, destDir, expectedSHA256 string) (string, error) {

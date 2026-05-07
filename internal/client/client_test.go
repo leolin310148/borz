@@ -736,6 +736,67 @@ func TestDiscoverCDPPort_ManagedPortFile(t *testing.T) {
 	}
 }
 
+func TestParseCDPEndpointURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      string
+		wantHost string
+		wantPort int
+		wantOK   bool
+	}{
+		{
+			name:     "host port without scheme",
+			raw:      "localhost:9222",
+			wantHost: "localhost",
+			wantPort: 9222,
+			wantOK:   true,
+		},
+		{
+			name:     "http URL with path",
+			raw:      " http://127.0.0.1:19825/json/version ",
+			wantHost: "127.0.0.1",
+			wantPort: 19825,
+			wantOK:   true,
+		},
+		{
+			name:     "bracketed ipv6 without scheme",
+			raw:      "[::1]:9222",
+			wantHost: "::1",
+			wantPort: 9222,
+			wantOK:   true,
+		},
+		{
+			name:   "missing port",
+			raw:    "http://localhost/json/version",
+			wantOK: false,
+		},
+		{
+			name:   "bad port",
+			raw:    "localhost:not-a-port",
+			wantOK: false,
+		},
+		{
+			name:   "port out of range",
+			raw:    "localhost:70000",
+			wantOK: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotHost, gotPort, gotOK := parseCDPEndpointURL(tc.raw)
+			if gotOK != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", gotOK, tc.wantOK)
+			}
+			if !gotOK {
+				return
+			}
+			if gotHost != tc.wantHost || gotPort != tc.wantPort {
+				t.Fatalf("endpoint = %s:%d, want %s:%d", gotHost, gotPort, tc.wantHost, tc.wantPort)
+			}
+		})
+	}
+}
+
 func toInt(s string) int {
 	n, _ := strconv.Atoi(s)
 	return n

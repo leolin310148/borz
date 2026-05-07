@@ -77,6 +77,9 @@ func TestExitBackedFatalBranches(t *testing.T) {
 		{"record render missing", func() { handleRecord([]string{"render"}, []string{"record", "render"}, false) }},
 		{"record export missing", func() { handleRecord([]string{"export"}, []string{"record", "export"}, false) }},
 		{"record redact missing", func() { handleRecord([]string{"redact"}, []string{"record", "redact"}, false) }},
+		{"record start bad max size", func() {
+			handleRecord([]string{"start"}, []string{"record", "start", "--max-size", "bad"}, false)
+		}},
 		{"record export bad format", func() {
 			handleRecord([]string{"export", "x.borzrec"}, []string{"record", "export", "x.borzrec", "--format", "mp4"}, false)
 		}},

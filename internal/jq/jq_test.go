@@ -40,6 +40,38 @@ func TestApply_NestedField(t *testing.T) {
 	}
 }
 
+func TestApply_BracketQuotedField(t *testing.T) {
+	data := mustJSON(t, `{"content-type":"text/html","nested-key":{"child name":"ok"}}`)
+	got := Apply(data, `.["content-type"]`)
+	if len(got) != 1 || got[0] != "text/html" {
+		t.Errorf(`Apply .["content-type"] = %v`, got)
+	}
+	got = Apply(data, `.["nested-key"]["child name"]`)
+	if len(got) != 1 || got[0] != "ok" {
+		t.Errorf(`Apply .["nested-key"]["child name"] = %v`, got)
+	}
+}
+
+func TestApply_DotQuotedField(t *testing.T) {
+	data := mustJSON(t, `{"tab-id":"abc","quote\"key":7}`)
+	got := Apply(data, `."tab-id"`)
+	if len(got) != 1 || got[0] != "abc" {
+		t.Errorf(`Apply ."tab-id" = %v`, got)
+	}
+	got = Apply(data, `."quote\"key"`)
+	if len(got) != 1 || got[0] != float64(7) {
+		t.Errorf(`Apply ."quote\"key" = %v`, got)
+	}
+}
+
+func TestApply_InvalidQuotedFieldFallsBackToCurrent(t *testing.T) {
+	data := mustJSON(t, `{"a":1}`)
+	got := Apply(data, `.["a"`)
+	if len(got) != 1 || !reflect.DeepEqual(got[0], data) {
+		t.Errorf(`Apply .["a" = %v`, got)
+	}
+}
+
 func TestApply_MissingField(t *testing.T) {
 	data := mustJSON(t, `{"a":1}`)
 	got := Apply(data, ".missing")
@@ -159,6 +191,45 @@ func TestApply_ObjectProjectionRename(t *testing.T) {
 	m := got[0].(map[string]interface{})
 	if m["n"] != "alice" || m["years"] != float64(30) {
 		t.Errorf("rename proj = %v", m)
+	}
+}
+
+func TestApply_ObjectProjectionQuotedKeys(t *testing.T) {
+	data := mustJSON(t, `{"id":"abc","content-type":"text/html","quote\"key":7}`)
+	got := Apply(data, `{"tab-id": .id, "content-type": .["content-type"], "quote\"out": ."quote\"key"}`)
+	if len(got) != 1 {
+		t.Fatalf("got %v", got)
+	}
+	m := got[0].(map[string]interface{})
+	if m["tab-id"] != "abc" || m["content-type"] != "text/html" || m[`quote"out`] != float64(7) {
+		t.Errorf("quoted projection = %v", m)
+	}
+	if _, has := m[`"tab-id"`]; has {
+		t.Errorf("quoted key was not unquoted: %v", m)
+	}
+}
+
+func TestApply_ObjectProjectionQuotedKeyWithColon(t *testing.T) {
+	data := mustJSON(t, `{"id":"abc"}`)
+	got := Apply(data, `{"meta:id": .id}`)
+	if len(got) != 1 {
+		t.Fatalf("got %v", got)
+	}
+	m := got[0].(map[string]interface{})
+	if m["meta:id"] != "abc" {
+		t.Errorf("projection with colon key = %v", m)
+	}
+}
+
+func TestApply_ObjectProjectionQuotedFieldShorthand(t *testing.T) {
+	data := mustJSON(t, `{"tab-id":"abc","content-type":"text/html"}`)
+	got := Apply(data, `{."tab-id", .["content-type"]}`)
+	if len(got) != 1 {
+		t.Fatalf("got %v", got)
+	}
+	m := got[0].(map[string]interface{})
+	if m["tab-id"] != "abc" || m["content-type"] != "text/html" {
+		t.Errorf("quoted shorthand projection = %v", m)
 	}
 }
 
@@ -334,6 +405,37 @@ func TestSplitTopLevel_RespectsStrings(t *testing.T) {
 	}
 	if parts[0] != `"a|b"` {
 		t.Errorf("part[0] = %q", parts[0])
+	}
+}
+
+func TestSplitTopLevel_HandlesStringEndingInEscapedBackslash(t *testing.T) {
+	parts := splitTopLevel(`"C:\\" | .x`, "|")
+	if !reflect.DeepEqual(parts, []string{`"C:\\"`, ".x"}) {
+		t.Fatalf("parts = %v", parts)
+	}
+}
+
+func TestSplitTopLevel_HandlesCommasAfterStringEndingInEscapedBackslash(t *testing.T) {
+	parts := splitTopLevel(`path: "C:\\", name: .name`, ",")
+	if !reflect.DeepEqual(parts, []string{`path: "C:\\"`, "name: .name"}) {
+		t.Fatalf("parts = %v", parts)
+	}
+}
+
+func TestIndexTopLevel(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{`key: .value`, 3},
+		{`"meta:id": .id`, len(`"meta:id"`)},
+		{`outer: {inner: .value}`, 5},
+		{`no_colon`, -1},
+	}
+	for _, c := range cases {
+		if got := indexTopLevel(c.in, ':'); got != c.want {
+			t.Errorf("indexTopLevel(%q) = %d, want %d", c.in, got, c.want)
+		}
 	}
 }
 

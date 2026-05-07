@@ -175,6 +175,27 @@ func TestScanSites(t *testing.T) {
 	}
 }
 
+func TestScanSites_DefaultNameRelativeToScanRoot(t *testing.T) {
+	dir := t.TempDir()
+	body := `/* @meta
+{"description":"d"}
+*/
+(function(){})`
+	writeSite(t, dir, "sites/root.js", body)
+	writeSite(t, dir, "sites/group/tool.js", body)
+
+	got := ScanSites(filepath.Join(dir, "sites"), "local")
+	names := make(map[string]bool, len(got))
+	for _, s := range got {
+		names[s.Name] = true
+	}
+	for _, want := range []string{"root", "group/tool"} {
+		if !names[want] {
+			t.Fatalf("ScanSites derived names = %+v, want %q", names, want)
+		}
+	}
+}
+
 func TestScanSites_NonexistentDir(t *testing.T) {
 	got := ScanSites(filepath.Join(t.TempDir(), "missing"), "local")
 	if len(got) != 0 {

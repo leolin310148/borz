@@ -114,6 +114,33 @@ func TestHub_RequestTimeout(t *testing.T) {
 	}
 }
 
+func TestHub_RequestUsesNewestClient(t *testing.T) {
+	hub, srv := startTestHub(t)
+	_ = dial(t, srv) // first client stays connected but does not respond
+	second := dial(t, srv)
+	waitConnected(t, hub, 2)
+
+	go func() {
+		_, raw, err := second.ReadMessage()
+		if err != nil {
+			return
+		}
+		var in wireMessage
+		_ = json.Unmarshal(raw, &in)
+		resp := wireMessage{Type: "response", ID: in.ID, Result: json.RawMessage(`"second"`)}
+		out, _ := json.Marshal(resp)
+		_ = second.WriteMessage(websocket.TextMessage, out)
+	}()
+
+	result, err := hub.Request("tabs.query", nil, 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Request: %v", err)
+	}
+	if string(result) != `"second"` {
+		t.Fatalf("result=%s, want %q", string(result), `"second"`)
+	}
+}
+
 func TestHub_EventsRingAndSinceCursor(t *testing.T) {
 	hub, srv := startTestHub(t)
 	c := dial(t, srv)

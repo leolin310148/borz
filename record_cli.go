@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
@@ -61,7 +62,11 @@ func handleRecord(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			}
 		}
 		if maxSize := getArgValue(rawArgs, "--max-size"); maxSize != "" {
-			opts.MaxSizeBytes = parseBytes(maxSize)
+			n, err := parseBytes(maxSize)
+			if err != nil {
+				fatal(fmt.Sprintf("--max-size: %v", err))
+			}
+			opts.MaxSizeBytes = n
 		}
 		raw := postRecordJSON("/v1/recordings", opts, 2*time.Minute)
 		if jsonOutput {
@@ -280,21 +285,30 @@ func looksLikeBundle(s string) bool {
 	return strings.HasSuffix(s, ".borzrec") || strings.Contains(s, string(os.PathSeparator))
 }
 
-func parseBytes(s string) int64 {
+func parseBytes(s string) (int64, error) {
 	s = strings.TrimSpace(strings.ToUpper(s))
+	if s == "" {
+		return 0, fmt.Errorf("empty size")
+	}
 	mult := int64(1)
 	for _, suffix := range []struct {
 		s string
 		m int64
-	}{{"GB", 1 << 30}, {"G", 1 << 30}, {"MB", 1 << 20}, {"M", 1 << 20}, {"KB", 1 << 10}, {"K", 1 << 10}} {
+	}{{"GB", 1 << 30}, {"G", 1 << 30}, {"MB", 1 << 20}, {"M", 1 << 20}, {"KB", 1 << 10}, {"K", 1 << 10}, {"B", 1}} {
 		if strings.HasSuffix(s, suffix.s) {
 			mult = suffix.m
 			s = strings.TrimSuffix(s, suffix.s)
 			break
 		}
 	}
-	n, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	return int64(n * float64(mult))
+	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid size %q", s)
+	}
+	if math.IsNaN(n) || math.IsInf(n, 0) || n <= 0 {
+		return 0, fmt.Errorf("size must be positive")
+	}
+	return int64(n * float64(mult)), nil
 }
 
 func parseMask(s string) (recorder.RedactionMask, error) {

@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/leolin310148/borz/internal/protocol"
@@ -201,14 +202,9 @@ func ConvertBuildDomTreeResult(result *buildDomTreeResult, interactiveOnly, comp
 			nodes = append(nodes, indexedNode{index: *el.HighlightIndex, el: el})
 		}
 
-		// Sort by highlight index
-		for i := 0; i < len(nodes); i++ {
-			for j := i + 1; j < len(nodes); j++ {
-				if nodes[j].index < nodes[i].index {
-					nodes[i], nodes[j] = nodes[j], nodes[i]
-				}
-			}
-		}
+		sort.Slice(nodes, func(i, j int) bool {
+			return nodes[i].index < nodes[j].index
+		})
 
 		for _, n := range nodes {
 			refID := fmt.Sprintf("%d", n.index)

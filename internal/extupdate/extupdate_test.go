@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/leolin310148/borz/internal/selfupdate"
 )
 
 func makeZip(t *testing.T, entries map[string]string) []byte {
@@ -406,7 +408,7 @@ func TestLatestReleaseNon200(t *testing.T) {
 		http.Error(w, "rate limited", http.StatusForbidden)
 	}))
 	defer srv.Close()
-	_, err := latestRelease(context.Background(), srv.URL, "owner/repo", srv.Client())
+	_, err := selfupdate.LatestReleaseFrom(context.Background(), srv.URL, "owner/repo", srv.Client())
 	if err == nil || !strings.Contains(err.Error(), "github api 403") {
 		t.Fatalf("want github api 403 error, got %v", err)
 	}

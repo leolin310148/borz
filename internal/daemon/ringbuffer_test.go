@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestNewRingBuffer_RejectsNonPositiveCapacity(t *testing.T) {
+	for _, capacity := range []int{0, -1} {
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Fatalf("NewRingBuffer(%d) did not panic", capacity)
+				}
+			}()
+			_ = NewRingBuffer[int](capacity)
+		}()
+	}
+}
+
 func TestRingBuffer_EmptyToSliceReturnsNil(t *testing.T) {
 	rb := NewRingBuffer[int](3)
 	if rb.Size() != 0 {

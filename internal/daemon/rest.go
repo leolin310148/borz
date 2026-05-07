@@ -14,6 +14,8 @@ import (
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
+const maxRESTBodyBytes int64 = 8 << 20
+
 // registerRESTRoutes attaches /v1/* handlers to mux. Each handler builds a
 // protocol.Request from the JSON body (or query string for GETs) and dispatches
 // it through the existing CDP pipeline.
@@ -465,9 +467,12 @@ func (s *Server) dispatchAndWrite(w http.ResponseWriter, req *protocol.Request) 
 
 func readBody(r *http.Request) (restBody, error) {
 	var body restBody
-	raw, err := io.ReadAll(r.Body)
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxRESTBodyBytes+1))
 	if err != nil {
 		return body, fmt.Errorf("failed to read body: %w", err)
+	}
+	if int64(len(raw)) > maxRESTBodyBytes {
+		return body, fmt.Errorf("request body too large (max %d bytes)", maxRESTBodyBytes)
 	}
 	if len(raw) == 0 {
 		return body, nil

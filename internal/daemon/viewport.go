@@ -65,16 +65,39 @@ func readViewport(cdp *CdpConnection, targetID string) (*protocol.ViewportInfo, 
 	if err != nil {
 		return nil, err
 	}
+	return decodeViewportInfo(raw)
+}
+
+func decodeViewportInfo(raw json.RawMessage) (*protocol.ViewportInfo, error) {
 	var info protocol.ViewportInfo
-	if err := json.Unmarshal(raw, &info); err == nil {
+	if err := json.Unmarshal(raw, &info); err == nil && rawJSONObject(raw) {
 		return &info, nil
+	}
+	if first := rawJSONFirstByte(raw); first == 0 || first == 'n' {
+		return nil, fmt.Errorf("decode viewport info: expected object or encoded object")
 	}
 	var encoded string
 	if err := json.Unmarshal(raw, &encoded); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode viewport info: %w", err)
 	}
 	if err := json.Unmarshal([]byte(encoded), &info); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode encoded viewport info: %w", err)
 	}
 	return &info, nil
+}
+
+func rawJSONObject(raw json.RawMessage) bool {
+	return rawJSONFirstByte(raw) == '{'
+}
+
+func rawJSONFirstByte(raw json.RawMessage) byte {
+	for _, b := range raw {
+		switch b {
+		case ' ', '\n', '\r', '\t':
+			continue
+		default:
+			return b
+		}
+	}
+	return 0
 }

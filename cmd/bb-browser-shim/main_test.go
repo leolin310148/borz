@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -58,6 +60,38 @@ func TestRunWrapperDelegatesArgs(t *testing.T) {
 	}
 	if gotPath != "/usr/local/bin/borz" || !reflect.DeepEqual(gotArgs, []string{"open", "https://example.test"}) {
 		t.Fatalf("delegated path=%q args=%v", gotPath, gotArgs)
+	}
+}
+
+func TestRunWrapperRejectsSelfDelegation(t *testing.T) {
+	oldLookPath := lookPath
+	oldExecutablePath := executablePath
+	oldRunBorz := runBorz
+	t.Cleanup(func() {
+		lookPath = oldLookPath
+		executablePath = oldExecutablePath
+		runBorz = oldRunBorz
+	})
+
+	dir := t.TempDir()
+	self := filepath.Join(dir, "bb-browser")
+	if err := os.WriteFile(self, []byte("shim"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	lookPath = func(string) (string, error) { return self, nil }
+	executablePath = func() (string, error) { return self, nil }
+	runBorz = func(string, []string) error {
+		t.Fatal("runBorz should not be called")
+		return nil
+	}
+
+	var stderr bytes.Buffer
+	if code := runWrapper(nil, &stderr); code != 126 {
+		t.Fatalf("exit code = %d stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "resolves to this compatibility wrapper") {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
 

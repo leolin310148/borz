@@ -203,7 +203,7 @@ func TestRunEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checksums, err := fetchChecksums(context.Background(), rel, client)
+	checksums, err := FetchChecksums(context.Background(), rel, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestLatestReleaseFromErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, err := latestReleaseFrom(context.Background(), srv.URL, "owner/repo", http.DefaultClient)
+		_, err := LatestReleaseFrom(context.Background(), srv.URL, "owner/repo", http.DefaultClient)
 		if err == nil || !strings.Contains(err.Error(), "github api 403") {
 			t.Fatalf("expected 403 error, got %v", err)
 		}
@@ -437,7 +437,7 @@ func TestLatestReleaseFromErrors(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, err := latestReleaseFrom(context.Background(), srv.URL, "owner/repo", http.DefaultClient)
+		_, err := LatestReleaseFrom(context.Background(), srv.URL, "owner/repo", http.DefaultClient)
 		if err == nil {
 			t.Fatal("expected JSON decode error")
 		}
@@ -446,7 +446,7 @@ func TestLatestReleaseFromErrors(t *testing.T) {
 
 func TestFetchChecksumsErrors(t *testing.T) {
 	t.Run("missing checksums asset", func(t *testing.T) {
-		_, err := fetchChecksums(context.Background(), &Release{TagName: "v1.0.0"}, http.DefaultClient)
+		_, err := FetchChecksums(context.Background(), &Release{TagName: "v1.0.0"}, http.DefaultClient)
 		if err == nil || !strings.Contains(err.Error(), "no checksums.txt") {
 			t.Fatalf("expected missing checksums error, got %v", err)
 		}
@@ -459,7 +459,7 @@ func TestFetchChecksumsErrors(t *testing.T) {
 		defer srv.Close()
 
 		rel := &Release{TagName: "v1.0.0", Assets: []Asset{{Name: "checksums.txt", DownloadURL: srv.URL}}}
-		_, err := fetchChecksums(context.Background(), rel, http.DefaultClient)
+		_, err := FetchChecksums(context.Background(), rel, http.DefaultClient)
 		if err == nil || !strings.Contains(err.Error(), "http 502") {
 			t.Fatalf("expected checksum HTTP error, got %v", err)
 		}

@@ -44,6 +44,21 @@ func TestAutoWrapAwait(t *testing.T) {
 			want: "(async () => { var x = await fetch('/x'); x.status })()",
 		},
 		{
+			name: "single declaration await is wrapped without invalid return",
+			in:   "const x = await fetch('/x')",
+			want: "(async () => { const x = await fetch('/x') })()",
+		},
+		{
+			name: "single let declaration await is wrapped without invalid return",
+			in:   "let x = await foo()",
+			want: "(async () => { let x = await foo() })()",
+		},
+		{
+			name: "top-level for-await statement is wrapped without invalid return",
+			in:   "for await (const item of stream) console.log(item)",
+			want: "(async () => { for await (const item of stream) console.log(item) })()",
+		},
+		{
 			name: "already async IIFE is not double-wrapped",
 			in:   "(async () => { return await fetch('/x') })()",
 			want: "(async () => { return await fetch('/x') })()",

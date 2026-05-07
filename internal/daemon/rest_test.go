@@ -171,6 +171,12 @@ func TestReadBody(t *testing.T) {
 		t.Fatal("expected error for invalid JSON")
 	}
 
+	// Oversized body is rejected before JSON parsing.
+	req = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(strings.Repeat("x", int(maxRESTBodyBytes)+1)))
+	if _, err = readBody(req); err == nil || !strings.Contains(err.Error(), "request body too large") {
+		t.Fatalf("expected body-size error, got %v", err)
+	}
+
 	// Read failure.
 	req = httptest.NewRequest(http.MethodPost, "/x", &errReader{})
 	if _, err = readBody(req); err == nil {

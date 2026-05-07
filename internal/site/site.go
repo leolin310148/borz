@@ -111,6 +111,10 @@ func ResetCacheForTests() {
 
 // ParseSiteMeta reads a JS adapter file and extracts its @meta block.
 func ParseSiteMeta(filePath, source string) (*SiteMeta, error) {
+	return parseSiteMeta(filePath, source, "")
+}
+
+func parseSiteMeta(filePath, source, baseDir string) (*SiteMeta, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -132,7 +136,10 @@ func ParseSiteMeta(filePath, source string) (*SiteMeta, error) {
 	meta.ArgOrder = extractArgOrder([]byte(matches[1]))
 
 	if meta.Name == "" {
-		rel, _ := filepath.Rel(filepath.Dir(filepath.Dir(filePath)), filePath)
+		if baseDir == "" {
+			baseDir = filepath.Dir(filepath.Dir(filePath))
+		}
+		rel, _ := filepath.Rel(baseDir, filePath)
 		meta.Name = strings.TrimSuffix(rel, ".js")
 		meta.Name = strings.ReplaceAll(meta.Name, string(filepath.Separator), "/")
 	}
@@ -169,7 +176,7 @@ func ScanSites(dir, source string) []*SiteMeta {
 		if info.IsDir() || !strings.HasSuffix(path, ".js") {
 			return nil
 		}
-		meta, err := ParseSiteMeta(path, source)
+		meta, err := parseSiteMeta(path, source, dir)
 		if err != nil {
 			log.Printf("site: skip %s: %v", path, err)
 			return nil

@@ -62,7 +62,7 @@ type wireMessage struct {
 // Hub manages connected extension clients and routes requests/events.
 //
 // Only one extension is expected at a time, but Hub tolerates multiple:
-// requests fan out to the most recently connected client.
+// requests route to the most recently connected client.
 type Hub struct {
 	upgrader websocket.Upgrader
 
@@ -70,6 +70,7 @@ type Hub struct {
 	clients map[*client]struct{}
 	pending map[string]*pending
 	nextID  uint64
+	nextSeq uint64
 
 	evMu      sync.Mutex
 	evRing    []Event
@@ -82,6 +83,7 @@ type client struct {
 	hub  *Hub
 	conn *websocket.Conn
 	send chan []byte
+	seq  uint64
 	once sync.Once
 }
 
@@ -219,6 +221,8 @@ func (h *Hub) recordEvent(name string, data json.RawMessage) {
 
 func (h *Hub) register(c *client) {
 	h.mu.Lock()
+	h.nextSeq++
+	c.seq = h.nextSeq
 	h.clients[c] = struct{}{}
 	h.mu.Unlock()
 }
@@ -235,10 +239,13 @@ func (h *Hub) unregister(c *client) {
 func (h *Hub) pickClient() *client {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	var newest *client
 	for c := range h.clients {
-		return c
+		if newest == nil || c.seq > newest.seq {
+			newest = c
+		}
 	}
-	return nil
+	return newest
 }
 
 func (h *Hub) deliverResponse(id string, result json.RawMessage, errStr string) {

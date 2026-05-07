@@ -86,12 +86,14 @@ func isValidIdent(name string) bool {
 func isReservedWord(name string) bool {
 	switch name {
 	case "true", "false", "null", "undefined",
-		"const", "let", "var", "function", "return",
-		"if", "else", "for", "while", "do", "switch", "case",
-		"break", "continue", "this", "new", "delete", "typeof",
-		"instanceof", "void", "throw", "try", "catch", "finally",
-		"class", "extends", "super", "import", "export", "from",
-		"async", "await", "yield":
+		"break", "case", "catch", "class", "const", "continue",
+		"debugger", "default", "delete", "do", "else", "export",
+		"extends", "finally", "for", "function", "if", "import",
+		"in", "instanceof", "new", "return", "super", "switch",
+		"this", "throw", "try", "typeof", "var", "void", "while",
+		"with", "let", "static", "yield", "await", "enum",
+		"implements", "interface", "package", "private", "protected",
+		"public", "async", "from":
 		return true
 	}
 	return false

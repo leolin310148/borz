@@ -92,7 +92,7 @@ func buildViewportOptions(spec string, rawArgs []string) *protocol.ViewportOptio
 		opts.Height = parseViewportInt("--height", v)
 	}
 	if v := getArgValue(rawArgs, "--dpr"); v != "" {
-		dpr, err := strconv.ParseFloat(v, 64)
+		dpr, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
 		if err != nil || dpr <= 0 {
 			fatal("--dpr must be a positive number")
 		}
@@ -123,23 +123,28 @@ func buildViewportOptions(spec string, rawArgs []string) *protocol.ViewportOptio
 }
 
 func parseViewportSize(raw string) (int, int, bool) {
-	parts := strings.FieldsFunc(raw, func(r rune) bool { return r == 'x' || r == 'X' })
-	if len(parts) != 2 {
+	raw = strings.TrimSpace(raw)
+	sep := strings.IndexFunc(raw, isViewportSizeSeparator)
+	if sep < 0 || strings.IndexFunc(raw[sep+1:], isViewportSizeSeparator) >= 0 {
 		return 0, 0, false
 	}
-	width, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	width, err := strconv.Atoi(strings.TrimSpace(raw[:sep]))
 	if err != nil || width <= 0 {
 		return 0, 0, false
 	}
-	height, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	height, err := strconv.Atoi(strings.TrimSpace(raw[sep+1:]))
 	if err != nil || height <= 0 {
 		return 0, 0, false
 	}
 	return width, height, true
 }
 
+func isViewportSizeSeparator(r rune) bool {
+	return r == 'x' || r == 'X'
+}
+
 func parseViewportInt(flag, raw string) int {
-	n, err := strconv.Atoi(raw)
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || n <= 0 {
 		fatal(flag + " must be a positive integer")
 	}

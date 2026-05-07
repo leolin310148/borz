@@ -282,7 +282,7 @@ func setupFakeDaemonWithStatus(t *testing.T, status string, commandResp protocol
 	}
 }
 
-func assertCheckStatus(t *testing.T, checks []Check, name, want string) {
+func assertCheckStatus(t *testing.T, checks []Check, name string, want CheckStatus) {
 	t.Helper()
 	for _, c := range checks {
 		if c.Name == name {

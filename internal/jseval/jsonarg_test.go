@@ -35,6 +35,9 @@ func TestParseJSONArgs_Errors(t *testing.T) {
 		{"bad ident", "1foo=42", "not a valid identifier"},
 		{"bad json", "x=oops", "not valid JSON"},
 		{"reserved", "await=42", "not a valid identifier"},
+		{"reserved default", "default=42", "not a valid identifier"},
+		{"reserved in", "in=42", "not a valid identifier"},
+		{"future reserved", "interface=42", "not a valid identifier"},
 		{"hyphen", "my-name=42", "not a valid identifier"},
 	}
 	for _, tc := range cases {

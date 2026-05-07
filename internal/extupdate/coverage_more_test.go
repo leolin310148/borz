@@ -23,23 +23,23 @@ func (failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func TestHelperErrorBranches(t *testing.T) {
-	if _, err := latestRelease(context.Background(), "://bad", "owner/repo", http.DefaultClient); err == nil {
-		t.Fatal("latestRelease should reject bad API URL")
+	if _, err := selfupdate.LatestReleaseFrom(context.Background(), "://bad", "owner/repo", http.DefaultClient); err == nil {
+		t.Fatal("LatestReleaseFrom should reject bad API URL")
 	}
 	badJSON := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("{bad"))
 	}))
 	defer badJSON.Close()
-	if _, err := latestRelease(context.Background(), badJSON.URL, "owner/repo", badJSON.Client()); err == nil {
-		t.Fatal("latestRelease should reject invalid JSON")
+	if _, err := selfupdate.LatestReleaseFrom(context.Background(), badJSON.URL, "owner/repo", badJSON.Client()); err == nil {
+		t.Fatal("LatestReleaseFrom should reject invalid JSON")
 	}
 	rel := &selfupdate.Release{TagName: "v1", Assets: []selfupdate.Asset{{Name: "checksums.txt", DownloadURL: "://bad"}}}
-	if _, err := fetchChecksums(context.Background(), rel, http.DefaultClient); err == nil {
-		t.Fatal("fetchChecksums should reject bad checksum URL")
+	if _, err := selfupdate.FetchChecksums(context.Background(), rel, http.DefaultClient); err == nil {
+		t.Fatal("FetchChecksums should reject bad checksum URL")
 	}
 	rel.Assets[0].DownloadURL = "http://example.test/checksums.txt"
-	if _, err := fetchChecksums(context.Background(), rel, &http.Client{Transport: failingRoundTripper{}}); err == nil {
-		t.Fatal("fetchChecksums should surface client errors")
+	if _, err := selfupdate.FetchChecksums(context.Background(), rel, &http.Client{Transport: failingRoundTripper{}}); err == nil {
+		t.Fatal("FetchChecksums should surface client errors")
 	}
 	if _, err := downloadVerified(context.Background(), http.DefaultClient, "://bad", t.TempDir(), ""); err == nil {
 		t.Fatal("downloadVerified should reject bad URL")

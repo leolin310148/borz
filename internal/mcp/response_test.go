@@ -52,6 +52,27 @@ func TestCheckError_CommandUnsuccessful(t *testing.T) {
 	}
 }
 
+func TestCheckError_NilResponse(t *testing.T) {
+	got := checkError(nil, nil)
+	if got == nil || !isError(got) {
+		t.Fatalf("expected error result")
+	}
+	if !strings.Contains(firstText(t, got), "no response") {
+		t.Errorf("text = %q", firstText(t, got))
+	}
+}
+
+func TestCheckError_CommandUnsuccessfulWithoutDetails(t *testing.T) {
+	resp := &protocol.Response{Success: false}
+	got := checkError(resp, nil)
+	if got == nil || !isError(got) {
+		t.Fatalf("expected error result")
+	}
+	if !strings.Contains(firstText(t, got), "without error details") {
+		t.Errorf("text = %q", firstText(t, got))
+	}
+}
+
 func TestCheckError_Success(t *testing.T) {
 	resp := &protocol.Response{Success: true}
 	if got := checkError(resp, nil); got != nil {

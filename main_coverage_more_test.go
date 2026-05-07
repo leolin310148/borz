@@ -268,9 +268,14 @@ func TestRecordAdditionalBranches(t *testing.T) {
 		t.Fatalf("play remote = %q", out)
 	}
 
-	for raw, want := range map[string]int64{"7": 7, "2K": 2048, "3M": 3 << 20, "4G": 4 << 30, "bad": 0} {
-		if got := parseBytes(raw); got != want {
-			t.Fatalf("parseBytes(%q) = %d, want %d", raw, got, want)
+	for raw, want := range map[string]int64{"7": 7, "2K": 2048, "3M": 3 << 20, "4G": 4 << 30, "512B": 512} {
+		if got, err := parseBytes(raw); err != nil || got != want {
+			t.Fatalf("parseBytes(%q) = %d err=%v, want %d", raw, got, err, want)
+		}
+	}
+	for _, raw := range []string{"bad", "", "0", "-1K", "NaN"} {
+		if _, err := parseBytes(raw); err == nil {
+			t.Fatalf("parseBytes(%q) should fail", raw)
 		}
 	}
 	if _, err := parseMask("1,2,bad,4"); err == nil {

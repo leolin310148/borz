@@ -239,15 +239,28 @@ func targetFrameCount(start, end int64, fps int) int {
 }
 
 func parseTrim(trim string, duration int64) (int64, int64) {
-	if strings.TrimSpace(trim) == "" {
+	trim = strings.TrimSpace(trim)
+	if trim == "" {
 		return 0, duration
 	}
 	a, b, ok := strings.Cut(trim, "-")
 	if !ok {
 		return 0, duration
 	}
-	start := parseTimecode(a)
-	end := parseTimecode(b)
+	start, ok := parseTimecode(a)
+	if !ok {
+		return 0, duration
+	}
+	if start > duration {
+		start = duration
+	}
+	end := duration
+	if strings.TrimSpace(b) != "" {
+		end, ok = parseTimecode(b)
+		if !ok {
+			return 0, duration
+		}
+	}
 	if end <= start {
 		end = duration
 	}
@@ -257,18 +270,25 @@ func parseTrim(trim string, duration int64) (int64, int64) {
 	return start, end
 }
 
-func parseTimecode(s string) int64 {
+func parseTimecode(s string) (int64, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return 0
+		return 0, true
 	}
 	parts := strings.Split(s, ":")
 	var seconds float64
 	for _, p := range parts {
-		v, _ := strconv.ParseFloat(p, 64)
+		p = strings.TrimSpace(p)
+		if p == "" {
+			return 0, false
+		}
+		v, err := strconv.ParseFloat(p, 64)
+		if err != nil || v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+			return 0, false
+		}
 		seconds = seconds*60 + v
 	}
-	return int64(seconds * 1e9)
+	return int64(seconds * 1e9), true
 }
 
 func annotationEnabled(xs []string, want string) bool {

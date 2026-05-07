@@ -73,7 +73,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	fmt.Fprintf(opts.Stderr, "Checking latest release from %s...\n", opts.Repo)
-	rel, err := latestReleaseFrom(ctx, opts.APIBaseURL, opts.Repo, opts.HTTPClient)
+	rel, err := LatestReleaseFrom(ctx, opts.APIBaseURL, opts.Repo, opts.HTTPClient)
 	if err != nil {
 		return fmt.Errorf("fetch latest release: %w", err)
 	}
@@ -98,7 +98,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("no release asset for %s/%s (expected %q)", opts.GOOS, opts.GOARCH, assetName)
 	}
 
-	checksums, err := fetchChecksums(ctx, rel, opts.HTTPClient)
+	checksums, err := FetchChecksums(ctx, rel, opts.HTTPClient)
 	if err != nil {
 		return fmt.Errorf("fetch checksums: %w", err)
 	}
@@ -138,10 +138,12 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 func LatestRelease(ctx context.Context, repo string, client *http.Client) (*Release, error) {
-	return latestReleaseFrom(ctx, "", repo, client)
+	return LatestReleaseFrom(ctx, "", repo, client)
 }
 
-func latestReleaseFrom(ctx context.Context, baseURL, repo string, client *http.Client) (*Release, error) {
+// LatestReleaseFrom fetches the latest GitHub release for repo. baseURL is
+// primarily for tests and mirrors GitHub's API root when empty.
+func LatestReleaseFrom(ctx context.Context, baseURL, repo string, client *http.Client) (*Release, error) {
 	if baseURL == "" {
 		baseURL = "https://api.github.com"
 	}
@@ -269,14 +271,9 @@ func ParseChecksums(r io.Reader) (map[string]string, error) {
 	return out, nil
 }
 
-func fetchChecksums(ctx context.Context, rel *Release, client *http.Client) (map[string]string, error) {
-	var asset *Asset
-	for i := range rel.Assets {
-		if rel.Assets[i].Name == "checksums.txt" {
-			asset = &rel.Assets[i]
-			break
-		}
-	}
+// FetchChecksums downloads and parses the release checksums.txt asset.
+func FetchChecksums(ctx context.Context, rel *Release, client *http.Client) (map[string]string, error) {
+	asset := FindAsset(rel, "checksums.txt")
 	if asset == nil {
 		return nil, fmt.Errorf("release %s has no checksums.txt", rel.TagName)
 	}

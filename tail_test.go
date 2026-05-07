@@ -71,6 +71,86 @@ func TestEmitNetworkTail_Empty(t *testing.T) {
 	}
 }
 
+func TestEmitConsoleTail_Human(t *testing.T) {
+	resp := &protocol.Response{
+		Success: true,
+		Data: &protocol.ResponseData{
+			ConsoleMessages: []protocol.ConsoleMessageInfo{
+				{Type: "log", Text: "hello"},
+				{Type: "warning", Text: "careful"},
+			},
+		},
+	}
+	out := withCapturedStdout(t, func() {
+		n := emitConsoleTail(resp, false)
+		if n != 2 {
+			t.Errorf("expected 2 emitted, got %d", n)
+		}
+	})
+	if !strings.Contains(out, "[log] hello") || !strings.Contains(out, "[warning] careful") {
+		t.Errorf("console output = %q", out)
+	}
+}
+
+func TestEmitConsoleTail_JSONL(t *testing.T) {
+	resp := &protocol.Response{
+		Success: true,
+		Data: &protocol.ResponseData{
+			ConsoleMessages: []protocol.ConsoleMessageInfo{
+				{Type: "log", Text: "hello"},
+			},
+		},
+	}
+	out := withCapturedStdout(t, func() {
+		if n := emitConsoleTail(resp, true); n != 1 {
+			t.Errorf("expected 1 emitted, got %d", n)
+		}
+	})
+	if !strings.Contains(out, `"type":"log"`) || !strings.Contains(out, `"text":"hello"`) {
+		t.Errorf("console JSONL output = %q", out)
+	}
+}
+
+func TestEmitErrorsTail_Human(t *testing.T) {
+	resp := &protocol.Response{
+		Success: true,
+		Data: &protocol.ResponseData{
+			JSErrors: []protocol.JSErrorInfo{
+				{Message: "boom"},
+				{Message: "kaboom"},
+			},
+		},
+	}
+	out := withCapturedStdout(t, func() {
+		n := emitErrorsTail(resp, false)
+		if n != 2 {
+			t.Errorf("expected 2 emitted, got %d", n)
+		}
+	})
+	if !strings.Contains(out, "[error] boom") || !strings.Contains(out, "[error] kaboom") {
+		t.Errorf("errors output = %q", out)
+	}
+}
+
+func TestEmitErrorsTail_JSONL(t *testing.T) {
+	resp := &protocol.Response{
+		Success: true,
+		Data: &protocol.ResponseData{
+			JSErrors: []protocol.JSErrorInfo{
+				{Message: "boom"},
+			},
+		},
+	}
+	out := withCapturedStdout(t, func() {
+		if n := emitErrorsTail(resp, true); n != 1 {
+			t.Errorf("expected 1 emitted, got %d", n)
+		}
+	})
+	if !strings.Contains(out, `"message":"boom"`) {
+		t.Errorf("errors JSONL output = %q", out)
+	}
+}
+
 func TestParseTailInterval_Default(t *testing.T) {
 	if got := parseTailInterval([]string{"network", "--tail"}); got != defaultTailInterval {
 		t.Errorf("default mismatch: got %v want %v", got, defaultTailInterval)

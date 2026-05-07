@@ -264,24 +264,35 @@ var commandHelp = map[string]cmdHelp{
 			"for piping into jq -c, or with --filter/--method/--status to narrow the stream.",
 	},
 	"console": {
-		Summary: "Read or clear captured console messages.",
-		Usage:   "borz console [--clear] [--filter <substr>] [--since <seq|last_action>]",
+		Summary: "Read, clear, or live-tail captured console messages.",
+		Usage:   "borz console [--clear] [--filter <substr>] [--since <seq|last_action>] [--tail] [--interval <duration|ms>]",
 		Flags: []string{
 			"  --clear               Drop all captured console messages for this tab",
 			"  --filter <substr>     Only messages whose text contains <substr>",
 			"  --since <seq|last_action>   Only events newer than this checkpoint",
+			"  --tail                Stream new messages as they arrive (Ctrl+C to stop)",
+			"  --interval <duration|ms>  Polling interval in --tail mode (default 500ms)",
 		},
 		Examples: []string{
 			"  borz console",
 			"  borz console --filter error --since last_action",
+			"  borz console --tail --json",
 		},
 	},
 	"errors": {
-		Summary: "Read or clear captured uncaught JS errors.",
-		Usage:   "borz errors [--clear] [--filter <substr>] [--since <seq|last_action>]",
+		Summary: "Read, clear, or live-tail captured uncaught JS errors.",
+		Usage:   "borz errors [--clear] [--filter <substr>] [--since <seq|last_action>] [--tail] [--interval <duration|ms>]",
+		Flags: []string{
+			"  --clear               Drop all captured JS errors for this tab",
+			"  --filter <substr>     Only errors whose text/URL contains <substr>",
+			"  --since <seq|last_action>   Only events newer than this checkpoint",
+			"  --tail                Stream new errors as they arrive (Ctrl+C to stop)",
+			"  --interval <duration|ms>  Polling interval in --tail mode (default 500ms)",
+		},
 		Examples: []string{
 			"  borz errors",
 			"  borz errors --since last_action",
+			"  borz errors --tail --filter TypeError",
 		},
 	},
 	"trace": {

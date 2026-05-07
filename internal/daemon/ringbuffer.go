@@ -10,6 +10,9 @@ type RingBuffer[T any] struct {
 
 // NewRingBuffer creates a ring buffer with the given capacity.
 func NewRingBuffer[T any](capacity int) *RingBuffer[T] {
+	if capacity <= 0 {
+		panic("ring buffer capacity must be positive")
+	}
 	return &RingBuffer[T]{
 		items:    make([]T, capacity),
 		capacity: capacity,
@@ -35,10 +38,7 @@ func (rb *RingBuffer[T]) Find(match func(*T) bool) *T {
 	if rb.count == 0 {
 		return nil
 	}
-	start := 0
-	if rb.count == rb.capacity {
-		start = rb.head
-	}
+	start := rb.oldestIndex()
 	for i := 0; i < rb.count; i++ {
 		item := &rb.items[(start+i)%rb.capacity]
 		if match(item) {
@@ -54,14 +54,18 @@ func (rb *RingBuffer[T]) ToSlice() []T {
 		return nil
 	}
 	result := make([]T, rb.count)
-	start := 0
-	if rb.count == rb.capacity {
-		start = rb.head
-	}
+	start := rb.oldestIndex()
 	for i := 0; i < rb.count; i++ {
 		result[i] = rb.items[(start+i)%rb.capacity]
 	}
 	return result
+}
+
+func (rb *RingBuffer[T]) oldestIndex() int {
+	if rb.count == rb.capacity {
+		return rb.head
+	}
+	return 0
 }
 
 // Clear removes all elements.

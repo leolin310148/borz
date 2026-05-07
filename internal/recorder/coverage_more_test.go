@@ -205,6 +205,20 @@ func TestRenderHelperBranches(t *testing.T) {
 	if start != 2_000_000_000 || end != 5_000_000_000 {
 		t.Fatalf("parseTrim reversed = %d %d", start, end)
 	}
+	start, end = parseTrim("1-", 5_000_000_000)
+	if start != 1_000_000_000 || end != 5_000_000_000 {
+		t.Fatalf("parseTrim open end = %d %d", start, end)
+	}
+	start, end = parseTrim("-0:02.5", 5_000_000_000)
+	if start != 0 || end != 2_500_000_000 {
+		t.Fatalf("parseTrim open start = %d %d", start, end)
+	}
+	for _, trim := range []string{"x-2", "1:x", "1::2", "1:-2", "NaN-2"} {
+		start, end = parseTrim(trim, 123)
+		if start != 0 || end != 123 {
+			t.Fatalf("parseTrim invalid %q = %d %d", trim, start, end)
+		}
+	}
 	if annotationEnabled([]string{" keys "}, "cursor") {
 		t.Fatal("unexpected annotation match")
 	}

@@ -16,7 +16,13 @@ func checkError(resp *protocol.Response, err error) *mcp.CallToolResult {
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Command failed: %s", err.Error()))
 	}
+	if resp == nil {
+		return mcp.NewToolResultError("Command failed: no response from daemon")
+	}
 	if !resp.Success {
+		if resp.Error == "" {
+			return mcp.NewToolResultError("Command failed without error details")
+		}
 		return mcp.NewToolResultError(resp.Error)
 	}
 	return nil
@@ -144,11 +150,7 @@ func formatEval(resp *protocol.Response) *mcp.CallToolResult {
 	if resp.Data.Result == nil {
 		return mcp.NewToolResultText("undefined")
 	}
-	out, err := json.MarshalIndent(resp.Data.Result, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultText(fmt.Sprintf("%v", resp.Data.Result))
-	}
-	return mcp.NewToolResultText(string(out))
+	return mcp.NewToolResultText(formatJSONValue(resp.Data.Result))
 }
 
 // formatEvalRaw mirrors CLI --unwrap for tools that need an unquoted scalar.
@@ -159,11 +161,7 @@ func formatEvalRaw(resp *protocol.Response) *mcp.CallToolResult {
 	if s, ok := resp.Data.Result.(string); ok {
 		return mcp.NewToolResultText(s)
 	}
-	out, err := json.MarshalIndent(resp.Data.Result, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultText(fmt.Sprintf("%v", resp.Data.Result))
-	}
-	return mcp.NewToolResultText(string(out))
+	return mcp.NewToolResultText(formatJSONValue(resp.Data.Result))
 }
 
 // formatGet formats a get attribute response.
@@ -181,13 +179,17 @@ func formatGet(resp *protocol.Response) *mcp.CallToolResult {
 		return mcp.NewToolResultText(resp.Data.Title)
 	}
 	if resp.Data.Result != nil {
-		out, err := json.MarshalIndent(resp.Data.Result, "", "  ")
-		if err != nil {
-			return mcp.NewToolResultText(fmt.Sprintf("%v", resp.Data.Result))
-		}
-		return mcp.NewToolResultText(string(out))
+		return mcp.NewToolResultText(formatJSONValue(resp.Data.Result))
 	}
 	return mcp.NewToolResultText("")
+}
+
+func formatJSONValue(v interface{}) string {
+	out, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return string(out)
 }
 
 // formatNetwork formats network request data as readable text.

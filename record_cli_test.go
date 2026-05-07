@@ -95,8 +95,8 @@ func TestRecordCLILocalBundleCommandsAndHelpers(t *testing.T) {
 	if !looksLikeBundle(dir) || looksLikeBundle("rec-1") {
 		t.Fatal("looksLikeBundle mismatch")
 	}
-	if got := parseBytes("1.5MB"); got != 1572864 {
-		t.Fatalf("parseBytes: %d", got)
+	if got, err := parseBytes("1.5MB"); err != nil || got != 1572864 {
+		t.Fatalf("parseBytes: got %d err=%v", got, err)
 	}
 	if _, err := parseMask("1,2,3"); err == nil {
 		t.Fatal("parseMask should reject short rect")

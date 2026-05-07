@@ -35,6 +35,9 @@ func AutoWrapAwait(script string) string {
 	if hasTopSemi {
 		return "(async () => { " + script + " })()"
 	}
+	if isStatementLike(trimmed) {
+		return "(async () => { " + script + " })()"
+	}
 	// Single expression: preserve a return so the caller still gets the value.
 	body := strings.TrimRight(strings.TrimSpace(script), ";")
 	return "(async () => { return (" + body + ") })()"
@@ -46,6 +49,20 @@ func isAsyncIIFE(s string) bool {
 	}
 	s = strings.TrimRight(s, "; \t\r\n")
 	return strings.HasSuffix(s, ")()")
+}
+
+func isStatementLike(s string) bool {
+	for _, prefix := range []string{
+		"const ", "let ", "var ",
+		"function ", "async function ", "class ",
+		"if ", "if(", "for ", "for(", "while ", "while(",
+		"switch ", "switch(", "try", "throw ", "return ",
+	} {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // scanTopLevel walks the script ignoring strings, template literals, and
