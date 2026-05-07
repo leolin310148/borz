@@ -3,7 +3,7 @@ package jq
 
 import (
 	"encoding/json"
-	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -299,9 +299,9 @@ func parseLiteral(value string) interface{} {
 func compareValues(left interface{}, op string, right interface{}) bool {
 	switch op {
 	case "==":
-		return fmt.Sprintf("%v", left) == fmt.Sprintf("%v", right)
+		return equalValues(left, right)
 	case "!=":
-		return fmt.Sprintf("%v", left) != fmt.Sprintf("%v", right)
+		return !equalValues(left, right)
 	case ">":
 		return toFloat(left) > toFloat(right)
 	case "<":
@@ -312,6 +312,49 @@ func compareValues(left interface{}, op string, right interface{}) bool {
 		return toFloat(left) <= toFloat(right)
 	}
 	return false
+}
+
+func equalValues(left interface{}, right interface{}) bool {
+	if leftNum, ok := numberValue(left); ok {
+		if rightNum, ok := numberValue(right); ok {
+			return leftNum == rightNum
+		}
+	}
+	return reflect.DeepEqual(left, right)
+}
+
+func numberValue(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func toFloat(v interface{}) float64 {

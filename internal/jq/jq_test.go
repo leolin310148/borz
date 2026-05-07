@@ -174,6 +174,27 @@ func TestApply_SelectBoolean(t *testing.T) {
 	}
 }
 
+func TestApply_SelectEqualityIsTypeAware(t *testing.T) {
+	data := mustJSON(t, `[{"value":true},{"value":"true"},{"value":1},{"value":"1"}]`)
+	got := Apply(data, `.[] | select(.value == "true")`)
+	if len(got) != 1 {
+		t.Fatalf("select string true = %v, want one match", got)
+	}
+	m := got[0].(map[string]interface{})
+	if m["value"] != "true" {
+		t.Fatalf("select string true matched %v", m)
+	}
+
+	got = Apply(data, `.[] | select(.value == 1)`)
+	if len(got) != 1 {
+		t.Fatalf("select numeric 1 = %v, want one match", got)
+	}
+	m = got[0].(map[string]interface{})
+	if m["value"] != float64(1) {
+		t.Fatalf("select numeric 1 matched %v", m)
+	}
+}
+
 func TestApply_ObjectProjection(t *testing.T) {
 	data := mustJSON(t, `[{"name":"a","age":1,"x":99},{"name":"b","age":2,"x":100}]`)
 	got := Apply(data, `.[] | {name, age}`)
@@ -379,6 +400,15 @@ func TestCompareValues(t *testing.T) {
 	}
 	if !compareValues("a", "!=", "b") {
 		t.Error("!= strings")
+	}
+	if compareValues(true, "==", "true") {
+		t.Error("bool true should not equal string true")
+	}
+	if compareValues(float64(1), "!=", 1) {
+		t.Error("numeric equality should compare across numeric Go types")
+	}
+	if !compareValues(1, "!=", "1") {
+		t.Error("numeric 1 should not equal string 1")
 	}
 	if !compareValues(float64(5), ">", float64(3)) {
 		t.Error("5>3")
