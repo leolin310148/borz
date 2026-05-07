@@ -43,7 +43,10 @@ func TestNewerVersion(t *testing.T) {
 		{"v0.1.0", "0.1.1", true},
 		{"", "0.1.0", true},
 		{"dev", "0.1.0", true},
-		{"0.1.0", "0.1.0-rc1", false}, // pre-release suffix ignored
+		{"0.1.0", "0.1.0-rc1", false},
+		{"0.1.0-rc1", "0.1.0", true},
+		{"0.1.0-rc1+build", "0.1.0", true},
+		{"0.1.0+build1", "0.1.0+build2", false},
 		{"1.0.0", "1.0.0.1", true},
 		{"1.2", "1.2.0", false},
 	}

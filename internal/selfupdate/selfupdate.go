@@ -190,39 +190,53 @@ func FindAsset(rel *Release, name string) *Asset {
 }
 
 // NewerVersion reports whether latest is strictly greater than current using
-// semver-ish numeric component comparison. Non-numeric components compare as 0,
-// so unknown or dev versions ("dev", "") are treated as older than any release.
+// semver-ish numeric component comparison. Stable releases sort after
+// prereleases with the same numeric components. Non-numeric components compare
+// as 0, so unknown or dev versions ("dev", "") are treated as older than any
+// release.
 func NewerVersion(current, latest string) bool {
 	if current == latest {
 		return false
 	}
-	c := splitVersion(current)
-	l := splitVersion(latest)
-	n := len(c)
-	if len(l) > n {
-		n = len(l)
+	c := parseVersion(current)
+	l := parseVersion(latest)
+	n := len(c.parts)
+	if len(l.parts) > n {
+		n = len(l.parts)
 	}
 	for i := 0; i < n; i++ {
 		var cv, lv int
-		if i < len(c) {
-			cv = c[i]
+		if i < len(c.parts) {
+			cv = c.parts[i]
 		}
-		if i < len(l) {
-			lv = l[i]
+		if i < len(l.parts) {
+			lv = l.parts[i]
 		}
 		if lv != cv {
 			return lv > cv
 		}
 	}
+	if c.prerelease != l.prerelease {
+		return c.prerelease && !l.prerelease
+	}
 	return false
 }
 
-func splitVersion(v string) []int {
+type parsedVersion struct {
+	parts      []int
+	prerelease bool
+}
+
+func parseVersion(v string) parsedVersion {
 	v = strings.TrimPrefix(v, "v")
 	if v == "" || v == "dev" {
-		return []int{0}
+		return parsedVersion{parts: []int{0}, prerelease: true}
 	}
-	// Strip any pre-release/build suffix like -rc1 or +meta.
+	hyphen := strings.IndexByte(v, '-')
+	plus := strings.IndexByte(v, '+')
+	prerelease := hyphen >= 0 && (plus < 0 || hyphen < plus)
+	// Strip any pre-release/build suffix like -rc1 or +meta for numeric
+	// comparison; prerelease precedence is handled after components match.
 	if i := strings.IndexAny(v, "-+"); i >= 0 {
 		v = v[:i]
 	}
@@ -235,7 +249,7 @@ func splitVersion(v string) []int {
 		}
 		out[i] = n
 	}
-	return out
+	return parsedVersion{parts: out, prerelease: prerelease}
 }
 
 // ParseChecksums parses a sha256sum-formatted file: "<hex>  <filename>" per
