@@ -75,9 +75,16 @@ func TestApply_InvalidQuotedFieldFallsBackToCurrent(t *testing.T) {
 func TestApply_MissingField(t *testing.T) {
 	data := mustJSON(t, `{"a":1}`)
 	got := Apply(data, ".missing")
-	// nil filtered out → empty
 	if len(got) != 0 {
 		t.Errorf("Apply .missing = %v, want empty", got)
+	}
+}
+
+func TestApply_NullField(t *testing.T) {
+	data := mustJSON(t, `{"a":null}`)
+	got := Apply(data, ".a")
+	if len(got) != 1 || got[0] != nil {
+		t.Errorf("Apply .a = %v, want [nil]", got)
 	}
 }
 
@@ -179,6 +186,21 @@ func TestApply_ObjectProjection(t *testing.T) {
 	}
 	if _, has := m["x"]; has {
 		t.Errorf("projection leaked field x: %v", m)
+	}
+}
+
+func TestApply_ObjectProjectionPreservesNullAndOmitsMissing(t *testing.T) {
+	data := mustJSON(t, `{"present":null}`)
+	got := Apply(data, `{present, missing}`)
+	if len(got) != 1 {
+		t.Fatalf("got %v", got)
+	}
+	m := got[0].(map[string]interface{})
+	if _, ok := m["present"]; !ok || m["present"] != nil {
+		t.Fatalf("present field = %v, want explicit nil", m)
+	}
+	if _, ok := m["missing"]; ok {
+		t.Fatalf("missing field was included: %v", m)
 	}
 }
 
@@ -441,7 +463,7 @@ func TestIndexTopLevel(t *testing.T) {
 }
 
 func TestGetField_NonMap(t *testing.T) {
-	if got := getField("string", "x"); got != nil {
+	if got := getField("string", "x"); !isMissing(got) {
 		t.Errorf("getField on string = %v", got)
 	}
 }

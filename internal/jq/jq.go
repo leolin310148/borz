@@ -17,12 +17,16 @@ var (
 	fieldNameRegexp  = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)`)
 )
 
+type missingValue struct{}
+
+var missing = missingValue{}
+
 // Apply applies a jq expression to data and returns matching results.
 func Apply(data interface{}, expression string) []interface{} {
 	results := applyExpression([]interface{}{data}, expression)
 	var filtered []interface{}
 	for _, r := range results {
-		if r != nil {
+		if !isMissing(r) {
 			filtered = append(filtered, r)
 		}
 	}
@@ -219,7 +223,10 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 func applyField(inputs []interface{}, field string) []interface{} {
 	var results []interface{}
 	for _, item := range inputs {
-		results = append(results, getField(item, field))
+		value := getField(item, field)
+		if !isMissing(value) {
+			results = append(results, value)
+		}
 	}
 	return results
 }
@@ -253,9 +260,16 @@ func projectionKeyFromExpression(expr string) string {
 
 func getField(value interface{}, field string) interface{} {
 	if m, ok := value.(map[string]interface{}); ok {
-		return m[field]
+		if v, ok := m[field]; ok {
+			return v
+		}
 	}
-	return nil
+	return missing
+}
+
+func isMissing(value interface{}) bool {
+	_, ok := value.(missingValue)
+	return ok
 }
 
 func parseLiteral(value string) interface{} {
