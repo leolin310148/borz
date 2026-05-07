@@ -191,7 +191,7 @@ func TestStripFlags(t *testing.T) {
 		t.Errorf("inline custom value flag: %v", got)
 	}
 
-	in = []string{"snapshot", "-d=3", "--selector=main", "keep"}
+	in = []string{"snapshot", "-d=3", "--selector=main", "--diff", "keep"}
 	got = stripFlags(in, nil, nil)
 	if !reflect.DeepEqual(got, []string{"snapshot", "keep"}) {
 		t.Errorf("inline built-in value flags: %v", got)

@@ -1690,7 +1690,7 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 		// Also strip short flags that have already been handled
 		if a == "-i" || a == "-c" || a == "--interactive" || a == "--compact" ||
 			a == "--with-body" || a == "--clear" || a == "--json" || a == "--new" ||
-			a == "--text-only" || a == "--text" {
+			a == "--text-only" || a == "--text" || a == "--diff" {
 			continue
 		}
 		result = append(result, a)
