@@ -1398,6 +1398,7 @@ func orderedSiteArgNames(meta *site.SiteMeta) []string {
 }
 
 func parsePositiveInt(raw string) int {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0
 	}
@@ -1554,7 +1555,7 @@ func applyCLIWaitFor(req *protocol.Request, rawArgs []string) {
 		req.WaitFor = waitFor
 	}
 	if v := getArgValue(rawArgs, "--timeout"); v != "" {
-		ms, err := strconv.Atoi(v)
+		ms, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil || ms < 0 {
 			fatal("--timeout must be a non-negative integer (ms)")
 		}

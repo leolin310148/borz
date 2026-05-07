@@ -204,7 +204,7 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 	}{
 		{
 			name:   "open with flags",
-			args:   []string{"open", "https://example.test", "--new", "--wait-for", "#ready", "--timeout", "25", "--tab", "tab-a"},
+			args:   []string{"open", "https://example.test", "--new", "--wait-for", "#ready", "--timeout", " 25 ", "--tab", "tab-a"},
 			action: protocol.ActionOpen,
 			check: func(t *testing.T, req protocol.Request, out string) {
 				if req.URL != "https://example.test" || !req.New || req.WaitFor != "#ready" || req.TimeoutMs == nil || *req.TimeoutMs != 25 || req.TabID != "tab-a" {
