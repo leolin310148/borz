@@ -25,6 +25,7 @@ or any DOM change before interacting.`
 // globalFlagsNote is the short summary of global flags shown in per-command help.
 const globalFlagsNote = `Global flags (available on every command):
   --remote                Route browser commands/status to configured server
+  --profile <name>        Use an isolated local daemon/browser profile
   --tab <id>              Target a specific tab (from 'borz tab')
   --json                  Emit the raw JSON response instead of pretty output
   --jq <expr>             Filter JSON output with a jq expression (implies --json)
@@ -507,11 +508,12 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"daemon": {
 		Summary: "Start or control the local daemon (loopback only).",
-		Usage:   "borz daemon [status|shutdown|stop] [--host H --port P --cdp-host H --cdp-port P]",
+		Usage:   "borz daemon [status|shutdown|stop] [--profile N] [--host H --port P --cdp-host H --cdp-port P]",
 		Flags: []string{
 			"  (no subcommand)        Start the daemon in the foreground",
 			"  status                 Show JSON status (or 'not running')",
 			"  shutdown|stop          Ask the running daemon to exit",
+			"  --profile <n>          Use a named local browser profile",
 			"  --host <h>             Bind address (default 127.0.0.1)",
 			"  --port <p>             Listen port (default 19824)",
 			"  --cdp-host <h>         Chrome DevTools host (default 127.0.0.1)",

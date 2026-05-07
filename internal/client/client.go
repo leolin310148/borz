@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,6 +28,7 @@ var (
 	useRemote           bool
 	localVersion        string
 	versionWarningShown bool
+	cachedProfile       string
 
 	// discoverCDPPort is indirected so tests can bypass real CDP discovery.
 	discoverCDPPort = DiscoverCDPPort
@@ -57,6 +59,8 @@ func ResetForTests() {
 	useRemote = false
 	localVersion = ""
 	versionWarningShown = false
+	cachedProfile = ""
+	_ = config.SetProfile("")
 }
 
 // SetRemoteRouting controls whether this process sends browser actions to the
@@ -296,6 +300,11 @@ func warnDaemonVersionMismatch(daemonVersion string) {
 
 // EnsureDaemon makes sure the daemon is running and ready.
 func EnsureDaemon() error {
+	if cachedProfile != config.Profile() {
+		daemonReady = false
+		cachedInfo = nil
+		cachedProfile = config.Profile()
+	}
 	if daemonReady && cachedInfo != nil {
 		// Quick re-check
 		raw, err := httpJSON("GET", "/status", cachedInfo, nil, 2*time.Second)
@@ -325,6 +334,7 @@ func EnsureDaemon() error {
 				if status.Running {
 					warnDaemonVersionMismatch(status.Version)
 					cachedInfo = info
+					cachedProfile = config.Profile()
 					daemonReady = true
 					return nil
 				}
@@ -348,10 +358,18 @@ func EnsureDaemon() error {
 		return fmt.Errorf("cannot find self executable: %w", err)
 	}
 
-	cmd := execCommand(exe, "daemon",
+	daemonPort, err := daemonPortForProfile()
+	if err != nil {
+		return err
+	}
+	args := []string{"daemon",
 		"--cdp-host", cdpInfo.Host,
 		"--cdp-port", strconv.Itoa(cdpInfo.Port),
-	)
+	}
+	if config.Profile() != "" {
+		args = append(args, "--profile", config.Profile(), "--port", strconv.Itoa(daemonPort))
+	}
+	cmd := execCommand(exe, args...)
 	setDetached(cmd)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
@@ -378,6 +396,7 @@ func EnsureDaemon() error {
 		json.Unmarshal(raw, &status)
 		if status.Running {
 			cachedInfo = info
+			cachedProfile = config.Profile()
 			daemonReady = true
 			return nil
 		}
@@ -554,8 +573,12 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 		return nil, fmt.Errorf("prepare managed browser default profile: %w", err)
 	}
 	prefsPath := filepath.Join(defaultProfileDir, "Preferences")
+	profileName := config.Profile()
+	if profileName == "" {
+		profileName = "borz"
+	}
 	prefs := map[string]interface{}{
-		"profile": map[string]interface{}{"name": "borz"},
+		"profile": map[string]interface{}{"name": profileName},
 	}
 	prefsJSON, err := json.Marshal(prefs)
 	if err != nil {
@@ -618,6 +641,51 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	return nil, fmt.Errorf("browser did not start in time")
 }
 
+func freeTCPPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		return 0, err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0, err
+	}
+	return port, nil
+}
+
+func daemonPortForProfile() (int, error) {
+	if config.Profile() == "" {
+		return config.DaemonPort, nil
+	}
+	port, err := freeTCPPort()
+	if err != nil {
+		return 0, fmt.Errorf("choose daemon port for profile %q: %w", config.Profile(), err)
+	}
+	return port, nil
+}
+
+// DaemonPortForProfile returns the daemon listen port to use when starting a
+// new local daemon for the selected profile.
+func DaemonPortForProfile() (int, error) {
+	return daemonPortForProfile()
+}
+
+func cdpPortForProfile() (int, error) {
+	if config.Profile() == "" {
+		return config.DefaultCDPPort, nil
+	}
+	port, err := freeTCPPort()
+	if err != nil {
+		return 0, fmt.Errorf("choose CDP port for profile %q: %w", config.Profile(), err)
+	}
+	return port, nil
+}
+
 // DiscoverCDPPort finds a Chrome CDP endpoint.
 func DiscoverCDPPort() (*CDPEndpoint, error) {
 	// Priority 1: BORZ_CDP_URL env var (legacy BB_BROWSER_CDP_URL supported).
@@ -636,13 +704,18 @@ func DiscoverCDPPort() (*CDPEndpoint, error) {
 		}
 	}
 
-	// Priority 3: Default CDP port
-	if canConnect("127.0.0.1", config.DefaultCDPPort) {
+	// Priority 3: Default CDP port. Named profiles intentionally skip this
+	// fallback so they don't attach to the default browser session.
+	if config.Profile() == "" && canConnect("127.0.0.1", config.DefaultCDPPort) {
 		return &CDPEndpoint{Host: "127.0.0.1", Port: config.DefaultCDPPort}, nil
 	}
 
 	// Priority 4: Launch managed browser
-	endpoint, err := launchManagedBrowser(config.DefaultCDPPort)
+	cdpPort, err := cdpPortForProfile()
+	if err != nil {
+		return nil, err
+	}
+	endpoint, err := launchManagedBrowser(cdpPort)
 	if err == nil {
 		return endpoint, nil
 	}

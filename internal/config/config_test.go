@@ -197,6 +197,10 @@ func TestEnsureHomeDir_ReturnsUserHomeError(t *testing.T) {
 }
 
 func TestDerivedPaths(t *testing.T) {
+	t.Cleanup(func() { _ = SetProfile("") })
+	if err := SetProfile(""); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("BORZ_HOME", "/tmp/borz")
 	t.Setenv("BB_BROWSER_HOME", "")
 
@@ -222,6 +226,48 @@ func TestDerivedPaths(t *testing.T) {
 				t.Fatalf("%s = %q, want %q", c.name, got, c.want)
 			}
 		})
+	}
+}
+
+func TestProfileRuntimePaths(t *testing.T) {
+	t.Cleanup(func() { _ = SetProfile("") })
+	t.Setenv("BORZ_HOME", "/tmp/borz")
+	t.Setenv("BB_BROWSER_HOME", "")
+
+	if err := SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+	if Profile() != "work" {
+		t.Fatalf("Profile = %q, want work", Profile())
+	}
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"DaemonJSONPath", DaemonJSONPath(), "/tmp/borz/profiles/work/daemon.json"},
+		{"ClientJSONPath", ClientJSONPath(), "/tmp/borz/client.json"},
+		{"ManagedBrowserDir", ManagedBrowserDir(), "/tmp/borz/profiles/work/browser"},
+		{"ManagedPortFile", ManagedPortFile(), "/tmp/borz/profiles/work/browser/cdp-port"},
+		{"ManagedUserDataDir", ManagedUserDataDir(), "/tmp/borz/profiles/work/browser/user-data"},
+	}
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Fatalf("%s = %q, want %q", c.name, c.got, c.want)
+		}
+	}
+
+	if err := SetProfile("default"); err != nil {
+		t.Fatal(err)
+	}
+	if Profile() != "" || DaemonJSONPath() != "/tmp/borz/daemon.json" {
+		t.Fatalf("default profile did not reset: profile=%q daemon=%q", Profile(), DaemonJSONPath())
+	}
+
+	for _, bad := range []string{"../x", "a/b", `a\b`, ".", ".."} {
+		if err := SetProfile(bad); err == nil {
+			t.Fatalf("SetProfile(%q) succeeded, want error", bad)
+		}
 	}
 }
 

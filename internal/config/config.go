@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var userHomeDir = os.UserHomeDir
+var activeProfile string
 
 const (
 	DaemonPort     = 19824
@@ -33,6 +35,26 @@ func Env(name, legacyName string) string {
 		return env
 	}
 	return os.Getenv(legacyName)
+}
+
+// SetProfile selects a named local browser profile for runtime state. The
+// default profile uses the historical top-level paths for compatibility.
+func SetProfile(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || name == "default" {
+		activeProfile = ""
+		return nil
+	}
+	if strings.ContainsAny(name, `/\`) || filepath.Base(name) != name || name == "." || name == ".." || filepath.IsAbs(name) {
+		return fmt.Errorf("profile name must be a single path segment")
+	}
+	activeProfile = name
+	return nil
+}
+
+// Profile returns the selected local browser profile name, or "" for default.
+func Profile() string {
+	return activeProfile
 }
 
 // HomeDir returns the borz home directory. For read paths, it prefers ~/.borz
@@ -98,9 +120,28 @@ func dirExists(path string) bool {
 	return err == nil && st.IsDir()
 }
 
+func runtimeDir() string {
+	if activeProfile == "" {
+		return HomeDir()
+	}
+	return filepath.Join(HomeDir(), "profiles", activeProfile)
+}
+
+// EnsureRuntimeDir creates the directory used for daemon/browser runtime files.
+func EnsureRuntimeDir() (string, error) {
+	if _, err := EnsureHomeDir(); err != nil {
+		return "", err
+	}
+	dir := runtimeDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
 // DaemonJSONPath returns the path to daemon.json.
 func DaemonJSONPath() string {
-	return filepath.Join(HomeDir(), "daemon.json")
+	return filepath.Join(runtimeDir(), "daemon.json")
 }
 
 // ClientJSONPath returns the path to the remote client configuration.
@@ -135,7 +176,7 @@ func SitesUsagePath() string {
 
 // ManagedBrowserDir returns the managed browser directory.
 func ManagedBrowserDir() string {
-	return filepath.Join(HomeDir(), "browser")
+	return filepath.Join(runtimeDir(), "browser")
 }
 
 // ManagedPortFile returns the path to the managed browser CDP port file.

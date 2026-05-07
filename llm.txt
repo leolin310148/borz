@@ -69,7 +69,7 @@ borz help [command [sub]]                    # per-command help
 borz <command> --help                        # same, inline form
 ```
 
-Global flags: `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only), `--since <seq|last_action>`.
+Global flags: `--profile <name>`, `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only), `--since <seq|last_action>`.
 
 ## MCP (for AI agents)
 
@@ -146,6 +146,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 ## Environment
 
 - `BORZ_CDP_URL` — override CDP endpoint
+- `BORZ_PROFILE` — default local daemon/browser profile for this process
 - `BORZ_HOME` — config dir (default `~/.borz`)
 - `BORZ_TOKEN`, `BORZ_SERVER_HOST`, `BORZ_SERVER_PORT` — server mode
 - Legacy `BB_BROWSER_*` env vars are still accepted during the rename transition.

@@ -61,6 +61,7 @@ func TestServerOptionsFromArgs(t *testing.T) {
 }
 
 func TestServiceRunArgs(t *testing.T) {
+	t.Cleanup(func() { _ = config.SetProfile("") })
 	opts, err := serverOptionsFromArgs([]string{"service", "install", "--host", "127.0.0.1", "--port", "19824", "--token", "secret"}, "127.0.0.1")
 	if err != nil {
 		t.Fatalf("serverOptionsFromArgs returned error: %v", err)
@@ -76,6 +77,14 @@ func TestServiceRunArgs(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("service args %q missing %q", got, want)
 		}
+	}
+
+	if err := config.SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+	got = strings.Join(serviceRunArgs("borz-test", opts), " ")
+	if !strings.Contains(got, "--profile work") {
+		t.Fatalf("service args %q missing profile", got)
 	}
 }
 
@@ -188,6 +197,12 @@ func TestStripFlags(t *testing.T) {
 	got = stripFlags(in, nil, []string{"--remote"})
 	if !reflect.DeepEqual(got, []string{"open", "https://x"}) {
 		t.Errorf("--remote global flag: %v", got)
+	}
+
+	in = []string{"--profile", "work", "open", "https://x"}
+	got = stripFlags(in, []string{"--profile"}, nil)
+	if !reflect.DeepEqual(got, []string{"open", "https://x"}) {
+		t.Errorf("--profile global flag: %v", got)
 	}
 }
 

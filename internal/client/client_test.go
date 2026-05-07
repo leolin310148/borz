@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -25,6 +26,8 @@ func resetState() {
 	useRemote = false
 	localVersion = ""
 	versionWarningShown = false
+	cachedProfile = ""
+	_ = config.SetProfile("")
 }
 
 // stubDiscover replaces discoverCDPPort for the test duration.
@@ -48,6 +51,15 @@ var errFakeNoCDP = &fakeErr{msg: "no cdp"}
 type fakeErr struct{ msg string }
 
 func (e *fakeErr) Error() string { return e.msg }
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
+}
 
 // infoForServer extracts a DaemonInfo pointing at the given httptest server.
 func infoForServer(t *testing.T, ts *httptest.Server, token string) *protocol.DaemonInfo {
@@ -736,6 +748,50 @@ func TestDiscoverCDPPort_ManagedPortFile(t *testing.T) {
 	}
 }
 
+func TestDiscoverCDPPort_NamedProfileUsesProfileState(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	t.Setenv("BORZ_CDP_URL", "")
+	if err := config.SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+
+	oldFinder := browserExecutableFinder
+	oldCanConnect := canConnect
+	oldCommand := execCommand
+	browserExecutableFinder = func() string { return "/bin/echo" }
+	canConnect = func(host string, port int) bool {
+		return host == "127.0.0.1" && port != config.DefaultCDPPort
+	}
+	var launchedArgs []string
+	execCommand = func(_ string, args ...string) *exec.Cmd {
+		launchedArgs = append([]string(nil), args...)
+		return exec.Command("/bin/sh", "-c", "exit 0")
+	}
+	t.Cleanup(func() {
+		browserExecutableFinder = oldFinder
+		canConnect = oldCanConnect
+		execCommand = oldCommand
+	})
+
+	ep, err := DiscoverCDPPort()
+	if err != nil {
+		t.Fatalf("DiscoverCDPPort: %v", err)
+	}
+	if ep.Port == config.DefaultCDPPort {
+		t.Fatalf("named profile should not use default CDP port: %+v", ep)
+	}
+	wantUserDataArg := "--user-data-dir=" + filepath.Join(home, "profiles", "work", "browser", "user-data")
+	if !containsArg(launchedArgs, wantUserDataArg) {
+		t.Fatalf("launch args missing %q: %v", wantUserDataArg, launchedArgs)
+	}
+	if data, err := os.ReadFile(filepath.Join(home, "profiles", "work", "browser", "cdp-port")); err != nil || strings.TrimSpace(string(data)) != strconv.Itoa(ep.Port) {
+		t.Fatalf("profile port file data=%q err=%v", data, err)
+	}
+}
+
 func TestParseCDPEndpointURL(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -853,6 +909,60 @@ func TestEnsureDaemon_UsesExistingDaemonJSON(t *testing.T) {
 	}
 	if cachedInfo == nil || !daemonReady {
 		t.Fatalf("daemon state not cached: cachedInfo=%+v daemonReady=%v", cachedInfo, daemonReady)
+	}
+}
+
+func TestEnsureDaemon_NamedProfileSpawnsProfileDaemon(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	if err := config.SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+
+	statusRunning := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"running":true}`))
+	}))
+	defer statusRunning.Close()
+	runningInfo := infoForServer(t, statusRunning, "")
+
+	oldDiscover := discoverCDPPort
+	oldExecutable := osExecutable
+	oldCommand := execCommand
+	discoverCDPPort = func() (*CDPEndpoint, error) { return &CDPEndpoint{Host: "127.0.0.1", Port: 33333}, nil }
+	osExecutable = func() (string, error) { return "/bin/echo", nil }
+	var daemonArgs []string
+	execCommand = func(_ string, args ...string) *exec.Cmd {
+		daemonArgs = append([]string(nil), args...)
+		return exec.Command("/bin/sh", "-c", "exit 0")
+	}
+	t.Cleanup(func() {
+		discoverCDPPort = oldDiscover
+		osExecutable = oldExecutable
+		execCommand = oldCommand
+	})
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		_ = os.MkdirAll(filepath.Dir(config.DaemonJSONPath()), 0o755)
+		data, _ := json.Marshal(runningInfo)
+		_ = os.WriteFile(config.DaemonJSONPath(), data, 0o600)
+	}()
+
+	if err := EnsureDaemon(); err != nil {
+		t.Fatalf("EnsureDaemon: %v", err)
+	}
+	for _, want := range []string{"daemon", "--profile", "work", "--cdp-port", "33333"} {
+		if !containsArg(daemonArgs, want) {
+			t.Fatalf("daemon args missing %q: %v", want, daemonArgs)
+		}
+	}
+	if !containsArg(daemonArgs, "--port") {
+		t.Fatalf("daemon args should include an auto-selected --port: %v", daemonArgs)
+	}
+	if cachedInfo == nil || !daemonReady || cachedProfile != "work" {
+		t.Fatalf("named profile daemon state not cached: info=%+v ready=%v profile=%q", cachedInfo, daemonReady, cachedProfile)
 	}
 }
 

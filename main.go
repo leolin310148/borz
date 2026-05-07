@@ -49,6 +49,13 @@ func main() {
 	}
 
 	// Parse global flags
+	profileName := getArgValue(args, "--profile")
+	if profileName == "" {
+		profileName = config.Env("BORZ_PROFILE", "BB_BROWSER_PROFILE")
+	}
+	if err := config.SetProfile(profileName); err != nil {
+		fatal(err.Error())
+	}
 	remoteRouting := hasFlag(args, "--remote")
 	client.SetRemoteRouting(remoteRouting)
 	globalTabID := getArgValue(args, "--tab")
@@ -58,7 +65,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval", "--limit", "--id", "--title", "--parent", "--filename", "--state", "--name", "--display-name", "--description", "--out", "--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size", "--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--fps", "--width", "--height", "--ffmpeg", "--chapters", "--selector", "--rect"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused", "--lossless", "--mask-by-default", "--recover", "--baked", "--smooth", "--mobile", "--touch", "--no-touch", "--reset"})
+	cleanArgs := stripFlags(args, []string{"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval", "--limit", "--id", "--title", "--parent", "--filename", "--state", "--name", "--display-name", "--description", "--out", "--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size", "--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--fps", "--width", "--height", "--ffmpeg", "--chapters", "--selector", "--rect"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused", "--lossless", "--mask-by-default", "--recover", "--baked", "--smooth", "--mobile", "--touch", "--no-touch", "--reset"})
 
 	if len(cleanArgs) == 0 {
 		printHelp()
@@ -881,7 +888,7 @@ func startDaemonForeground(rawArgs []string) {
 		host = "127.0.0.1"
 	}
 	portStr := getArgValue(rawArgs, "--port")
-	port := 19824
+	port := config.DaemonPort
 	if portStr != "" {
 		if p, err := strconv.Atoi(portStr); err == nil {
 			port = p
@@ -890,12 +897,17 @@ func startDaemonForeground(rawArgs []string) {
 
 	// If a healthy daemon is already running, don't try to bind (which would
 	// clobber daemon.json and then fail with "address already in use").
-	if existing, err := client.ReadDaemonJSON(); err == nil && existing != nil && existing.Port == port && existing.Host == host {
+	if existing, err := client.ReadDaemonJSON(); err == nil && existing != nil && (portStr == "" || existing.Port == port) && existing.Host == host {
 		if client.IsProcessAlive(existing.PID) {
 			if _, err := client.GetLocalDaemonStatus(); err == nil {
 				fmt.Fprintf(os.Stderr, "borz daemon already running on %s:%d (pid %d)\n", existing.Host, existing.Port, existing.PID)
 				return
 			}
+		}
+	}
+	if portStr == "" && config.Profile() != "" {
+		if p, err := client.DaemonPortForProfile(); err == nil {
+			port = p
 		}
 	}
 
@@ -1091,6 +1103,9 @@ func serviceRunArgs(name string, opts daemon.ServerOptions) []string {
 		"--cdp-host", opts.CDPHost,
 		"--cdp-port", strconv.Itoa(opts.CDPPort),
 		"--idle-tab-timeout", strconv.Itoa(opts.IdleTabCloseMinutes),
+	}
+	if config.Profile() != "" {
+		args = append(args, "--profile", config.Profile())
 	}
 	if opts.Token != "" {
 		args = append(args, "--token", opts.Token)
@@ -1760,6 +1775,7 @@ Utility:
 
 Global Flags:
   --remote                      Send browser actions/status to configured server
+  --profile <name>              Use an isolated local daemon/browser profile
   --tab <id>                    Target tab
   --json                        JSON output
   --jq <expr>                   Filter with jq expression (implies --json)

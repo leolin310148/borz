@@ -151,10 +151,12 @@ func (s *Server) RunContext(ctx context.Context) error {
 		Token: s.opts.Token,
 	}
 	infoJSON, _ := json.Marshal(info)
-	if _, err := config.EnsureHomeDir(); err != nil {
+	if _, err := config.EnsureRuntimeDir(); err != nil {
 		return err
 	}
-	os.WriteFile(config.DaemonJSONPath(), infoJSON, 0600)
+	if err := os.WriteFile(config.DaemonJSONPath(), infoJSON, 0600); err != nil {
+		return err
+	}
 
 	fmt.Fprintf(os.Stderr, "borz daemon listening on %s\n", addr)
 	errCh := make(chan error, 1)

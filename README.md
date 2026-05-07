@@ -104,6 +104,9 @@ You need a Chromium-based browser (Google Chrome, Microsoft Edge, Brave, Arc, et
 1. Detect a running browser with remote debugging enabled
 2. Or launch a managed browser instance for you
 
+Use `--profile <name>` to keep a separate local daemon and managed browser
+profile, for example `borz --profile work open https://example.com`.
+
 If you prefer manual control, start Chrome with debugging enabled:
 
 ```bash
@@ -928,6 +931,7 @@ Exit code is `1` on any fail; warnings (e.g. daemon not started yet) do not fail
 
 | Flag | Description |
 |------|-------------|
+| `--profile <name>` | Use an isolated local daemon and managed browser profile |
 | `--tab <id>` | Target a specific tab by short ID or index |
 | `--json` | Output results as JSON |
 | `--jq <expr>` | Apply a jq-like filter to the output |
@@ -1004,6 +1008,7 @@ CDP mode records the controlled Chromium tab. Client mode uses the borz extensio
 | Variable | Description |
 |----------|-------------|
 | `BORZ_CDP_URL` | Override CDP endpoint (e.g., `http://127.0.0.1:9222`) |
+| `BORZ_PROFILE` | Default local daemon/browser profile name |
 | `BORZ_HOME` | Override config directory (default: `~/.borz`) |
 
 Legacy `BB_BROWSER_*` environment variables are still accepted during the rename transition.
