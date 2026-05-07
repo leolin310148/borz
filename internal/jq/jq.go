@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 var (
@@ -136,7 +137,7 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 			case map[string]interface{}:
 				results = append(results, float64(len(v)))
 			case string:
-				results = append(results, float64(len(v)))
+				results = append(results, float64(utf8.RuneCountInString(v)))
 			default:
 				results = append(results, float64(0))
 			}

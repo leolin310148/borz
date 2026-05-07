@@ -280,6 +280,7 @@ func TestApply_Length(t *testing.T) {
 		{`[1,2,3]`, 3},
 		{`{"a":1,"b":2}`, 2},
 		{`"hello"`, 5},
+		{`"\u4f60\u597d"`, 2},
 		{`42`, 0},
 	}
 	for _, c := range cases {
