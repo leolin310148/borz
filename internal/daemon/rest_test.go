@@ -155,6 +155,17 @@ func TestReadBody(t *testing.T) {
 		t.Fatalf("empty body should yield zero struct, got %+v", body)
 	}
 
+	// Whitespace-only body is also treated as empty for clients that send a
+	// blank JSON body with formatting.
+	req = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(" \n\t "))
+	body, err = readBody(req)
+	if err != nil {
+		t.Fatalf("whitespace: %v", err)
+	}
+	if body.URL != "" {
+		t.Fatalf("whitespace body should yield zero struct, got %+v", body)
+	}
+
 	// Valid JSON.
 	req = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"url":"https://example.com","new":true}`))
 	body, err = readBody(req)

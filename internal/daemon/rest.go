@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -474,7 +475,7 @@ func readBody(r *http.Request) (restBody, error) {
 	if int64(len(raw)) > maxRESTBodyBytes {
 		return body, fmt.Errorf("request body too large (max %d bytes)", maxRESTBodyBytes)
 	}
-	if len(raw) == 0 {
+	if len(bytes.TrimSpace(raw)) == 0 {
 		return body, nil
 	}
 	if err := json.Unmarshal(raw, &body); err != nil {
