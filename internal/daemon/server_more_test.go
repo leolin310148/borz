@@ -138,6 +138,27 @@ func TestServerRunContextBindAndSmallBranches(t *testing.T) {
 	}
 }
 
+func TestServerRunContextClosesListenerOnSetupFailure(t *testing.T) {
+	homeFile := filepath.Join(t.TempDir(), "home-file")
+	if err := os.WriteFile(homeFile, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BORZ_HOME", homeFile)
+
+	port := freeTCPPortForTest(t)
+	s := NewServer(ServerOptions{Host: "127.0.0.1", Port: port, CDPHost: "127.0.0.1", CDPPort: 1})
+	err := s.RunContext(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("RunContext error = %v", err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		t.Fatalf("listener was not closed after setup failure: %v", err)
+	}
+	_ = ln.Close()
+}
+
 func freeTCPPortForTest(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

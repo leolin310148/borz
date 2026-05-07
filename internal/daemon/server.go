@@ -116,6 +116,12 @@ func (s *Server) RunContext(ctx context.Context) error {
 		}
 		return err
 	}
+	serveStarted := false
+	defer func() {
+		if !serveStarted {
+			_ = ln.Close()
+		}
+	}()
 
 	s.startTime = time.Now()
 
@@ -160,6 +166,7 @@ func (s *Server) RunContext(ctx context.Context) error {
 
 	fmt.Fprintf(os.Stderr, "borz daemon listening on %s\n", addr)
 	errCh := make(chan error, 1)
+	serveStarted = true
 	go func() {
 		if err := s.httpSrv.Serve(ln); err != http.ErrServerClosed {
 			errCh <- err
