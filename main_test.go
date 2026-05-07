@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -113,6 +114,16 @@ func TestNewID(t *testing.T) {
 	if newID() == id {
 		t.Fatal("IDs should differ")
 	}
+}
+
+func TestNewIDFailsWhenRandomReadFails(t *testing.T) {
+	old := randomRead
+	randomRead = func([]byte) (int, error) {
+		return 0, errors.New("entropy unavailable")
+	}
+	t.Cleanup(func() { randomRead = old })
+
+	expectExit(t, 1, func() { _ = newID() })
 }
 
 func TestHasFlag(t *testing.T) {

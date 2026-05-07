@@ -30,6 +30,7 @@ var version = "0.1.0"
 
 var jqExpression string
 var exitFunc = os.Exit
+var randomRead = rand.Read
 
 type daemonRunner interface {
 	Run() error
@@ -911,10 +912,10 @@ func startDaemonForeground(rawArgs []string) {
 		}
 	}
 
-	// Generate token
-	tokenBytes := make([]byte, 16)
-	rand.Read(tokenBytes)
-	token := hex.EncodeToString(tokenBytes)
+	token, err := randomHex(16)
+	if err != nil {
+		fatal(fmt.Sprintf("generate daemon auth token: %v", err))
+	}
 
 	srv := newDaemonServer(daemon.ServerOptions{
 		Host:                host,
@@ -1575,9 +1576,19 @@ func normalizeRef(ref string) string {
 }
 
 func newID() string {
-	b := make([]byte, 8)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	id, err := randomHex(8)
+	if err != nil {
+		fatal(fmt.Sprintf("generate request id: %v", err))
+	}
+	return id
+}
+
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := randomRead(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func fatal(msg string) {
