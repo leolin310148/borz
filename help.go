@@ -1221,19 +1221,7 @@ func helpRequested(rawArgs, cmdArgs []string) bool {
 }
 
 func flagConsumesNextArg(arg string) bool {
-	switch arg {
-	case "-d", "--depth", "-s", "--selector", "--filter", "--method", "--status", "--id",
-		"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url",
-		"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for",
-		"--timeout", "--json-arg", "--interval", "--limit", "--title", "--parent",
-		"--filename", "--state", "--name", "--display-name", "--description", "--out",
-		"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
-		"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format",
-		"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect":
-		return true
-	default:
-		return false
-	}
+	return cliValueFlagSet[arg]
 }
 
 // commandNames returns the sorted canonical command list (used by tests).

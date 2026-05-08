@@ -32,6 +32,19 @@ var jqExpression string
 var exitFunc = os.Exit
 var randomRead = rand.Read
 
+var cliValueFlags = []string{
+	"-d", "--depth", "-s", "--selector", "--filter", "--method", "--status", "--id",
+	"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url",
+	"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for",
+	"--timeout", "--json-arg", "--interval", "--limit", "--title", "--parent",
+	"--filename", "--state", "--name", "--display-name", "--description", "--out",
+	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
+	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format",
+	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect",
+}
+
+var cliValueFlagSet = makeFlagSet(cliValueFlags)
+
 type daemonRunner interface {
 	Run() error
 }
@@ -66,7 +79,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, []string{"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url", "--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for", "--timeout", "--json-arg", "--interval", "--limit", "--id", "--title", "--parent", "--filename", "--state", "--name", "--display-name", "--description", "--out", "--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size", "--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--fps", "--width", "--height", "--ffmpeg", "--chapters", "--selector", "--rect"}, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused", "--lossless", "--mask-by-default", "--recover", "--baked", "--smooth", "--mobile", "--touch", "--no-touch", "--reset"})
+	cleanArgs := stripFlags(args, nil, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused", "--lossless", "--mask-by-default", "--recover", "--baked", "--smooth", "--mobile", "--touch", "--no-touch", "--reset"})
 
 	if len(cleanArgs) == 0 {
 		if hasFlag(args, "--version") {
@@ -1669,23 +1682,23 @@ func hasInlineValueFlag(arg string, flags map[string]bool) bool {
 }
 
 func stripFlags(args []string, valueFlags, boolFlags []string) []string {
-	valueFlagSet := make(map[string]bool)
+	valueFlagSet := makeFlagSet(cliValueFlags)
 	for _, f := range valueFlags {
 		valueFlagSet[f] = true
 	}
-	boolFlagSet := make(map[string]bool)
-	for _, f := range boolFlags {
-		boolFlagSet[f] = true
-	}
-	handledValueFlagSet := map[string]bool{
-		"-d":         true,
-		"--depth":    true,
-		"-s":         true,
-		"--selector": true,
-		"--filter":   true,
-		"--method":   true,
-		"--status":   true,
-		"--id":       true,
+	boolFlagSet := makeFlagSet(boolFlags)
+	handledBoolFlagSet := map[string]bool{
+		"-i":            true,
+		"-c":            true,
+		"--interactive": true,
+		"--compact":     true,
+		"--with-body":   true,
+		"--clear":       true,
+		"--json":        true,
+		"--new":         true,
+		"--text-only":   true,
+		"--text":        true,
+		"--diff":        true,
 	}
 
 	var result []string
@@ -1695,25 +1708,27 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 			skip = false
 			continue
 		}
-		if valueFlagSet[a] || handledValueFlagSet[a] {
+		if valueFlagSet[a] {
 			skip = true
 			continue
 		}
-		if hasInlineValueFlag(a, valueFlagSet) || hasInlineValueFlag(a, handledValueFlagSet) {
+		if hasInlineValueFlag(a, valueFlagSet) {
 			continue
 		}
-		if boolFlagSet[a] {
-			continue
-		}
-		// Also strip short flags that have already been handled
-		if a == "-i" || a == "-c" || a == "--interactive" || a == "--compact" ||
-			a == "--with-body" || a == "--clear" || a == "--json" || a == "--new" ||
-			a == "--text-only" || a == "--text" || a == "--diff" {
+		if boolFlagSet[a] || handledBoolFlagSet[a] {
 			continue
 		}
 		result = append(result, a)
 	}
 	return result
+}
+
+func makeFlagSet(flags []string) map[string]bool {
+	set := make(map[string]bool, len(flags))
+	for _, f := range flags {
+		set[f] = true
+	}
+	return set
 }
 
 func printHelp() {

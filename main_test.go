@@ -293,6 +293,12 @@ func TestStripFlags(t *testing.T) {
 		t.Errorf("inline built-in value flags: %v", got)
 	}
 
+	in = []string{"screenshot", "--viewport", "1280x720", "--rect", "1,2,3,4", "keep"}
+	got = stripFlags(in, nil, nil)
+	if !reflect.DeepEqual(got, []string{"screenshot", "keep"}) {
+		t.Errorf("shared CLI value flags: %v", got)
+	}
+
 	// Custom bool flag strips just the flag.
 	in = []string{"cmd", "--bool", "keep"}
 	got = stripFlags(in, nil, []string{"--bool"})
