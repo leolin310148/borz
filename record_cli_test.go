@@ -95,6 +95,9 @@ func TestRecordCLILocalBundleCommandsAndHelpers(t *testing.T) {
 	if !looksLikeBundle(dir) || looksLikeBundle("rec-1") {
 		t.Fatal("looksLikeBundle mismatch")
 	}
+	if !looksLikeBundle("nested/bundle") || !looksLikeBundle(`nested\bundle`) {
+		t.Fatal("looksLikeBundle should treat slash and backslash paths as bundles")
+	}
 	if got, err := parseBytes("1.5MB"); err != nil || got != 1572864 {
 		t.Fatalf("parseBytes: got %d err=%v", got, err)
 	}

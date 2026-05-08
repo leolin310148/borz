@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -294,7 +293,7 @@ func splitCSV(s string) []string {
 }
 
 func looksLikeBundle(s string) bool {
-	return strings.HasSuffix(s, ".borzrec") || strings.Contains(s, string(os.PathSeparator))
+	return strings.HasSuffix(s, ".borzrec") || strings.ContainsAny(s, `/\`)
 }
 
 func parseBytes(s string) (int64, error) {
