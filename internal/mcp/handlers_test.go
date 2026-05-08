@@ -705,6 +705,18 @@ func TestHandleNavigate_PassesWaitForAndTimeout(t *testing.T) {
 	}
 }
 
+func TestHandleNavigate_PreservesExplicitZeroTimeout(t *testing.T) {
+	cap := capturingSend(t, ok())
+	_, _ = handleNavigate(context.Background(), mkReq(map[string]any{
+		"url":     "https://example.com",
+		"waitFor": ".loaded",
+		"timeout": float64(0),
+	}))
+	if cap.req.TimeoutMs == nil || *cap.req.TimeoutMs != 0 {
+		t.Fatalf("timeoutMs = %v, want explicit zero", cap.req.TimeoutMs)
+	}
+}
+
 func TestHandleClick_PassesWaitFor(t *testing.T) {
 	cap := capturingSend(t, ok())
 	_, _ = handleClick(context.Background(), mkReq(map[string]any{

@@ -53,8 +53,10 @@ func applyWaitFor(req *protocol.Request, r mcp.CallToolRequest) {
 	if sel := strings.TrimSpace(r.GetString("waitFor", "")); sel != "" {
 		req.WaitFor = sel
 	}
-	if ms := r.GetInt("timeout", 0); ms > 0 {
-		req.TimeoutMs = intPtr(ms)
+	if _, ok := r.GetArguments()["timeout"]; ok {
+		if ms := r.GetInt("timeout", 0); ms >= 0 {
+			req.TimeoutMs = intPtr(ms)
+		}
 	}
 }
 
