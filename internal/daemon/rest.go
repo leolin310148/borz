@@ -354,8 +354,12 @@ func (b restBody) viewportOptions() *protocol.ViewportOptions {
 	}
 	var opts protocol.ViewportOptions
 	has := false
-	if b.Preset != "" {
-		if preset, ok := protocol.ViewportPreset(b.Preset); ok {
+	presetName := b.Preset
+	if presetName == "" && b.Mobile && b.Width == nil && b.Height == nil {
+		presetName = "mobile"
+	}
+	if presetName != "" {
+		if preset, ok := protocol.ViewportPreset(presetName); ok {
 			opts = preset
 		}
 		has = true

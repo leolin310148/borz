@@ -97,6 +97,14 @@ func TestRestBody_ViewportOptions(t *testing.T) {
 	if vp == nil || vp.Width != 414 || vp.Height != 896 || vp.DPR != 3 || !vp.Mobile || vp.Touch == nil || !*vp.Touch {
 		t.Fatalf("viewport options = %+v", vp)
 	}
+	vp = (restBody{Mobile: true}).viewportOptions()
+	if vp == nil || vp.Width != 390 || vp.Height != 844 || vp.DPR != 3 || !vp.Mobile || vp.Touch == nil || !*vp.Touch {
+		t.Fatalf("mobile shorthand viewport options = %+v", vp)
+	}
+	vp = (restBody{Mobile: true, Width: &width, Height: &height}).viewportOptions()
+	if vp == nil || vp.Width != 414 || vp.Height != 896 || vp.DPR != 0 || !vp.Mobile {
+		t.Fatalf("custom mobile viewport options = %+v", vp)
+	}
 	vp = (restBody{Reset: true}).viewportOptions()
 	if vp == nil || !vp.Reset {
 		t.Fatalf("reset viewport options = %+v", vp)
