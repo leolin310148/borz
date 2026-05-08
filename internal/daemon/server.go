@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -233,13 +234,18 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 					auth = "Bearer " + q
 				}
 			}
-			if auth != "Bearer "+s.opts.Token {
+			if !validBearerToken(auth, s.opts.Token) {
 				sendJSON(w, 401, map[string]string{"error": "Unauthorized"})
 				return
 			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func validBearerToken(auth, token string) bool {
+	expected := "Bearer " + token
+	return len(auth) == len(expected) && subtle.ConstantTimeCompare([]byte(auth), []byte(expected)) == 1
 }
 
 // --- Handlers ---
