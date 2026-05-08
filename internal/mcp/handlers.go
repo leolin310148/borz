@@ -41,9 +41,13 @@ func normalizeRef(ref string) string {
 
 // setTab sets the TabID on a request if the tool call includes a "tab" param.
 func setTab(req *protocol.Request, r mcp.CallToolRequest) {
-	if tab := r.GetString("tab", ""); tab != "" {
+	if tab := tabIDArg(r); tab != "" {
 		req.TabID = tab
 	}
+}
+
+func tabIDArg(r mcp.CallToolRequest) string {
+	return strings.TrimSpace(r.GetString("tab", ""))
 }
 
 // applyWaitFor reads optional waitFor / timeout params off the tool call and
@@ -460,7 +464,7 @@ func handleTabNew(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResu
 
 func handleTabSelect(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionTabSelect}
-	if tab := r.GetString("tab", ""); tab != "" {
+	if tab := tabIDArg(r); tab != "" {
 		req.TabID = tab
 	}
 	if idx := r.GetInt("index", -1); idx >= 0 {
@@ -475,7 +479,7 @@ func handleTabSelect(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolR
 
 func handleTabClose(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionTabClose}
-	if tab := r.GetString("tab", ""); tab != "" {
+	if tab := tabIDArg(r); tab != "" {
 		req.TabID = tab
 	}
 	if idx := r.GetInt("index", -1); idx >= 0 {
@@ -609,7 +613,7 @@ func handleSiteRun(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRes
 		}
 	}
 
-	tabID := r.GetString("tab", "")
+	tabID := tabIDArg(r)
 	req, err := siteBuilder(meta, args, tabID, site.EvalOptions{
 		Force:     r.GetBool("force", false),
 		TimeoutMs: r.GetInt("timeout", 0),

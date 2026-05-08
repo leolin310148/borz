@@ -414,6 +414,18 @@ func TestSetTab(t *testing.T) {
 	if req.TabID != "abc" {
 		t.Errorf("TabID: %v", req.TabID)
 	}
+
+	req = &protocol.Request{}
+	setTab(req, " abc ")
+	if req.TabID != "abc" {
+		t.Errorf("trimmed TabID: %v", req.TabID)
+	}
+
+	req = &protocol.Request{}
+	setTab(req, " \t ")
+	if req.TabID != nil {
+		t.Errorf("whitespace-only tab should not set TabID, got %v", req.TabID)
+	}
 }
 
 func TestSetSince(t *testing.T) {

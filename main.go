@@ -1604,6 +1604,7 @@ func printEval(req *protocol.Request, jsonOutput, unwrap bool) bool {
 }
 
 func setTab(req *protocol.Request, tabID string) {
+	tabID = strings.TrimSpace(tabID)
 	if tabID != "" {
 		req.TabID = tabID
 	}

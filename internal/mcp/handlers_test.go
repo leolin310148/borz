@@ -142,6 +142,18 @@ func TestSetTab(t *testing.T) {
 	}
 
 	req = &protocol.Request{}
+	setTab(req, mkReq(map[string]any{"tab": " t1 "}))
+	if req.TabID != "t1" {
+		t.Errorf("trimmed TabID = %v", req.TabID)
+	}
+
+	req = &protocol.Request{}
+	setTab(req, mkReq(map[string]any{"tab": " \t "}))
+	if req.TabID != nil {
+		t.Errorf("whitespace-only tab should stay nil, got %v", req.TabID)
+	}
+
+	req = &protocol.Request{}
 	setTab(req, mkReq(nil))
 	if req.TabID != nil {
 		t.Errorf("TabID should stay nil, got %v", req.TabID)
