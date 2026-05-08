@@ -166,6 +166,17 @@ func TestApply_SelectNumeric(t *testing.T) {
 	}
 }
 
+func TestApply_SelectStringOrdering(t *testing.T) {
+	data := mustJSON(t, `[{"name":"alpha"},{"name":"beta"},{"name":"gamma"}]`)
+	got := Apply(data, `.[] | select(.name >= "beta")`)
+	if len(got) != 2 {
+		t.Fatalf("select names >= beta = %v, want two matches", got)
+	}
+	if got[0].(map[string]interface{})["name"] != "beta" || got[1].(map[string]interface{})["name"] != "gamma" {
+		t.Fatalf("select names >= beta matched %v", got)
+	}
+}
+
 func TestApply_SelectBoolean(t *testing.T) {
 	data := mustJSON(t, `[{"ok":true},{"ok":false}]`)
 	got := Apply(data, `.[] | select(.ok == true)`)
@@ -438,6 +449,18 @@ func TestCompareValues(t *testing.T) {
 	}
 	if !compareValues(json.Number("7"), ">=", int32(7)) {
 		t.Error("ordered comparisons should support json.Number")
+	}
+	if !compareValues("10", ">", float64(2)) {
+		t.Error("ordered comparisons should support numeric strings")
+	}
+	if !compareValues("beta", ">=", "alpha") {
+		t.Error("ordered comparisons should support strings")
+	}
+	if compareValues("alpha", ">=", "beta") {
+		t.Error("string ordering should not coerce both sides to zero")
+	}
+	if compareValues("abc", "<=", float64(1)) {
+		t.Error("nonnumeric strings should not be ordered against numbers")
 	}
 	if compareValues("x", "??", "y") {
 		t.Error("unknown op should be false")

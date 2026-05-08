@@ -310,13 +310,17 @@ func compareValues(left interface{}, op string, right interface{}) bool {
 	case "!=":
 		return !equalValues(left, right)
 	case ">":
-		return toFloat(left) > toFloat(right)
+		cmp, ok := compareOrderedValues(left, right)
+		return ok && cmp > 0
 	case "<":
-		return toFloat(left) < toFloat(right)
+		cmp, ok := compareOrderedValues(left, right)
+		return ok && cmp < 0
 	case ">=":
-		return toFloat(left) >= toFloat(right)
+		cmp, ok := compareOrderedValues(left, right)
+		return ok && cmp >= 0
 	case "<=":
-		return toFloat(left) <= toFloat(right)
+		cmp, ok := compareOrderedValues(left, right)
+		return ok && cmp <= 0
 	}
 	return false
 }
@@ -361,6 +365,42 @@ func numberValue(v interface{}) (float64, bool) {
 		return f, err == nil
 	default:
 		return 0, false
+	}
+}
+
+func compareOrderedValues(left interface{}, right interface{}) (int, bool) {
+	if leftNum, leftOK := numericComparableValue(left); leftOK {
+		if rightNum, rightOK := numericComparableValue(right); rightOK {
+			return compareFloat(leftNum, rightNum), true
+		}
+	}
+	leftString, leftIsString := left.(string)
+	rightString, rightIsString := right.(string)
+	if leftIsString && rightIsString {
+		return strings.Compare(leftString, rightString), true
+	}
+	return 0, false
+}
+
+func numericComparableValue(v interface{}) (float64, bool) {
+	if n, ok := numberValue(v); ok {
+		return n, true
+	}
+	if s, ok := v.(string); ok {
+		n, err := strconv.ParseFloat(s, 64)
+		return n, err == nil
+	}
+	return 0, false
+}
+
+func compareFloat(left float64, right float64) int {
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
 	}
 }
 
