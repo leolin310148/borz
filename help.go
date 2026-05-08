@@ -685,6 +685,9 @@ var commandHelp = map[string]cmdHelp{
 	"help": {
 		Summary: "Show help for borz as a whole or a specific command.",
 		Usage:   "borz help [command [subcommand]]",
+		Flags: []string{
+			"  --all   Dump every registered command's help",
+		},
 		Examples: []string{
 			"  borz help",
 			"  borz help snapshot",

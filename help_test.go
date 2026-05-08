@@ -93,6 +93,23 @@ func TestPrintCommandHelpAlias(t *testing.T) {
 	}
 }
 
+func TestHelpCommandHelpMentionsAllFlag(t *testing.T) {
+	out := captureStdout(t, func() {
+		if !printCommandHelp("help") {
+			t.Fatal("printCommandHelp should return true for help")
+		}
+	})
+	for _, want := range []string{
+		"--all",
+		"Dump every registered command's help",
+		"borz help --all | less",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("help command help missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestNetworkRequestsHelpMentionsTailFlags(t *testing.T) {
 	out := captureStdout(t, func() {
 		if !printCommandHelp("network.requests") {
