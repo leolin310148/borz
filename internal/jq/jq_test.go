@@ -248,6 +248,24 @@ func TestApply_ObjectProjectionRename(t *testing.T) {
 	}
 }
 
+func TestApply_ObjectProjectionJSONLiterals(t *testing.T) {
+	data := mustJSON(t, `{"name":"alice"}`)
+	got := Apply(data, `{name: .name, ok: true, missing: null, count: 3, label: "ready", tags: ["a","b"], meta: {"source":"test"}}`)
+	if len(got) != 1 {
+		t.Fatalf("got %v", got)
+	}
+	m := got[0].(map[string]interface{})
+	if m["name"] != "alice" || m["ok"] != true || m["missing"] != nil || m["count"] != float64(3) || m["label"] != "ready" {
+		t.Fatalf("literal projection = %v", m)
+	}
+	if !reflect.DeepEqual(m["tags"], []interface{}{"a", "b"}) {
+		t.Fatalf("tags literal = %v", m["tags"])
+	}
+	if !reflect.DeepEqual(m["meta"], map[string]interface{}{"source": "test"}) {
+		t.Fatalf("meta literal = %v", m["meta"])
+	}
+}
+
 func TestApply_ObjectProjectionQuotedKeys(t *testing.T) {
 	data := mustJSON(t, `{"id":"abc","content-type":"text/html","quote\"key":7}`)
 	got := Apply(data, `{"tab-id": .id, "content-type": .["content-type"], "quote\"out": ."quote\"key"}`)

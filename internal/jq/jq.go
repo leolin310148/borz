@@ -99,6 +99,10 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 				} else {
 					key := projectionKey(entry[:colonIdx])
 					valueExpr := strings.TrimSpace(entry[colonIdx+1:])
+					if value, ok := parseJSONLiteral(valueExpr); ok {
+						obj[key] = value
+						continue
+					}
 					vals := applyExpression([]interface{}{item}, valueExpr)
 					if len(vals) > 0 {
 						obj[key] = vals[0]
@@ -281,26 +285,25 @@ func isMissing(value interface{}) bool {
 
 func parseLiteral(value string) interface{} {
 	trimmed := strings.TrimSpace(value)
-	if strings.HasPrefix(trimmed, `"`) && strings.HasSuffix(trimmed, `"`) {
-		var s string
-		if err := json.Unmarshal([]byte(trimmed), &s); err == nil {
-			return s
-		}
-		return trimmed
-	}
-	if trimmed == "true" {
-		return true
-	}
-	if trimmed == "false" {
-		return false
-	}
-	if trimmed == "null" {
-		return nil
+	if parsed, ok := parseJSONLiteral(trimmed); ok {
+		return parsed
 	}
 	if n, err := strconv.ParseFloat(trimmed, 64); err == nil {
 		return n
 	}
 	return trimmed
+}
+
+func parseJSONLiteral(value string) (interface{}, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.HasPrefix(trimmed, ".") {
+		return nil, false
+	}
+	var parsed interface{}
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+		return nil, false
+	}
+	return parsed, true
 }
 
 func compareValues(left interface{}, op string, right interface{}) bool {
