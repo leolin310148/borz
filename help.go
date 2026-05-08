@@ -806,8 +806,13 @@ var commandHelp = map[string]cmdHelp{
 		Notes:    "Community adapters are arbitrary JavaScript. Trust records the current hash in sites-trust.json; hash changes require re-trust or --force.",
 	},
 	"site.run": {
-		Summary:  "Run an adapter by name — equivalent to calling 'borz <platform>/<name> ...' directly.",
-		Usage:    "borz site run <name> [args...] [--tab <id>] [--timeout <ms>] [--force]",
+		Summary: "Run an adapter by name — equivalent to calling 'borz <platform>/<name> ...' directly.",
+		Usage:   "borz site run <name> [args...] [--tab <id>] [--timeout <ms>] [--unwrap] [--force]",
+		Flags: []string{
+			"  --timeout <ms>   Override the adapter eval timeout",
+			"  --unwrap         Print a string result without JSON quotes",
+			"  --force          Bypass domain mismatch and one-off community trust checks",
+		},
 		Examples: []string{"  borz site run hackernews/top 10", "  borz hackernews/top 10"},
 		Notes: "Use 'borz site info <name>' to discover the args an adapter expects " +
 			"before running it. The daemon blocks domain mismatches by default; --force bypasses that guard and one-off community trust checks.",

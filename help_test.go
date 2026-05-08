@@ -278,6 +278,19 @@ func TestPrintAllHelp(t *testing.T) {
 	}
 }
 
+func TestSiteRunHelpMentionsSupportedFlags(t *testing.T) {
+	out := captureStdout(t, func() { printCommandHelp("site.run") })
+	for _, want := range []string{
+		"--timeout <ms>",
+		"--unwrap",
+		"--force",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("site.run help missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestTopLevelHelpMentionsNewFlags(t *testing.T) {
 	out := captureStdout(t, func() { printHelp() })
 	for _, want := range []string{
