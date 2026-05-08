@@ -278,6 +278,9 @@ func ParseChecksums(r io.Reader) (map[string]string, error) {
 		if name == "" {
 			return nil, fmt.Errorf("checksums line %d: empty filename", lineNo)
 		}
+		if _, exists := out[name]; exists {
+			return nil, fmt.Errorf("checksums line %d: duplicate filename %q", lineNo, name)
+		}
 		out[name] = sum
 	}
 	if err := scanner.Err(); err != nil {

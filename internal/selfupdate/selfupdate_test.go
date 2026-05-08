@@ -99,6 +99,12 @@ func TestParseChecksumsRejectsMalformedRows(t *testing.T) {
 		{"short checksum", "abc123  borz-linux-amd64\n", "invalid sha256 length"},
 		{"non-hex checksum", strings.Repeat("z", 64) + "  borz-linux-amd64\n", "invalid sha256"},
 		{"empty binary filename", strings.Repeat("a", 64) + "  *\n", "empty filename"},
+		{
+			"duplicate filename",
+			strings.Repeat("a", 64) + "  borz-linux-amd64\n" +
+				strings.Repeat("b", 64) + "  borz-linux-amd64\n",
+			"duplicate filename",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
