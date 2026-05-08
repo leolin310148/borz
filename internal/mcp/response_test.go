@@ -222,17 +222,17 @@ func TestFormatTabList_Empty(t *testing.T) {
 
 func TestFormatTabList_WithTabs(t *testing.T) {
 	resp := &protocol.Response{Data: &protocol.ResponseData{Tabs: []protocol.TabInfo{
-		{Index: 0, URL: "https://a", Title: "A", Active: true, TabID: "t1"},
-		{Index: 1, URL: "https://b", Title: "B", TabID: "t2"},
+		{Index: 0, URL: "https://a", Title: "A", Active: true, TabID: "target-0001", Tab: "0001"},
+		{Index: 1, URL: "https://b", Title: "B", TabID: "target-0002"},
 	}}}
 	got := firstText(t, formatTabList(resp))
 	if !strings.Contains(got, "Tabs (2 total)") {
 		t.Errorf("missing header: %q", got)
 	}
-	if !strings.Contains(got, "* [0] https://a") {
+	if !strings.Contains(got, "* [0] https://a") || !strings.Contains(got, "(tab: 0001)") {
 		t.Errorf("active marker: %q", got)
 	}
-	if !strings.Contains(got, "  [1] https://b") {
+	if !strings.Contains(got, "  [1] https://b") || !strings.Contains(got, "(tab: target-0002)") {
 		t.Errorf("inactive: %q", got)
 	}
 }

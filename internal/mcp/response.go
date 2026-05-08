@@ -137,7 +137,11 @@ func formatTabList(resp *protocol.Response) *mcp.CallToolResult {
 		if tab.Active {
 			prefix = "* "
 		}
-		fmt.Fprintf(&sb, "%s[%d] %s — %s (tab: %v)\n", prefix, tab.Index, tab.URL, tab.Title, tab.TabID)
+		tabRef := tab.Tab
+		if tabRef == "" {
+			tabRef = fmt.Sprintf("%v", tab.TabID)
+		}
+		fmt.Fprintf(&sb, "%s[%d] %s — %s (tab: %s)\n", prefix, tab.Index, tab.URL, tab.Title, tabRef)
 	}
 	return mcp.NewToolResultText(sb.String())
 }
