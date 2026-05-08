@@ -368,6 +368,7 @@ func sendJSON(w http.ResponseWriter, status int, data interface{}) {
 		body = []byte(`{"error":"failed to encode JSON response"}`)
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
 	w.Write(body)
 }

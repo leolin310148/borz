@@ -38,6 +38,9 @@ func TestSendJSON(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("content-type: got %q", ct)
 	}
+	if nosniff := rec.Header().Get("X-Content-Type-Options"); nosniff != "nosniff" {
+		t.Fatalf("x-content-type-options: got %q", nosniff)
+	}
 
 	var got map[string]string
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
