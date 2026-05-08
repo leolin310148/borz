@@ -619,7 +619,7 @@ borz network requests --filter "api"
 # Filter by HTTP method
 borz network requests --method POST
 
-# Filter by status code
+# Filter by status code or class
 borz network requests --status 404
 borz network requests --status 5xx
 

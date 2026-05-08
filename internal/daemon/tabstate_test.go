@@ -331,8 +331,17 @@ func TestMatchStatus(t *testing.T) {
 	if matchStatus(intP(500), "4xx") {
 		t.Fatal("500 should not match 4xx")
 	}
+	if !matchStatus(intP(204), "2xx") {
+		t.Fatal("204 should match 2xx")
+	}
+	if !matchStatus(intP(302), "3xx") {
+		t.Fatal("302 should match 3xx")
+	}
 	if !matchStatus(intP(502), "5xx") {
 		t.Fatal("502 should match 5xx")
+	}
+	if matchStatus(intP(200), "6xx") {
+		t.Fatal("unsupported status class should not match")
 	}
 	if !matchStatus(intP(200), "200") {
 		t.Fatal("exact match 200 failed")

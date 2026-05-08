@@ -228,7 +228,7 @@ var networkTool = mcp.NewTool("browser_network",
 	mcp.WithString("filter", mcp.Description("URL pattern to filter results")),
 	mcp.WithBoolean("withBody", mcp.Description("Include request/response bodies")),
 	mcp.WithString("method", mcp.Description("Filter by HTTP method (GET, POST, etc.)")),
-	mcp.WithString("status", mcp.Description("Filter by HTTP status code")),
+	mcp.WithString("status", mcp.Description("Filter by HTTP status code or class (for example, 404 or 5xx)")),
 	tabParam(),
 )
 

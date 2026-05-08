@@ -45,7 +45,7 @@ borz eval --file ./x.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSO
 borz eval "await fetch('/x').then(...)"      # top-level await auto-wraps in async IIFE
 borz screenshot                              # base64 PNG in JSON
 borz get <url|title|text|href|value|class> [ref]
-borz network [requests|clear] [--filter] [--method] [--status] [--with-body]
+borz network [requests|clear] [--filter] [--method] [--status code|class] [--with-body]
 borz network requests --tail [--interval duration|ms]   # live stream of new requests (Ctrl+C to stop)
 borz console [--clear] [--filter] [--tail]  # --tail streams new messages
 borz errors [--clear] [--filter] [--tail]   # --tail streams new JS errors

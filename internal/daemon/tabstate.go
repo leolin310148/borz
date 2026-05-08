@@ -290,18 +290,15 @@ func matchStatus(status *int, pattern string) bool {
 	}
 	pattern = strings.ToLower(strings.TrimSpace(pattern))
 	s := *status
-	switch pattern {
-	case "4xx":
-		return s >= 400 && s < 500
-	case "5xx":
-		return s >= 500 && s < 600
-	default:
-		code, err := strconv.Atoi(pattern)
-		if err != nil {
-			return false
-		}
-		return s == code
+	if len(pattern) == 3 && pattern[1:] == "xx" && pattern[0] >= '1' && pattern[0] <= '5' {
+		base := int(pattern[0]-'0') * 100
+		return s >= base && s < base+100
 	}
+	code, err := strconv.Atoi(pattern)
+	if err != nil {
+		return false
+	}
+	return s == code
 }
 
 // TabStateManager manages all tabs and the global seq counter.
