@@ -378,6 +378,12 @@ func TestStripFlags(t *testing.T) {
 		t.Errorf("shared CLI value flags: %v", got)
 	}
 
+	in = []string{"--remote", "eval", "--no-auto-await", "1+1", "--unwrap"}
+	got = stripFlags(in, nil, nil)
+	if !reflect.DeepEqual(got, []string{"eval", "1+1"}) {
+		t.Errorf("shared CLI bool flags: %v", got)
+	}
+
 	in = []string{"site", "update", "--ref", "v1.2.3"}
 	got = stripFlags(in, nil, nil)
 	if !reflect.DeepEqual(got, []string{"site", "update"}) {

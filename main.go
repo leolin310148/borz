@@ -46,6 +46,18 @@ var cliValueFlags = []string{
 
 var cliValueFlagSet = makeFlagSet(cliValueFlags)
 
+var cliBoolFlags = []string{
+	"-i", "-c",
+	"--all", "--baked", "--check", "--clear", "--compact", "--diff", "--focused",
+	"--force", "--help", "--interactive", "--json", "--lossless",
+	"--mask-by-default", "--mobile", "--new", "--no-auto-await", "--no-check",
+	"--no-touch", "--recover", "--recursive", "--remote", "--reset", "--save-as",
+	"--smooth", "--tail", "--text", "--text-only", "--touch", "--unwrap",
+	"--version", "--with-body",
+}
+
+var cliBoolFlagSet = makeFlagSet(cliBoolFlags)
+
 type daemonRunner interface {
 	Run() error
 }
@@ -80,7 +92,7 @@ func main() {
 	globalSince := getArgValue(args, "--since")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, nil, []string{"--json", "--help", "--version", "--force", "--check", "--unwrap", "--no-auto-await", "--tail", "--no-check", "--remote", "--recursive", "--save-as", "--focused", "--lossless", "--mask-by-default", "--recover", "--baked", "--smooth", "--mobile", "--touch", "--no-touch", "--reset"})
+	cleanArgs := stripFlags(args, nil, nil)
 
 	if len(cleanArgs) == 0 {
 		if hasFlag(args, "--version") {
@@ -1742,19 +1754,12 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 	for _, f := range valueFlags {
 		valueFlagSet[f] = true
 	}
-	boolFlagSet := makeFlagSet(boolFlags)
-	handledBoolFlagSet := map[string]bool{
-		"-i":            true,
-		"-c":            true,
-		"--interactive": true,
-		"--compact":     true,
-		"--with-body":   true,
-		"--clear":       true,
-		"--json":        true,
-		"--new":         true,
-		"--text-only":   true,
-		"--text":        true,
-		"--diff":        true,
+	boolFlagSet := make(map[string]bool, len(cliBoolFlagSet)+len(boolFlags))
+	for f := range cliBoolFlagSet {
+		boolFlagSet[f] = true
+	}
+	for _, f := range boolFlags {
+		boolFlagSet[f] = true
 	}
 
 	var result []string
@@ -1771,7 +1776,7 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 		if hasInlineValueFlag(a, valueFlagSet) {
 			continue
 		}
-		if boolFlagSet[a] || handledBoolFlagSet[a] {
+		if boolFlagSet[a] {
 			continue
 		}
 		result = append(result, a)
