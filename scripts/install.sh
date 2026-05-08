@@ -92,9 +92,11 @@ chmod +x "$tmp_dir/$asset"
 install_binary "$tmp_dir/$asset"
 
 echo "Installed $binary_name to $install_dir"
-if command -v "$binary_name" >/dev/null 2>&1; then
+installed_binary="$install_dir/$binary_name"
+if [ -x "$installed_binary" ]; then
+  "$installed_binary" version
+elif command -v "$binary_name" >/dev/null 2>&1; then
   "$binary_name" version
 else
   echo "Add $install_dir to PATH, then run: $binary_name version"
 fi
-
