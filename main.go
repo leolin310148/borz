@@ -883,6 +883,7 @@ func stopDaemonAfterUpdate() {
 
 func startDaemonForeground(rawArgs []string) {
 	cdpHost := getArgValue(rawArgs, "--cdp-host")
+	cdpHost = strings.TrimSpace(cdpHost)
 	if cdpHost == "" {
 		cdpHost = "127.0.0.1"
 	}
@@ -989,6 +990,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 
 func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerOptions, error) {
 	cdpHost := getArgValue(rawArgs, "--cdp-host")
+	cdpHost = strings.TrimSpace(cdpHost)
 	if cdpHost == "" {
 		cdpHost = "127.0.0.1"
 	}
@@ -1000,8 +1002,9 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 	}
 
 	host := getArgValue(rawArgs, "--host")
+	host = strings.TrimSpace(host)
 	if host == "" {
-		host = config.Env("BORZ_SERVER_HOST", "BB_BROWSER_SERVER_HOST")
+		host = strings.TrimSpace(config.Env("BORZ_SERVER_HOST", "BB_BROWSER_SERVER_HOST"))
 	}
 	if host == "" {
 		host = defaultHost
@@ -1019,8 +1022,9 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 	}
 
 	token := getArgValue(rawArgs, "--token")
+	token = strings.TrimSpace(token)
 	if token == "" {
-		token = config.Env("BORZ_TOKEN", "BB_BROWSER_TOKEN")
+		token = strings.TrimSpace(config.Env("BORZ_TOKEN", "BB_BROWSER_TOKEN"))
 	}
 
 	if isRemoteBind(host) && token == "" {

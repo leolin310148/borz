@@ -88,6 +88,50 @@ func TestServerOptionsFromArgsTrimsPortValues(t *testing.T) {
 	}
 }
 
+func TestServerOptionsFromArgsTrimsStringValues(t *testing.T) {
+	t.Setenv("BORZ_SERVER_HOST", " 127.0.0.1 ")
+	t.Setenv("BB_BROWSER_SERVER_HOST", "")
+	t.Setenv("BORZ_SERVER_PORT", "")
+	t.Setenv("BB_BROWSER_SERVER_PORT", "")
+	t.Setenv("BORZ_TOKEN", "")
+	t.Setenv("BB_BROWSER_TOKEN", "")
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
+
+	opts, err := serverOptionsFromArgs([]string{"server", "--cdp-host", " chrome "}, "0.0.0.0")
+	if err != nil {
+		t.Fatalf("serverOptionsFromArgs returned error: %v", err)
+	}
+	if opts.Host != "127.0.0.1" || opts.CDPHost != "chrome" {
+		t.Fatalf("hosts = %q/%q, want 127.0.0.1/chrome", opts.Host, opts.CDPHost)
+	}
+
+	t.Setenv("BORZ_SERVER_HOST", "")
+	t.Setenv("BORZ_TOKEN", " secret ")
+	opts, err = serverOptionsFromArgs([]string{"server", "--host", " 0.0.0.0 "}, "0.0.0.0")
+	if err != nil {
+		t.Fatalf("serverOptionsFromArgs with trimmed token returned error: %v", err)
+	}
+	if opts.Host != "0.0.0.0" || opts.Token != "secret" {
+		t.Fatalf("host/token = %q/%q, want 0.0.0.0/secret", opts.Host, opts.Token)
+	}
+}
+
+func TestServerOptionsFromArgsRejectsBlankToken(t *testing.T) {
+	t.Setenv("BORZ_SERVER_HOST", "")
+	t.Setenv("BB_BROWSER_SERVER_HOST", "")
+	t.Setenv("BORZ_SERVER_PORT", "")
+	t.Setenv("BB_BROWSER_SERVER_PORT", "")
+	t.Setenv("BORZ_TOKEN", "   ")
+	t.Setenv("BB_BROWSER_TOKEN", "")
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
+
+	if _, err := serverOptionsFromArgs([]string{"server", "--host", "0.0.0.0"}, "0.0.0.0"); err == nil {
+		t.Fatal("expected whitespace-only token to fail for non-loopback host")
+	}
+}
+
 func TestServiceRunArgs(t *testing.T) {
 	t.Cleanup(func() { _ = config.SetProfile("") })
 	opts, err := serverOptionsFromArgs([]string{"service", "install", "--host", "127.0.0.1", "--port", "19824", "--token", "secret"}, "127.0.0.1")
