@@ -196,6 +196,7 @@ func (ts *TabState) sinceThreshold(since interface{}) int {
 func (ts *TabState) GetNetworkRequests(opts QueryOptions) QueryResult[protocol.NetworkRequestInfo] {
 	items := ts.NetworkRequests.ToSlice()
 	threshold := ts.sinceThreshold(opts.Since)
+	method := strings.TrimSpace(opts.Method)
 
 	return queryEvents(items, threshold, opts.Limit, func(item protocol.NetworkRequestInfo) int {
 		return item.Seq
@@ -203,7 +204,7 @@ func (ts *TabState) GetNetworkRequests(opts QueryOptions) QueryResult[protocol.N
 		if opts.Filter != "" && !strings.Contains(item.URL, opts.Filter) {
 			return false
 		}
-		if opts.Method != "" && !strings.EqualFold(item.Method, opts.Method) {
+		if method != "" && !strings.EqualFold(item.Method, method) {
 			return false
 		}
 		if opts.Status != "" {

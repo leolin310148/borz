@@ -159,6 +159,14 @@ func TestTabState_GetNetworkRequests_Filters(t *testing.T) {
 	if len(res.Items) != 1 || res.Items[0].RequestID != "2" {
 		t.Fatalf("method post: got %+v", res.Items)
 	}
+	res = tab.GetNetworkRequests(QueryOptions{Method: " POST "})
+	if len(res.Items) != 1 || res.Items[0].RequestID != "2" {
+		t.Fatalf("method post with spaces: got %+v", res.Items)
+	}
+	res = tab.GetNetworkRequests(QueryOptions{Method: "   "})
+	if len(res.Items) != 4 {
+		t.Fatalf("blank method filter: got %d want 4", len(res.Items))
+	}
 
 	res = tab.GetNetworkRequests(QueryOptions{Status: "4xx"})
 	if len(res.Items) != 1 || res.Items[0].RequestID != "2" {
