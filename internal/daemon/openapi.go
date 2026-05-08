@@ -35,7 +35,7 @@ window.ui = SwaggerUIBundle({
 func (s *Server) registerDocsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+			sendMethodNotAllowed(w, http.MethodGet)
 			return
 		}
 		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
@@ -43,7 +43,7 @@ func (s *Server) registerDocsRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+			sendMethodNotAllowed(w, http.MethodGet)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

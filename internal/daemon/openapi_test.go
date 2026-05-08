@@ -69,6 +69,9 @@ func TestOpenAPIRoutes(t *testing.T) {
 			if rec.Code != 405 {
 				t.Fatalf("%s POST: got %d, want 405", path, rec.Code)
 			}
+			if got := rec.Header().Get("Allow"); got != http.MethodGet {
+				t.Fatalf("%s POST Allow = %q, want %q", path, got, http.MethodGet)
+			}
 		}
 	})
 }
