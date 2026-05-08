@@ -711,9 +711,19 @@ var commandHelp = map[string]cmdHelp{
 			"what you pass to '--tab' or to 'tab select --id'.",
 	},
 	"tab.new": {
-		Summary:  "Open a new tab, optionally pointed at a URL (default about:blank).",
-		Usage:    "borz tab new [url]",
-		Examples: []string{"  borz tab new", "  borz tab new https://github.com"},
+		Summary: "Open a new tab, optionally pointed at a URL (default about:blank).",
+		Usage:   "borz tab new [url] [--viewport <preset|WxH>] [--dpr N] [--mobile] [--touch|--no-touch]",
+		Flags: []string{
+			"  --viewport <preset|WxH>  Apply a viewport before navigation",
+			"  --dpr <n>                Device scale factor (default 1)",
+			"  --mobile                 Enable mobile device metrics",
+			"  --touch / --no-touch     Enable or disable touch emulation",
+		},
+		Examples: []string{
+			"  borz tab new",
+			"  borz tab new https://github.com",
+			"  borz tab new https://example.com --viewport mobile",
+		},
 		Notes: "Unlike 'borz open', this always creates a fresh tab and never reuses an " +
 			"existing one. Use 'open --new' if you want the same force-new behavior from the " +
 			"navigation flow.",

@@ -110,6 +110,24 @@ func TestNetworkRequestsHelpMentionsTailFlags(t *testing.T) {
 	}
 }
 
+func TestTabNewHelpMentionsViewportFlags(t *testing.T) {
+	out := captureStdout(t, func() {
+		if !printCommandHelp("tab.new") {
+			t.Fatal("printCommandHelp should return true for tab.new")
+		}
+	})
+	for _, want := range []string{
+		"--viewport <preset|WxH>",
+		"--dpr <n>",
+		"--mobile",
+		"--touch / --no-touch",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("tab.new help missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestPrintCommandHelpUnknownFallsBack(t *testing.T) {
 	out := captureStdout(t, func() {
 		if printCommandHelp("notarealcommand") {
