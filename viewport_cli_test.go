@@ -9,6 +9,7 @@ func TestParseViewportSizeRequiresSingleSeparator(t *testing.T) {
 	}{
 		{raw: "800x600", width: 800, height: 600},
 		{raw: " 800 X 600 ", width: 800, height: 600},
+		{raw: "390\u00d7844", width: 390, height: 844},
 	} {
 		width, height, ok := parseViewportSize(tc.raw)
 		if !ok {
