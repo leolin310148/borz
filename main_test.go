@@ -351,12 +351,22 @@ func TestSetSince(t *testing.T) {
 	if s, ok := req.Since.(string); !ok || s != "last_action" {
 		t.Errorf("last_action: got %v", req.Since)
 	}
+	req = &protocol.Request{}
+	setSince(req, " LAST_ACTION ")
+	if s, ok := req.Since.(string); !ok || s != "last_action" {
+		t.Errorf("last_action with spaces/case: got %v", req.Since)
+	}
 
 	// Numeric string parsed as int.
 	req = &protocol.Request{}
 	setSince(req, "42")
 	if n, ok := req.Since.(int); !ok || n != 42 {
 		t.Errorf("numeric: got %v", req.Since)
+	}
+	req = &protocol.Request{}
+	setSince(req, " 42 ")
+	if n, ok := req.Since.(int); !ok || n != 42 {
+		t.Errorf("numeric with spaces: got %v", req.Since)
 	}
 
 	// Garbage leaves Since unchanged.

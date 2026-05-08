@@ -1602,10 +1602,11 @@ func applyCLIWaitFor(req *protocol.Request, rawArgs []string) {
 }
 
 func setSince(req *protocol.Request, since string) {
+	since = strings.TrimSpace(since)
 	if since == "" {
 		return
 	}
-	if since == "last_action" {
+	if strings.EqualFold(since, "last_action") {
 		req.Since = "last_action"
 	} else if n, err := strconv.Atoi(since); err == nil {
 		req.Since = n
