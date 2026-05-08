@@ -238,12 +238,57 @@ func TestGetArgValue(t *testing.T) {
 	}
 }
 
+func TestGetArgValueOKReportsPresentEmptyValues(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		args  []string
+		value string
+		ok    bool
+	}{
+		{name: "inline empty", args: []string{"cmd", "--id="}, value: "", ok: true},
+		{name: "trailing value flag", args: []string{"cmd", "--id"}, value: "", ok: true},
+		{name: "value flag before another flag", args: []string{"cmd", "--id", "--json"}, value: "", ok: true},
+		{name: "missing flag", args: []string{"cmd", "--json"}, value: "", ok: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := getArgValueOK(tc.args, "--id")
+			if got != tc.value || ok != tc.ok {
+				t.Fatalf("getArgValueOK(%v, --id) = %q, %v; want %q, %v", tc.args, got, ok, tc.value, tc.ok)
+			}
+		})
+	}
+}
+
 func TestGetAllArgValues(t *testing.T) {
 	args := []string{"cmd", "--json-arg", "user={}", "--json-arg=limit=3", "--json-arg", "--json"}
 	got := getAllArgValues(args, "--json-arg")
 	want := []string{"user={}", "limit=3"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("getAllArgValues: got %v want %v", got, want)
+	}
+}
+
+func TestApplyCLIWaitForRejectsEmptyValues(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "empty wait-for", args: []string{"open", "https://example.test", "--wait-for="}, want: "--wait-for requires a selector"},
+		{name: "missing wait-for", args: []string{"open", "https://example.test", "--wait-for", "--json"}, want: "--wait-for requires a selector"},
+		{name: "empty timeout", args: []string{"open", "https://example.test", "--timeout="}, want: "--timeout must be a non-negative integer"},
+		{name: "missing timeout", args: []string{"open", "https://example.test", "--timeout", "--json"}, want: "--timeout must be a non-negative integer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			errOut := captureStderr(t, func() {
+				expectExit(t, 1, func() {
+					applyCLIWaitFor(&protocol.Request{}, tc.args)
+				})
+			})
+			if !strings.Contains(errOut, tc.want) {
+				t.Fatalf("stderr = %q, want %q", errOut, tc.want)
+			}
+		})
 	}
 }
 

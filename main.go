@@ -1603,10 +1603,13 @@ func setTab(req *protocol.Request, tabID string) {
 // change (click, fill, press, ..., open). Read-only commands like snapshot
 // and get don't bother.
 func applyCLIWaitFor(req *protocol.Request, rawArgs []string) {
-	if waitFor := getArgValue(rawArgs, "--wait-for"); waitFor != "" {
+	if waitFor, ok := getArgValueOK(rawArgs, "--wait-for"); ok {
+		if strings.TrimSpace(waitFor) == "" {
+			fatal("--wait-for requires a selector")
+		}
 		req.WaitFor = waitFor
 	}
-	if v := getArgValue(rawArgs, "--timeout"); v != "" {
+	if v, ok := getArgValueOK(rawArgs, "--timeout"); ok {
 		ms, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil || ms < 0 {
 			fatal("--timeout must be a non-negative integer (ms)")
@@ -1669,15 +1672,23 @@ func hasFlag(args []string, flag string) bool {
 }
 
 func getArgValue(args []string, flag string) string {
+	value, _ := getArgValueOK(args, flag)
+	return value
+}
+
+func getArgValueOK(args []string, flag string) (string, bool) {
 	for i, a := range args {
 		if value, ok := inlineArgValue(a, flag); ok {
-			return value
+			return value, true
 		}
-		if a == flag && i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-			return args[i+1]
+		if a == flag {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				return args[i+1], true
+			}
+			return "", true
 		}
 	}
-	return ""
+	return "", false
 }
 
 // getAllArgValues collects every value of a repeatable flag, preserving the
