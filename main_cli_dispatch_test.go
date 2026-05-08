@@ -425,6 +425,9 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			if !strings.Contains(req.Script, `fetch("https://api.test"`) || !strings.Contains(req.Script, `method: "POST"`) {
 				t.Fatalf("fetch script = %q", req.Script)
 			}
+			if !strings.Contains(req.Script, `(?:[\w.-]+\+)?json`) || !strings.Contains(req.Script, `text.trim() === '' ? null`) {
+				t.Fatalf("fetch script does not handle +json or empty JSON bodies: %q", req.Script)
+			}
 			if !strings.Contains(out, `"ok": true`) {
 				t.Fatalf("fetch output = %q", out)
 			}

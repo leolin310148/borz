@@ -161,7 +161,7 @@ func TestV1Fetch_ScriptShape(t *testing.T) {
 	if capturedExpr == "" {
 		t.Fatal("Runtime.evaluate was never called with a fetch expression")
 	}
-	for _, want := range []string{"about:blank", "readyState", "location", `method: "POST"`} {
+	for _, want := range []string{"about:blank", "readyState", "location", `method: "POST"`, `(?:[\w.-]+\+)?json`, `text.trim() === '' ? null`} {
 		if !strings.Contains(capturedExpr, want) {
 			t.Errorf("fetch script missing %q diagnostic; got:\n%s", want, capturedExpr)
 		}

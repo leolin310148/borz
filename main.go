@@ -782,13 +782,13 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 		try {
 			const resp = await fetch(%q, { method: %q, credentials: 'include' });
 			const contentType = resp.headers.get('content-type') || '';
-			const isJson = contentType.includes('application/json');
+			const isJson = /\bapplication\/(?:[\w.-]+\+)?json\b/i.test(contentType);
 			const text = await resp.text();
 			return {
 				status: resp.status,
 				statusText: resp.statusText,
 				contentType: contentType,
-				body: isJson ? JSON.parse(text) : text
+				body: isJson ? (text.trim() === '' ? null : JSON.parse(text)) : text
 			};
 		} catch(e) {
 			return { error: e.message };
