@@ -36,6 +36,10 @@ func TestDispatchTabSelectionCloseAndTraceBranches(t *testing.T) {
 	if !resp.Success || resp.Data.TabID != "Target-0001" {
 		t.Fatalf("select by numeric string = %+v", resp)
 	}
+	resp = DispatchRequest(c, &protocol.Request{ID: "idx-prefix", Action: protocol.ActionTabSelect, TabID: "0junk"})
+	if resp.Success || !strings.Contains(resp.Error, "tab not found") {
+		t.Fatalf("select by numeric prefix = %+v", resp)
+	}
 	idx := 1
 	resp = DispatchRequest(c, &protocol.Request{ID: "idx", Action: protocol.ActionTabSelect, Index: &idx})
 	if !resp.Success || resp.Data.TabID != "Target-0002" {
@@ -44,6 +48,10 @@ func TestDispatchTabSelectionCloseAndTraceBranches(t *testing.T) {
 	resp = DispatchRequest(c, &protocol.Request{ID: "missing", Action: protocol.ActionTabSelect, TabID: "nope"})
 	if resp.Success || !strings.Contains(resp.Error, "tab not found") {
 		t.Fatalf("select missing = %+v", resp)
+	}
+	resp = DispatchRequest(c, &protocol.Request{ID: "close-prefix", Action: protocol.ActionTabClose, TabID: "1junk"})
+	if resp.Success || !strings.Contains(resp.Error, "tab not found") {
+		t.Fatalf("close by numeric prefix = %+v", resp)
 	}
 	resp = DispatchRequest(c, &protocol.Request{ID: "closeidx", Action: protocol.ActionTabClose, Index: &idx})
 	if !resp.Success || resp.Data.TabID != "Target-0002" {

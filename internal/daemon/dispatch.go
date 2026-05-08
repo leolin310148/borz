@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,37 @@ func okResp(id string, data *protocol.ResponseData) *protocol.Response {
 func failResp(id string, err interface{}) *protocol.Response {
 	msg := fmt.Sprintf("%v", err)
 	return &protocol.Response{ID: id, Success: false, Error: msg}
+}
+
+func resolvePageTarget(cdp *CdpConnection, pages []CdpTargetInfo, tabID interface{}, index *int) *CdpTargetInfo {
+	if tabID != nil {
+		tabIDStr := fmt.Sprintf("%v", tabID)
+		if resolved := cdp.TabManager.ResolveShortID(tabIDStr); resolved != "" {
+			for i, t := range pages {
+				if t.ID == resolved {
+					return &pages[i]
+				}
+			}
+		}
+		for i, t := range pages {
+			if t.ID == tabIDStr {
+				return &pages[i]
+			}
+		}
+		if idx, err := strconv.Atoi(tabIDStr); err == nil && idx >= 0 && idx < len(pages) {
+			return &pages[idx]
+		}
+		return nil
+	}
+
+	idx := 0
+	if index != nil {
+		idx = *index
+	}
+	if idx >= 0 && idx < len(pages) {
+		return &pages[idx]
+	}
+	return nil
 }
 
 func siteDomainMatchesURL(domain, rawURL string) bool {
@@ -1286,43 +1318,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 				pages = append(pages, t)
 			}
 		}
-		var selected *CdpTargetInfo
-		if req.TabID != nil {
-			tabIDStr := fmt.Sprintf("%v", req.TabID)
-			if resolved := cdp.TabManager.ResolveShortID(tabIDStr); resolved != "" {
-				for i, t := range pages {
-					if t.ID == resolved {
-						selected = &pages[i]
-						break
-					}
-				}
-			}
-			if selected == nil {
-				for i, t := range pages {
-					if t.ID == tabIDStr {
-						selected = &pages[i]
-						break
-					}
-				}
-			}
-			if selected == nil {
-				if num, err := fmt.Sscanf(tabIDStr, "%d", new(int)); err == nil && num > 0 {
-					var idx int
-					fmt.Sscanf(tabIDStr, "%d", &idx)
-					if idx >= 0 && idx < len(pages) {
-						selected = &pages[idx]
-					}
-				}
-			}
-		} else {
-			idx := 0
-			if req.Index != nil {
-				idx = *req.Index
-			}
-			if idx >= 0 && idx < len(pages) {
-				selected = &pages[idx]
-			}
-		}
+		selected := resolvePageTarget(cdp, pages, req.TabID, req.Index)
 		if selected == nil {
 			return failResp(req.ID, "tab not found")
 		}
@@ -1350,43 +1346,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 				pages = append(pages, t)
 			}
 		}
-		var selected *CdpTargetInfo
-		if req.TabID != nil {
-			tabIDStr := fmt.Sprintf("%v", req.TabID)
-			if resolved := cdp.TabManager.ResolveShortID(tabIDStr); resolved != "" {
-				for i, t := range pages {
-					if t.ID == resolved {
-						selected = &pages[i]
-						break
-					}
-				}
-			}
-			if selected == nil {
-				for i, t := range pages {
-					if t.ID == tabIDStr {
-						selected = &pages[i]
-						break
-					}
-				}
-			}
-			if selected == nil {
-				if num, err := fmt.Sscanf(tabIDStr, "%d", new(int)); err == nil && num > 0 {
-					var idx int
-					fmt.Sscanf(tabIDStr, "%d", &idx)
-					if idx >= 0 && idx < len(pages) {
-						selected = &pages[idx]
-					}
-				}
-			}
-		} else {
-			idx := 0
-			if req.Index != nil {
-				idx = *req.Index
-			}
-			if idx >= 0 && idx < len(pages) {
-				selected = &pages[idx]
-			}
-		}
+		selected := resolvePageTarget(cdp, pages, req.TabID, req.Index)
 		if selected == nil {
 			return failResp(req.ID, "tab not found")
 		}
