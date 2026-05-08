@@ -48,6 +48,21 @@ func TestSendJSON(t *testing.T) {
 	}
 }
 
+func TestSendJSON_MarshalError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	sendJSON(rec, 201, map[string]any{"bad": make(chan int)})
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status: got %d want %d", rec.Code, http.StatusInternalServerError)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content-type: got %q", ct)
+	}
+	if got := rec.Body.String(); got != `{"error":"failed to encode JSON response"}` {
+		t.Fatalf("body: got %q", got)
+	}
+}
+
 func TestIsAddrInUse(t *testing.T) {
 	if isAddrInUse(nil) {
 		t.Fatal("nil err should be false")

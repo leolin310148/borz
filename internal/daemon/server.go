@@ -362,7 +362,11 @@ func isAddrInUse(err error) bool {
 }
 
 func sendJSON(w http.ResponseWriter, status int, data interface{}) {
-	body, _ := json.Marshal(data)
+	body, err := json.Marshal(data)
+	if err != nil {
+		status = http.StatusInternalServerError
+		body = []byte(`{"error":"failed to encode JSON response"}`)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(body)
