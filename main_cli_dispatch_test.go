@@ -421,7 +421,7 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 				t.Fatalf("trace output = %q", out)
 			}
 		}},
-		{name: "fetch", args: []string{"fetch", "https://api.test", "--method", "post"}, action: protocol.ActionEval, check: func(t *testing.T, req protocol.Request, out string) {
+		{name: "fetch", args: []string{"fetch", "https://api.test", "--method", " post "}, action: protocol.ActionEval, check: func(t *testing.T, req protocol.Request, out string) {
 			if !strings.Contains(req.Script, `fetch("https://api.test"`) || !strings.Contains(req.Script, `method: "POST"`) {
 				t.Fatalf("fetch script = %q", req.Script)
 			}

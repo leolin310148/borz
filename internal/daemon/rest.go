@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/leolin310148/borz/internal/config"
@@ -215,7 +216,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 
 	// Fetch (authenticated HTTP through the browser session)
 	mux.HandleFunc("/v1/fetch", s.restJSON(func(body restBody) *protocol.Request {
-		method := body.Method
+		method := strings.ToUpper(strings.TrimSpace(body.Method))
 		if method == "" {
 			method = "GET"
 		}

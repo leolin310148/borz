@@ -152,7 +152,7 @@ func TestV1Fetch_ScriptShape(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/v1/fetch",
-		strings.NewReader(`{"url":"https://api.example/x.json","tab":"T1"}`))
+		strings.NewReader(`{"url":"https://api.example/x.json","method":" post ","tab":"T1"}`))
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != 200 {
@@ -161,7 +161,7 @@ func TestV1Fetch_ScriptShape(t *testing.T) {
 	if capturedExpr == "" {
 		t.Fatal("Runtime.evaluate was never called with a fetch expression")
 	}
-	for _, want := range []string{"about:blank", "readyState", "location"} {
+	for _, want := range []string{"about:blank", "readyState", "location", `method: "POST"`} {
 		if !strings.Contains(capturedExpr, want) {
 			t.Errorf("fetch script missing %q diagnostic; got:\n%s", want, capturedExpr)
 		}

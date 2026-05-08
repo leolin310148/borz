@@ -773,7 +773,7 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 	url := cmdArgs[0]
 	method := "GET"
 	if v := getArgValue(rawArgs, "--method"); v != "" {
-		method = strings.ToUpper(v)
+		method = strings.ToUpper(strings.TrimSpace(v))
 	}
 
 	// Build fetch script
