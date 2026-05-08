@@ -1318,6 +1318,10 @@ func suggestSubcommands(parent, input string, maxN int) []string {
 // suggestNames returns close Levenshtein matches. Returns nil if nothing's
 // close enough — better silent than to scream "did you mean tab?" for "xyzzy".
 func suggestNames(input string, candidates []string, maxN int) []string {
+	if maxN <= 0 {
+		return nil
+	}
+
 	type scored struct {
 		name string
 		dist int

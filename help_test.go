@@ -293,6 +293,22 @@ func TestSuggestCommands(t *testing.T) {
 	}
 }
 
+func TestSuggestNamesNonPositiveLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		maxN int
+	}{
+		{"zero", 0},
+		{"negative", -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := suggestNames("opn", []string{"open"}, tc.maxN); len(got) != 0 {
+				t.Fatalf("suggestNames with maxN=%d returned %v, want no suggestions", tc.maxN, got)
+			}
+		})
+	}
+}
+
 func TestSuggestSubcommands(t *testing.T) {
 	got := suggestSubcommands("extension", "statu", 3)
 	if len(got) == 0 || got[0] != "status" {
