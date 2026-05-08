@@ -407,18 +407,6 @@ func compareFloat(left float64, right float64) int {
 	}
 }
 
-func toFloat(v interface{}) float64 {
-	if n, ok := numberValue(v); ok {
-		return n
-	}
-	switch n := v.(type) {
-	case string:
-		f, _ := strconv.ParseFloat(n, 64)
-		return f
-	}
-	return 0
-}
-
 func parseBracketField(input string) (string, int, bool) {
 	if !strings.HasPrefix(input, `["`) {
 		return "", 0, false

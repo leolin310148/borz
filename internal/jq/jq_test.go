@@ -485,21 +485,6 @@ func TestCompareValues(t *testing.T) {
 	}
 }
 
-func TestToFloat(t *testing.T) {
-	if toFloat(float64(1.5)) != 1.5 {
-		t.Error("float64")
-	}
-	if toFloat(7) != 7 {
-		t.Error("int")
-	}
-	if toFloat("2.5") != 2.5 {
-		t.Error("string")
-	}
-	if toFloat(struct{}{}) != 0 {
-		t.Error("unknown → 0")
-	}
-}
-
 func TestSplitTopLevel_RespectsNesting(t *testing.T) {
 	parts := splitTopLevel(`.a | select(.n > 1) | {x: .a, y: .b}`, "|")
 	if len(parts) != 3 {
