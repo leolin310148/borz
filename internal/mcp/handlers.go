@@ -50,7 +50,7 @@ func setTab(req *protocol.Request, r mcp.CallToolRequest) {
 // attaches them to the request so the daemon polls document.querySelector
 // after the action runs.
 func applyWaitFor(req *protocol.Request, r mcp.CallToolRequest) {
-	if sel := r.GetString("waitFor", ""); sel != "" {
+	if sel := strings.TrimSpace(r.GetString("waitFor", "")); sel != "" {
 		req.WaitFor = sel
 	}
 	if ms := r.GetInt("timeout", 0); ms > 0 {

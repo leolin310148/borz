@@ -694,7 +694,7 @@ func TestHandleNavigate_PassesWaitForAndTimeout(t *testing.T) {
 	cap := capturingSend(t, ok())
 	_, _ = handleNavigate(context.Background(), mkReq(map[string]any{
 		"url":     "https://example.com",
-		"waitFor": ".loaded",
+		"waitFor": " .loaded ",
 		"timeout": float64(2500),
 	}))
 	if cap.req.WaitFor != ".loaded" {
