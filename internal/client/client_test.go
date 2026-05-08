@@ -343,6 +343,32 @@ func TestHttpJSON_HTTPErrorStatus(t *testing.T) {
 	}
 }
 
+func TestHttpJSONHTTPErrorFormatsBody(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		statusCode int
+		body       string
+		want       string
+	}{
+		{name: "trimmed body", statusCode: http.StatusUnauthorized, body: "\n denied \t", want: "borz HTTP 401: denied"},
+		{name: "empty body", statusCode: http.StatusNotFound, body: " \n ", want: "borz HTTP 404: Not Found"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.statusCode)
+				w.Write([]byte(tc.body))
+			}))
+			defer ts.Close()
+			info := infoForServer(t, ts, "")
+
+			_, err := httpJSON("GET", "/x", info, nil, time.Second)
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("httpJSON error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestHttpJSON_Unreachable(t *testing.T) {
 	info := &protocol.DaemonInfo{Host: "127.0.0.1", Port: 1} // port 1 should refuse
 	_, err := httpJSON("GET", "/", info, nil, 200*time.Millisecond)

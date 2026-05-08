@@ -280,10 +280,21 @@ func httpJSONEndpoint(method, baseURL, token, urlPath string, body interface{}, 
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("borz HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, formatHTTPError(resp.StatusCode, resp.Status, respBody)
 	}
 
 	return json.RawMessage(respBody), nil
+}
+
+func formatHTTPError(statusCode int, status string, body []byte) error {
+	message := strings.TrimSpace(string(body))
+	if message == "" {
+		message = http.StatusText(statusCode)
+	}
+	if message == "" {
+		message = status
+	}
+	return fmt.Errorf("borz HTTP %d: %s", statusCode, message)
 }
 
 // httpJSON sends an HTTP request to the local daemon and returns the raw JSON
