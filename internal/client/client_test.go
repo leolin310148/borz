@@ -216,6 +216,30 @@ func TestWriteRemoteConfigValidationErrors(t *testing.T) {
 	}
 }
 
+func TestRemoteConfigTrimsToken(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
+
+	cfg, err := NewRemoteConfig("127.0.0.1:19824", " secret ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Token != "secret" {
+		t.Fatalf("NewRemoteConfig token = %q, want secret", cfg.Token)
+	}
+	if err := WriteRemoteConfig(&RemoteConfig{URL: cfg.URL, Token: "\tstored\n"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = ReadRemoteConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Token != "stored" {
+		t.Fatalf("ReadRemoteConfig token = %q, want stored", cfg.Token)
+	}
+}
+
 func TestCheckRemoteConfig(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)

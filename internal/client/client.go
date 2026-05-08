@@ -94,6 +94,7 @@ func ReadRemoteConfig() (*RemoteConfig, error) {
 		return nil, fmt.Errorf("invalid client.json: %w", err)
 	}
 	cfg.URL = normalized
+	cfg.Token = strings.TrimSpace(cfg.Token)
 	return &cfg, nil
 }
 
@@ -109,6 +110,7 @@ func WriteRemoteConfig(cfg *RemoteConfig) error {
 	}
 	out := *cfg
 	out.URL = normalized
+	out.Token = strings.TrimSpace(out.Token)
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return err
@@ -130,7 +132,7 @@ func NewRemoteConfig(serverURL, token string) (*RemoteConfig, error) {
 	if existing, err := ReadRemoteConfig(); err == nil && existing != nil {
 		enabled = existing.Enabled
 	}
-	return &RemoteConfig{URL: normalized, Token: token, Enabled: enabled}, nil
+	return &RemoteConfig{URL: normalized, Token: strings.TrimSpace(token), Enabled: enabled}, nil
 }
 
 // ConfigureRemote stores a server URL/token pair.
