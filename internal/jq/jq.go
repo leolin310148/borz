@@ -114,9 +114,10 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 	if expr == "keys" {
 		var results []interface{}
 		for _, item := range inputs {
-			if m, ok := item.(map[string]interface{}); ok {
-				names := make([]string, 0, len(m))
-				for k := range m {
+			switch v := item.(type) {
+			case map[string]interface{}:
+				names := make([]string, 0, len(v))
+				for k := range v {
 					names = append(names, k)
 				}
 				sort.Strings(names)
@@ -124,6 +125,12 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 				keys := make([]interface{}, len(names))
 				for i, k := range names {
 					keys[i] = k
+				}
+				results = append(results, keys)
+			case []interface{}:
+				keys := make([]interface{}, len(v))
+				for i := range v {
+					keys[i] = float64(i)
 				}
 				results = append(results, keys)
 			}

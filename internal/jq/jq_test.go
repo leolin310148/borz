@@ -315,6 +315,17 @@ func TestApply_KeysAreSorted(t *testing.T) {
 	}
 }
 
+func TestApply_KeysForArray(t *testing.T) {
+	data := mustJSON(t, `["a","b","c"]`)
+	got := Apply(data, "keys")
+	if len(got) != 1 {
+		t.Fatalf("keys len = %d", len(got))
+	}
+	if !reflect.DeepEqual(got[0], []interface{}{float64(0), float64(1), float64(2)}) {
+		t.Fatalf("keys = %v, want [0 1 2]", got[0])
+	}
+}
+
 func TestApply_Length(t *testing.T) {
 	cases := []struct {
 		input string
