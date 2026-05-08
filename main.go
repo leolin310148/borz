@@ -1590,7 +1590,7 @@ func getRef(args []string) string {
 }
 
 func normalizeRef(ref string) string {
-	return strings.TrimPrefix(ref, "@")
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ref), "@"))
 }
 
 func newID() string {

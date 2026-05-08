@@ -36,7 +36,7 @@ func newID() string {
 var sendCommand = client.SendCommand
 
 func normalizeRef(ref string) string {
-	return strings.TrimPrefix(ref, "@")
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ref), "@"))
 }
 
 // setTab sets the TabID on a request if the tool call includes a "tab" param.

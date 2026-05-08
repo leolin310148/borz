@@ -106,6 +106,12 @@ func TestNormalizeRef(t *testing.T) {
 	if normalizeRef("@5") != "5" {
 		t.Error("strip @ prefix")
 	}
+	if normalizeRef(" @5 ") != "5" {
+		t.Error("trim whitespace around copied ref")
+	}
+	if normalizeRef("@ 5 ") != "5" {
+		t.Error("trim whitespace after @ prefix")
+	}
 	if normalizeRef("5") != "5" {
 		t.Error("no-op without @")
 	}
