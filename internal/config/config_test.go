@@ -28,6 +28,24 @@ func TestEnvPrefersCurrentNameThenLegacy(t *testing.T) {
 	}
 }
 
+func TestEnvWithNameReportsSelectedVariable(t *testing.T) {
+	t.Setenv("BORZ_TEST_CURRENT", "current")
+	t.Setenv("BB_BROWSER_TEST_LEGACY", "legacy")
+	if got, name := EnvWithName("BORZ_TEST_CURRENT", "BB_BROWSER_TEST_LEGACY"); got != "current" || name != "BORZ_TEST_CURRENT" {
+		t.Fatalf("EnvWithName current = %q, %q; want current, BORZ_TEST_CURRENT", got, name)
+	}
+
+	t.Setenv("BORZ_TEST_CURRENT", "")
+	if got, name := EnvWithName("BORZ_TEST_CURRENT", "BB_BROWSER_TEST_LEGACY"); got != "legacy" || name != "BB_BROWSER_TEST_LEGACY" {
+		t.Fatalf("EnvWithName legacy = %q, %q; want legacy, BB_BROWSER_TEST_LEGACY", got, name)
+	}
+
+	t.Setenv("BB_BROWSER_TEST_LEGACY", "")
+	if got, name := EnvWithName("BORZ_TEST_CURRENT", "BB_BROWSER_TEST_LEGACY"); got != "" || name != "" {
+		t.Fatalf("EnvWithName unset = %q, %q; want empty values", got, name)
+	}
+}
+
 func TestHomeDir_LegacyEnvOverride(t *testing.T) {
 	t.Setenv("BORZ_HOME", "")
 	t.Setenv("BB_BROWSER_HOME", "/tmp/legacy-override")

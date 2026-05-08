@@ -42,6 +42,18 @@ func Env(name, legacyName string) string {
 	return os.Getenv(legacyName)
 }
 
+// EnvWithName returns the current or legacy env var value along with the name
+// that supplied it. Empty env vars are treated as unset.
+func EnvWithName(name, legacyName string) (string, string) {
+	if env := os.Getenv(name); env != "" {
+		return env, name
+	}
+	if env := os.Getenv(legacyName); env != "" {
+		return env, legacyName
+	}
+	return "", ""
+}
+
 // SetProfile selects a named local browser profile for runtime state. The
 // default profile uses the historical top-level paths for compatibility.
 func SetProfile(name string) error {

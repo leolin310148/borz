@@ -987,4 +987,11 @@ func TestServerOptionsRejectsInvalidPorts(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "BORZ_SERVER_PORT must be a TCP port between 1 and 65535") {
 		t.Fatalf("serverOptionsFromArgs env error = %v", err)
 	}
+
+	t.Setenv("BORZ_SERVER_PORT", "")
+	t.Setenv("BB_BROWSER_SERVER_PORT", "nope")
+	_, err = serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1"}, "127.0.0.1")
+	if err == nil || !strings.Contains(err.Error(), "BB_BROWSER_SERVER_PORT must be a TCP port between 1 and 65535") {
+		t.Fatalf("serverOptionsFromArgs legacy env error = %v", err)
+	}
 }

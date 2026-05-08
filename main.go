@@ -1024,8 +1024,8 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 			return daemon.ServerOptions{}, err
 		}
 		port = p
-	} else if v := config.Env("BORZ_SERVER_PORT", "BB_BROWSER_SERVER_PORT"); v != "" {
-		p, err := parseTCPPort("BORZ_SERVER_PORT", v, 19824)
+	} else if v, name := config.EnvWithName("BORZ_SERVER_PORT", "BB_BROWSER_SERVER_PORT"); v != "" {
+		p, err := parseTCPPort(name, v, 19824)
 		if err != nil {
 			return daemon.ServerOptions{}, err
 		}
