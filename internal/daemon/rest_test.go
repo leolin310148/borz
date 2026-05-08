@@ -126,8 +126,11 @@ func TestHandleDoctor_RejectsWrongMethod(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodDelete, "/v1/doctor", nil)
 	s.handleDoctor(rec, req)
-	if rec.Code != 405 {
+	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("got %d want 405", rec.Code)
+	}
+	if got := rec.Header().Get("Allow"); got != "GET, POST" {
+		t.Fatalf("Allow = %q want %q", got, "GET, POST")
 	}
 }
 
@@ -207,8 +210,11 @@ func TestRestJSON_MethodRejection(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/click", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != 405 {
+	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET /v1/click: got %d want 405", rec.Code)
+	}
+	if got := rec.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("GET /v1/click Allow = %q want %q", got, http.MethodPost)
 	}
 }
 
@@ -247,8 +253,11 @@ func TestTabsRoute_MethodDispatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/v1/tabs", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != 405 {
+	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("PUT /v1/tabs: got %d want 405", rec.Code)
+	}
+	if got := rec.Header().Get("Allow"); got != "GET, POST" {
+		t.Fatalf("PUT /v1/tabs Allow = %q want %q", got, "GET, POST")
 	}
 
 	// POST with broken body -> 400.

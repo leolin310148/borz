@@ -252,7 +252,7 @@ func validBearerToken(auth, token string) bool {
 
 func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+		sendMethodNotAllowed(w, http.MethodPost)
 		return
 	}
 
@@ -301,7 +301,7 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
-		sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+		sendMethodNotAllowed(w, http.MethodGet)
 		return
 	}
 
@@ -339,7 +339,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+		sendMethodNotAllowed(w, http.MethodPost)
 		return
 	}
 
@@ -370,4 +370,9 @@ func sendJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	w.Write(body)
+}
+
+func sendMethodNotAllowed(w http.ResponseWriter, allowed ...string) {
+	w.Header().Set("Allow", strings.Join(allowed, ", "))
+	sendJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
 }

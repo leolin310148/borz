@@ -189,7 +189,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			}
 			s.dispatchAndWrite(w, &protocol.Request{ID: newReqID(), Action: protocol.ActionTabNew, URL: url, Viewport: body.viewportOptions()})
 		default:
-			sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+			sendMethodNotAllowed(w, http.MethodGet, http.MethodPost)
 		}
 	})
 	mux.HandleFunc("/v1/tabs/select", s.restJSON(func(body restBody) *protocol.Request {
@@ -422,7 +422,7 @@ func (b restBody) sinceValue() interface{} {
 func (s *Server) restJSON(build func(restBody) *protocol.Request) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+			sendMethodNotAllowed(w, http.MethodPost)
 			return
 		}
 		body, err := readBody(r)
@@ -503,7 +503,7 @@ type doctorCheck struct {
 
 func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
-		sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+		sendMethodNotAllowed(w, http.MethodGet, http.MethodPost)
 		return
 	}
 
