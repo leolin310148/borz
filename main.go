@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1150,11 +1151,15 @@ func firstNonEmpty(values ...string) string {
 }
 
 func isRemoteBind(host string) bool {
-	switch host {
-	case "127.0.0.1", "localhost", "::1":
+	host = strings.TrimSpace(host)
+	if strings.EqualFold(host, "localhost") {
 		return false
 	}
-	return true
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
 }
 
 // --- Site handling ---

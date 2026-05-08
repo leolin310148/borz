@@ -17,8 +17,11 @@ func TestIsRemoteBind(t *testing.T) {
 		want bool
 	}{
 		{"127.0.0.1", false},
+		{"127.0.0.2", false},
 		{"localhost", false},
+		{"LOCALHOST", false},
 		{"::1", false},
+		{"[::1]", false},
 		{"0.0.0.0", true},
 		{"10.0.0.1", true},
 		{"example.com", true},
