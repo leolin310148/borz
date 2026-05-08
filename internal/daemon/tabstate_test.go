@@ -325,6 +325,9 @@ func TestMatchStatus(t *testing.T) {
 	if !matchStatus(intP(404), "4xx") {
 		t.Fatal("404 should match 4xx")
 	}
+	if !matchStatus(intP(404), " 4XX ") {
+		t.Fatal("404 should match case-insensitive 4xx with surrounding space")
+	}
 	if matchStatus(intP(500), "4xx") {
 		t.Fatal("500 should not match 4xx")
 	}
@@ -333,6 +336,9 @@ func TestMatchStatus(t *testing.T) {
 	}
 	if !matchStatus(intP(200), "200") {
 		t.Fatal("exact match 200 failed")
+	}
+	if !matchStatus(intP(200), " 200 ") {
+		t.Fatal("exact match 200 with surrounding space failed")
 	}
 	if matchStatus(intP(200), "not-a-number") {
 		t.Fatal("invalid pattern should not match")

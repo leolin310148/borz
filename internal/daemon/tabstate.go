@@ -288,6 +288,7 @@ func matchStatus(status *int, pattern string) bool {
 	if status == nil {
 		return false
 	}
+	pattern = strings.ToLower(strings.TrimSpace(pattern))
 	s := *status
 	switch pattern {
 	case "4xx":
