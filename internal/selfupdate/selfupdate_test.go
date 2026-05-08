@@ -61,12 +61,14 @@ func TestParseChecksums(t *testing.T) {
 	sumA := strings.Repeat("a", 64)
 	sumB := strings.Repeat("b", 64)
 	sumC := strings.Repeat("c", 64)
+	sumD := strings.Repeat("d", 64)
 	input := fmt.Sprintf(`# comment line
 %s  borz-linux-amd64
 %s *borz-windows-amd64.exe
 
    %s  borz-darwin-arm64
-`, sumA, sumB, sumC)
+%s  borz file with spaces
+`, sumA, sumB, sumC, sumD)
 	got, err := ParseChecksums(strings.NewReader(input))
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +77,7 @@ func TestParseChecksums(t *testing.T) {
 		"borz-linux-amd64":       sumA,
 		"borz-windows-amd64.exe": sumB,
 		"borz-darwin-arm64":      sumC,
+		"borz file with spaces":  sumD,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("len=%d, want %d: %v", len(got), len(want), got)

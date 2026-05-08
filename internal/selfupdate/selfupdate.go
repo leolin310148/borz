@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const DefaultRepo = "leolin310148/borz"
@@ -262,18 +263,18 @@ func ParseChecksums(r io.Reader) (map[string]string, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		sumEnd := strings.IndexFunc(line, unicode.IsSpace)
+		if sumEnd < 0 {
 			return nil, fmt.Errorf("checksums line %d: expected checksum and filename", lineNo)
 		}
-		sum := strings.ToLower(fields[0])
+		sum := strings.ToLower(line[:sumEnd])
 		if len(sum) != sha256.Size*2 {
 			return nil, fmt.Errorf("checksums line %d: invalid sha256 length", lineNo)
 		}
 		if _, err := hex.DecodeString(sum); err != nil {
 			return nil, fmt.Errorf("checksums line %d: invalid sha256: %w", lineNo, err)
 		}
-		name := strings.TrimPrefix(fields[1], "*")
+		name := strings.TrimPrefix(strings.TrimLeftFunc(line[sumEnd:], unicode.IsSpace), "*")
 		if name == "" {
 			return nil, fmt.Errorf("checksums line %d: empty filename", lineNo)
 		}
