@@ -104,6 +104,17 @@ func TestRecordCLILocalBundleCommandsAndHelpers(t *testing.T) {
 	if _, err := parseMask("1,2,3"); err == nil {
 		t.Fatal("parseMask should reject short rect")
 	}
+	if _, err := parseMask("1,2,0,4"); err == nil {
+		t.Fatal("parseMask should reject non-positive width")
+	}
+	if _, err := parseMask("1,2,3,-4"); err == nil {
+		t.Fatal("parseMask should reject non-positive height")
+	}
+	for _, bad := range []string{"NaN,2,3,4", "1,+Inf,3,4", "1,2,3,-Inf"} {
+		if _, err := parseMask(bad); err == nil {
+			t.Fatalf("parseMask should reject non-finite rect %q", bad)
+		}
+	}
 }
 
 func cliTestPNG(t *testing.T) []byte {

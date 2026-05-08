@@ -330,7 +330,13 @@ func parseMask(s string) (recorder.RedactionMask, error) {
 		if err != nil {
 			return recorder.RedactionMask{}, err
 		}
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return recorder.RedactionMask{}, fmt.Errorf("--rect values must be finite")
+		}
 		vals[i] = v
+	}
+	if vals[2] <= 0 || vals[3] <= 0 {
+		return recorder.RedactionMask{}, fmt.Errorf("--rect width and height must be positive")
 	}
 	return recorder.RedactionMask{X: vals[0], Y: vals[1], W: vals[2], H: vals[3]}, nil
 }
