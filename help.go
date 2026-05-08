@@ -894,8 +894,14 @@ var commandHelp = map[string]cmdHelp{
 	"client.setup": {
 		Summary: "Store the remote server URL and optional bearer token.",
 		Usage:   "borz client setup <server-url> [--token <token>] [--no-check]",
+		Flags: []string{
+			"  --url <url>      Same as positional server URL",
+			"  --token <token>  Bearer token for the remote server",
+			"  --no-check       Save config without probing /status",
+		},
 		Examples: []string{
 			"  borz client setup http://127.0.0.1:19824",
+			"  borz client setup --url http://127.0.0.1:19824 --no-check",
 			"  BORZ_SERVER_URL=http://127.0.0.1:19824 BORZ_TOKEN=secret borz client setup",
 			"  borz client setup https://browser.example.com --token \"$BORZ_TOKEN\"",
 		},

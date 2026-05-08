@@ -127,6 +127,24 @@ func TestNetworkRequestsHelpMentionsTailFlags(t *testing.T) {
 	}
 }
 
+func TestClientSetupHelpMentionsSupportedFlags(t *testing.T) {
+	out := captureStdout(t, func() {
+		if !printCommandHelp("client.setup") {
+			t.Fatal("printCommandHelp should return true for client.setup")
+		}
+	})
+	for _, want := range []string{
+		"--url <url>",
+		"--token <token>",
+		"--no-check",
+		"borz client setup --url http://127.0.0.1:19824 --no-check",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("client.setup help missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestTabNewHelpMentionsViewportFlags(t *testing.T) {
 	out := captureStdout(t, func() {
 		if !printCommandHelp("tab.new") {
