@@ -34,7 +34,7 @@ func TestHelpRequested(t *testing.T) {
 }
 
 func TestFlagConsumesNextArg(t *testing.T) {
-	for _, flag := range []string{"--json-arg", "--wait-for", "--profile", "-d", "-s"} {
+	for _, flag := range []string{"--json-arg", "--wait-for", "--profile", "--ref", "-d", "-s"} {
 		if !flagConsumesNextArg(flag) {
 			t.Errorf("flagConsumesNextArg(%q) = false, want true", flag)
 		}

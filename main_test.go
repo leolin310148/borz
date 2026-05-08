@@ -299,6 +299,12 @@ func TestStripFlags(t *testing.T) {
 		t.Errorf("shared CLI value flags: %v", got)
 	}
 
+	in = []string{"site", "update", "--ref", "v1.2.3"}
+	got = stripFlags(in, nil, nil)
+	if !reflect.DeepEqual(got, []string{"site", "update"}) {
+		t.Errorf("site update --ref value flag: %v", got)
+	}
+
 	// Custom bool flag strips just the flag.
 	in = []string{"cmd", "--bool", "keep"}
 	got = stripFlags(in, nil, []string{"--bool"})

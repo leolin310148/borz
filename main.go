@@ -40,7 +40,7 @@ var cliValueFlags = []string{
 	"--filename", "--state", "--name", "--display-name", "--description", "--out",
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
 	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format",
-	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect",
+	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect", "--ref",
 }
 
 var cliValueFlagSet = makeFlagSet(cliValueFlags)
