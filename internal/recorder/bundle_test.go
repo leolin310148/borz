@@ -99,8 +99,8 @@ func TestDecodeDataURLAndPrivacyRedaction(t *testing.T) {
 	if _, _, err := DecodeDataURL("data:image/png," + base64.StdEncoding.EncodeToString(raw)); err == nil {
 		t.Fatal("DecodeDataURL should reject non-base64 data URLs")
 	}
-	ev := RedactEvent(Event{Type: "network.request", Data: json.RawMessage(`{"headers":{"Authorization":"bearer x","ok":"1"},"token":"abc"}`)})
-	if strings.Contains(string(ev.Data), "bearer x") || strings.Contains(string(ev.Data), "abc") {
+	ev := RedactEvent(Event{Type: "network.request", Data: json.RawMessage(`{"headers":{"Authorization":"bearer x","ok":"1"},"token":"abc","body":{"password":"pw123"}}`)})
+	if strings.Contains(string(ev.Data), "bearer x") || strings.Contains(string(ev.Data), "abc") || strings.Contains(string(ev.Data), "pw123") {
 		t.Fatalf("network secret leaked: %s", ev.Data)
 	}
 	if err := checkSchema("2.0"); err == nil {

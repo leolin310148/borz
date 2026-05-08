@@ -55,7 +55,7 @@ Each line in `events.cbor` is:
 {"seq":1,"ts_ns":120000000,"type":"pointerdown","x":42,"y":88,"button":"0","cursor":"pointer"}
 ```
 
-Sensitive key events are stored as `<redacted>` before writing. Network-shaped event payloads redact cookies, authorization headers, tokens, and secrets recursively.
+Sensitive key events are stored as `<redacted>` before writing. Network-shaped event payloads redact cookies, authorization headers, passwords, tokens, and secrets recursively.
 
 ## Redactions
 

@@ -540,7 +540,9 @@ func redactNetwork(v any) any {
 		out := make(map[string]any, len(x))
 		for k, val := range x {
 			lk := strings.ToLower(k)
-			if lk == "authorization" || lk == "cookie" || lk == "set-cookie" || strings.Contains(lk, "token") || strings.Contains(lk, "secret") {
+			if lk == "authorization" || lk == "cookie" || lk == "set-cookie" ||
+				strings.Contains(lk, "token") || strings.Contains(lk, "secret") ||
+				strings.Contains(lk, "password") {
 				out[k] = "<redacted>"
 				continue
 			}
