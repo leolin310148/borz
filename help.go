@@ -38,6 +38,8 @@ check, uncheck, select, press, scroll, eval):
   --wait-for <selector>   Block until document.querySelector(<selector>) is non-null
   --timeout <ms>          Cap --wait-for (default 10000ms)`
 
+const waitForUsageSuffix = " [--wait-for <selector>] [--timeout <ms>]"
+
 // commandHelp indexes per-command help. Canonical commands are the keys; any
 // subcommand shortcuts ("tab.new", "site.run", ...) are also listed so callers
 // can look them up via 'borz help <command> <sub>'.
@@ -59,9 +61,9 @@ var commandHelp = map[string]cmdHelp{
 			"  borz open https://slow.example --wait-for '#root' --timeout 30000",
 		},
 	},
-	"back":    {Summary: "Go back in the current tab's history.", Usage: "borz back [--tab <id>]"},
-	"forward": {Summary: "Go forward in the current tab's history.", Usage: "borz forward [--tab <id>]"},
-	"refresh": {Summary: "Reload the current page.", Usage: "borz refresh [--tab <id>]"},
+	"back":    {Summary: "Go back in the current tab's history.", Usage: "borz back [--tab <id>]" + waitForUsageSuffix},
+	"forward": {Summary: "Go forward in the current tab's history.", Usage: "borz forward [--tab <id>]" + waitForUsageSuffix},
+	"refresh": {Summary: "Reload the current page.", Usage: "borz refresh [--tab <id>]" + waitForUsageSuffix},
 	"close": {
 		Summary: "Close the current tab (or the tab named by --tab).",
 		Usage:   "borz close [--tab <id>]",
@@ -71,19 +73,19 @@ var commandHelp = map[string]cmdHelp{
 	// --- Interaction ---
 	"click": {
 		Summary:  "Click an element by ref.",
-		Usage:    "borz click <ref> [--tab <id>]",
+		Usage:    "borz click <ref> [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz click 5"},
 		Notes:    refNote,
 	},
 	"hover": {
 		Summary:  "Hover an element by ref.",
-		Usage:    "borz hover <ref> [--tab <id>]",
+		Usage:    "borz hover <ref> [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz hover 12"},
 		Notes:    refNote,
 	},
 	"fill": {
 		Summary: "Clear an input/textarea and fill it with <text>.",
-		Usage:   "borz fill <ref> <text> [--tab <id>]",
+		Usage:   "borz fill <ref> <text> [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{
 			"  borz fill 3 'hello world'",
 			"  borz fill 3 multi word text (remaining args are joined)",
@@ -92,31 +94,31 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"type": {
 		Summary:  "Append <text> to an input/textarea without clearing it first.",
-		Usage:    "borz type <ref> <text> [--tab <id>]",
+		Usage:    "borz type <ref> <text> [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz type 3 ' and more'"},
 		Notes:    refNote + "\nUse 'fill' to clear the field before writing.",
 	},
 	"check": {
 		Summary:  "Check a checkbox or radio by ref.",
-		Usage:    "borz check <ref> [--tab <id>]",
+		Usage:    "borz check <ref> [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz check 7"},
 		Notes:    refNote,
 	},
 	"uncheck": {
 		Summary:  "Uncheck a checkbox by ref.",
-		Usage:    "borz uncheck <ref> [--tab <id>]",
+		Usage:    "borz uncheck <ref> [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz uncheck 7"},
 		Notes:    refNote,
 	},
 	"select": {
 		Summary:  "Select an <option> in a <select> element by value.",
-		Usage:    "borz select <ref> <value> [--tab <id>]",
+		Usage:    "borz select <ref> <value> [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz select 9 'us-east-1'"},
 		Notes:    refNote,
 	},
 	"press": {
 		Summary: "Dispatch a single key press to the active element.",
-		Usage:   "borz press <key> [--tab <id>]",
+		Usage:   "borz press <key> [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{
 			"  borz press Enter",
 			"  borz press Escape",
@@ -126,7 +128,7 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"scroll": {
 		Summary: "Scroll the page by pixels in a direction.",
-		Usage:   "borz scroll [direction] [pixels] [--tab <id>]",
+		Usage:   "borz scroll [direction] [pixels] [--tab <id>]" + waitForUsageSuffix,
 		Flags: []string{
 			"  direction    up|down|left|right (default: down)",
 			"  pixels       integer pixel distance (default: 300)",
@@ -139,7 +141,7 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"eval": {
 		Summary: "Run JavaScript in the page context and return the JSON result.",
-		Usage:   "borz eval <script...> [--file <path>] [--unwrap] [--no-auto-await] [--json-arg name=value]... [--tab <id>]",
+		Usage:   "borz eval <script...> [--file <path>] [--unwrap] [--no-auto-await] [--json-arg name=value]... [--tab <id>]" + waitForUsageSuffix,
 		Flags: []string{
 			"  --file <path>            Read the script from a file instead of inline args",
 			"  --unwrap                 Print the result raw (strings unquoted, otherwise JSON)",

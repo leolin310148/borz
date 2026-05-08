@@ -64,6 +64,26 @@ func TestPrintCommandHelpKnown(t *testing.T) {
 	}
 }
 
+func TestActionCommandUsageMentionsWaitFor(t *testing.T) {
+	for _, name := range []string{
+		"back", "forward", "refresh", "click", "hover", "fill", "type",
+		"check", "uncheck", "select", "press", "scroll", "eval",
+	} {
+		t.Run(name, func(t *testing.T) {
+			out := captureStdout(t, func() {
+				if !printCommandHelp(name) {
+					t.Fatalf("printCommandHelp(%q) returned false", name)
+				}
+			})
+			for _, want := range []string{"[--wait-for <selector>]", "[--timeout <ms>]"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("%s help missing %q; got:\n%s", name, want, out)
+				}
+			}
+		})
+	}
+}
+
 func TestPrintCommandHelpAlias(t *testing.T) {
 	out := captureStdout(t, func() {
 		printCommandHelp("--help")
