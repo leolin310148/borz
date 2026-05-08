@@ -138,6 +138,10 @@ func (s *Server) registerRecordingRoutes(mux *http.ServeMux) {
 
 func (s *Server) registerRecordingPreviewRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/recordings/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			sendMethodNotAllowed(w, http.MethodGet)
+			return
+		}
 		id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/recordings/"), "/")
 		if id == "" {
 			sendJSON(w, 404, map[string]string{"error": "recording id is required"})

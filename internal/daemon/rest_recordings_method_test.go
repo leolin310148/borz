@@ -57,3 +57,20 @@ func TestRecordingRoutesMethodNotAllowedSetsAllow(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordingPreviewRequiresGet(t *testing.T) {
+	s := newTestServer(t, "")
+	s.recordings = newRecordingManager(s.cdp, s.extHub)
+
+	mux := http.NewServeMux()
+	s.registerRecordingPreviewRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/recordings/missing", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST /recordings/missing got %d body=%s, want %d", rec.Code, rec.Body.String(), http.StatusMethodNotAllowed)
+	}
+	if got := rec.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("POST /recordings/missing Allow = %q, want %q", got, http.MethodGet)
+	}
+}
