@@ -292,6 +292,14 @@ func TestApplyCLIWaitForRejectsEmptyValues(t *testing.T) {
 	}
 }
 
+func TestApplyCLIWaitForTrimsSelector(t *testing.T) {
+	req := &protocol.Request{}
+	applyCLIWaitFor(req, []string{"open", "https://example.test", "--wait-for", " .ready "})
+	if req.WaitFor != ".ready" {
+		t.Fatalf("waitFor = %q, want .ready", req.WaitFor)
+	}
+}
+
 func TestParsePositiveIntArg(t *testing.T) {
 	got, err := parsePositiveIntArg("--timeout", " 2500 ")
 	if err != nil {

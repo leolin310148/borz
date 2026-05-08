@@ -328,8 +328,8 @@ type restBody struct {
 // sets them. WaitFor polls document.querySelector after the action returns;
 // Activate brings the tab to the foreground before the action runs.
 func (b restBody) applyWait(req *protocol.Request) *protocol.Request {
-	if b.WaitFor != "" {
-		req.WaitFor = b.WaitFor
+	if waitFor := strings.TrimSpace(b.WaitFor); waitFor != "" {
+		req.WaitFor = waitFor
 	}
 	if b.TimeoutMs != nil {
 		req.TimeoutMs = b.TimeoutMs

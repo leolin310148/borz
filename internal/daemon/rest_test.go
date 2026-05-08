@@ -59,9 +59,9 @@ func TestRestBody_ApplyWait(t *testing.T) {
 	if req.WaitFor != "" || req.TimeoutMs != nil {
 		t.Fatalf("empty body should not set wait fields: %+v", req)
 	}
-	// WaitFor + TimeoutMs propagate.
+	// WaitFor is normalized and TimeoutMs propagates.
 	ms := 2500
-	req = (restBody{WaitFor: ".loaded", TimeoutMs: &ms}).applyWait(&protocol.Request{Action: protocol.ActionClick})
+	req = (restBody{WaitFor: " .loaded ", TimeoutMs: &ms}).applyWait(&protocol.Request{Action: protocol.ActionClick})
 	if req.WaitFor != ".loaded" {
 		t.Fatalf("waitFor = %q", req.WaitFor)
 	}

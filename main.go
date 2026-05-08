@@ -1615,7 +1615,8 @@ func setTab(req *protocol.Request, tabID string) {
 // and get don't bother.
 func applyCLIWaitFor(req *protocol.Request, rawArgs []string) {
 	if waitFor, ok := getArgValueOK(rawArgs, "--wait-for"); ok {
-		if strings.TrimSpace(waitFor) == "" {
+		waitFor = strings.TrimSpace(waitFor)
+		if waitFor == "" {
 			fatal("--wait-for requires a selector")
 		}
 		req.WaitFor = waitFor
