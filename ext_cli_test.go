@@ -587,7 +587,7 @@ func TestHandleTabEvents_TailHonorsExplicitSince(t *testing.T) {
 	})
 
 	out := withCapturedStdout(t, func() {
-		handleTabEvents([]string{"events", "--tail", "--since", "7", "--interval", "1"}, false)
+		handleTabEvents([]string{"events", "--tail", "--since", "7", "--interval", "1h"}, false)
 	})
 	if !strings.Contains(out, "tabs.updated") {
 		t.Fatalf("tail output = %q", out)
