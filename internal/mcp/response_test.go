@@ -237,6 +237,19 @@ func TestFormatTabList_WithTabs(t *testing.T) {
 	}
 }
 
+func TestFormatTabList_OmitsEmptyTitleSeparator(t *testing.T) {
+	resp := &protocol.Response{Data: &protocol.ResponseData{Tabs: []protocol.TabInfo{
+		{Index: 0, URL: "https://untitled.test", TabID: "target-0001"},
+	}}}
+	got := firstText(t, formatTabList(resp))
+	if !strings.Contains(got, "  [0] https://untitled.test (tab: target-0001)") {
+		t.Fatalf("tab without title formatted unexpectedly: %q", got)
+	}
+	if strings.Contains(got, " —  ") {
+		t.Fatalf("tab without title included empty title separator: %q", got)
+	}
+}
+
 // --- formatEval ---
 
 func TestFormatEval_NoData(t *testing.T) {
