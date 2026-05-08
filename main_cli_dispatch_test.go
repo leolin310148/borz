@@ -763,6 +763,14 @@ func TestMainJSONAndJQOutputBranches(t *testing.T) {
 	if strings.TrimSpace(out) != "value text" {
 		t.Fatalf("jq output = %q", out)
 	}
+
+	out, reqs = runMainWithFakeDaemon(t, "snapshot", "--jq", ".data.snapshotData.snapshot")
+	if len(reqs) != 1 || reqs[0].Action != protocol.ActionSnapshot {
+		t.Fatalf("jq snapshot requests = %+v", reqs)
+	}
+	if strings.TrimSpace(out) != "Page snapshot" {
+		t.Fatalf("jq full response output = %q", out)
+	}
 }
 
 func TestSendAndPrintJSONErrorBranch(t *testing.T) {

@@ -1460,15 +1460,7 @@ func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*p
 
 	// Apply jq filter
 	if jqExpression != "" {
-		target := interface{}(resp.Data)
-		if target == nil {
-			target = resp
-		}
-		// Marshal + unmarshal to get generic interface
-		raw, _ := json.Marshal(target)
-		var generic interface{}
-		json.Unmarshal(raw, &generic)
-		results := jq.Apply(generic, jqExpression)
+		results := applyJQExpression(resp, jqExpression)
 		for _, r := range results {
 			if s, ok := r.(string); ok {
 				fmt.Println(s)
@@ -1526,6 +1518,31 @@ func saveScreenshotDataURL(path string, resp *protocol.Response) error {
 func printJSON(v interface{}) {
 	out, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Println(string(out))
+}
+
+func applyJQExpression(resp *protocol.Response, expression string) []interface{} {
+	if resp == nil {
+		return nil
+	}
+	if resp.Data != nil {
+		results := applyJQTo(resp.Data, expression)
+		if len(results) > 0 {
+			return results
+		}
+	}
+	return applyJQTo(resp, expression)
+}
+
+func applyJQTo(target interface{}, expression string) []interface{} {
+	raw, err := json.Marshal(target)
+	if err != nil {
+		return nil
+	}
+	var generic interface{}
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return nil
+	}
+	return jq.Apply(generic, expression)
 }
 
 // printEval handles eval (and adapter run) output: --jq > --json > --unwrap >
