@@ -1766,9 +1766,10 @@ Interaction:
                                 consts, repeatable)
 
 Observation:
-  snapshot [-i] [-c] [-d N] [-s <sel>] [--text-only]
+  snapshot [-i] [-c] [-d N] [-s <sel>] [--text-only] [--diff]
                                 Get accessibility tree (or reader-mode
-                                plain text with --text-only)
+                                plain text with --text-only; --diff shows
+                                changes since the previous snapshot)
   screenshot [path]             Take screenshot (path saves on the CLI host)
   viewport [mobile|tablet|desktop|WxH|reset]
                                 Inspect or emulate viewport for responsive UI

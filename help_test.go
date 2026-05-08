@@ -297,6 +297,7 @@ func TestTopLevelHelpMentionsNewFlags(t *testing.T) {
 		"--wait-for",
 		"--unwrap",
 		"--file",
+		"--diff",
 		"record start|stop|render",
 		"help --all",
 	} {
