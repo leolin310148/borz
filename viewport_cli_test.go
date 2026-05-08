@@ -31,7 +31,7 @@ func TestBuildViewportOptionsTrimsNumericFlags(t *testing.T) {
 		"--width", " 800 ",
 		"--height= 600 ",
 		"--dpr", " 2 ",
-	})
+	}, true)
 	if opts == nil {
 		t.Fatal("viewport options should be built from numeric flags")
 	}
@@ -44,8 +44,39 @@ func TestBuildViewportOptionsRejectsNonFiniteDPR(t *testing.T) {
 	for _, dpr := range []string{"NaN", "+Inf", "-Inf"} {
 		t.Run(dpr, func(t *testing.T) {
 			expectExit(t, 1, func() {
-				_ = buildViewportOptions("800x600", []string{"--dpr", dpr})
+				_ = buildViewportOptions("800x600", []string{"--dpr", dpr}, true)
 			})
 		})
 	}
+}
+
+func TestViewportOptionsFromCommandAllowsStatusFlag(t *testing.T) {
+	for _, spec := range []string{"status", "current"} {
+		t.Run(spec, func(t *testing.T) {
+			opts := viewportOptionsFromCommand(nil, []string{"viewport", "--viewport", spec})
+			if opts != nil {
+				t.Fatalf("viewportOptionsFromCommand(%q) = %+v, want nil status request", spec, opts)
+			}
+		})
+	}
+}
+
+func TestViewportStatusRejectsSettingFlags(t *testing.T) {
+	for _, tc := range []struct {
+		cmdArgs []string
+		rawArgs []string
+	}{
+		{rawArgs: []string{"viewport", "--viewport", "status", "--width", "800"}},
+		{cmdArgs: []string{"status"}, rawArgs: []string{"viewport", "status", "--reset"}},
+	} {
+		expectExit(t, 1, func() {
+			_ = viewportOptionsFromCommand(tc.cmdArgs, tc.rawArgs)
+		})
+	}
+}
+
+func TestViewportStatusRejectedOutsideViewportCommand(t *testing.T) {
+	expectExit(t, 1, func() {
+		_ = viewportOptionsFromFlags([]string{"open", "--viewport", "status"})
+	})
 }

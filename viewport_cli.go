@@ -36,7 +36,7 @@ func viewportOptionsFromCommand(cmdArgs []string, rawArgs []string) *protocol.Vi
 	if spec == "" && !hasViewportFlags(rawArgs) {
 		return nil
 	}
-	return buildViewportOptions(spec, rawArgs)
+	return buildViewportOptions(spec, rawArgs, true)
 }
 
 func viewportOptionsFromFlags(rawArgs []string) *protocol.ViewportOptions {
@@ -44,7 +44,7 @@ func viewportOptionsFromFlags(rawArgs []string) *protocol.ViewportOptions {
 	if spec == "" && !hasViewportFlags(rawArgs) {
 		return nil
 	}
-	return buildViewportOptions(spec, rawArgs)
+	return buildViewportOptions(spec, rawArgs, false)
 }
 
 func hasViewportFlags(rawArgs []string) bool {
@@ -59,8 +59,27 @@ func hasViewportFlags(rawArgs []string) bool {
 		getArgValue(rawArgs, "--viewport") != ""
 }
 
-func buildViewportOptions(spec string, rawArgs []string) *protocol.ViewportOptions {
+func hasViewportSettingFlags(rawArgs []string) bool {
+	return hasFlag(rawArgs, "--mobile") ||
+		hasFlag(rawArgs, "--touch") ||
+		hasFlag(rawArgs, "--no-touch") ||
+		hasFlag(rawArgs, "--reset") ||
+		getArgValue(rawArgs, "--width") != "" ||
+		getArgValue(rawArgs, "--height") != "" ||
+		getArgValue(rawArgs, "--dpr") != ""
+}
+
+func buildViewportOptions(spec string, rawArgs []string, allowStatus bool) *protocol.ViewportOptions {
 	spec = strings.TrimSpace(strings.ToLower(spec))
+	if spec == "status" || spec == "current" {
+		if !allowStatus {
+			fatal("viewport status is only valid with the viewport command")
+		}
+		if !hasViewportSettingFlags(rawArgs) {
+			return nil
+		}
+		fatal("viewport status cannot be combined with viewport-setting flags")
+	}
 	if hasFlag(rawArgs, "--reset") || spec == "reset" || spec == "clear" {
 		return &protocol.ViewportOptions{Reset: true}
 	}
@@ -78,12 +97,6 @@ func buildViewportOptions(spec string, rawArgs []string) *protocol.ViewportOptio
 		} else {
 			fatal("viewport must be mobile, tablet, desktop, reset, or <width>x<height>")
 		}
-	}
-	if spec == "status" || spec == "current" {
-		if !hasViewportFlags(rawArgs) {
-			return nil
-		}
-		fatal("viewport status cannot be combined with viewport-setting flags")
 	}
 
 	if v := getArgValue(rawArgs, "--width"); v != "" {
