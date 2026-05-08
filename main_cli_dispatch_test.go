@@ -950,3 +950,41 @@ func TestHandleServerBuildsServerOptions(t *testing.T) {
 		t.Fatalf("server options = %+v", got)
 	}
 }
+
+func TestServerOptionsRejectsInvalidPorts(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "non-numeric port",
+			args: []string{"server", "--host", "127.0.0.1", "--port", "abc"},
+			want: "--port must be a TCP port between 1 and 65535",
+		},
+		{
+			name: "zero port",
+			args: []string{"server", "--host", "127.0.0.1", "--port", "0"},
+			want: "--port must be a TCP port between 1 and 65535",
+		},
+		{
+			name: "too large cdp port",
+			args: []string{"server", "--host", "127.0.0.1", "--cdp-port", "65536"},
+			want: "--cdp-port must be a TCP port between 1 and 65535",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := serverOptionsFromArgs(tc.args, "127.0.0.1")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("serverOptionsFromArgs error = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+
+	t.Setenv("BORZ_SERVER_PORT", "nope")
+	t.Setenv("BB_BROWSER_SERVER_PORT", "")
+	_, err := serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1"}, "127.0.0.1")
+	if err == nil || !strings.Contains(err.Error(), "BORZ_SERVER_PORT must be a TCP port between 1 and 65535") {
+		t.Fatalf("serverOptionsFromArgs env error = %v", err)
+	}
+}
