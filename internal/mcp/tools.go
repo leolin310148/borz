@@ -18,7 +18,7 @@ func waitForParam() mcp.ToolOption {
 }
 
 func timeoutParam() mcp.ToolOption {
-	return mcp.WithNumber("timeout", mcp.Description("Cap for waitFor in milliseconds (default 10000). Ignored without waitFor."))
+	return mcp.WithNumber("timeout", mcp.Description("Cap for waitFor in milliseconds (default 10000). Ignored without waitFor."), mcp.Min(0))
 }
 
 // --- Navigation ---
@@ -191,7 +191,7 @@ var evalTool = mcp.NewTool("browser_eval",
 
 var waitTool = mcp.NewTool("browser_wait",
 	mcp.WithDescription("Wait for a specified number of milliseconds"),
-	mcp.WithNumber("ms", mcp.Description("Milliseconds to wait (default 1000)")),
+	mcp.WithNumber("ms", mcp.Description("Milliseconds to wait (default 1000)"), mcp.Min(0)),
 )
 
 // --- Tab Management ---
@@ -319,6 +319,6 @@ var siteRunTool = mcp.NewTool("browser_site_run",
 	mcp.WithObject("args", mcp.Description("Adapter arguments as a JSON object (e.g. {\"query\": \"AI news\"})")),
 	mcp.WithBoolean("force", mcp.Description("Bypass community trust and domain mismatch guard for this run. Use only after inspecting the adapter and target tab.")),
 	mcp.WithBoolean("raw", mcp.Description("Return the adapter result unwrapped like CLI --unwrap (strings are not JSON-quoted).")),
-	mcp.WithNumber("timeout", mcp.Description("Maximum adapter JavaScript execution time in milliseconds (default 30000 or adapter timeoutMs).")),
+	mcp.WithNumber("timeout", mcp.Description("Maximum adapter JavaScript execution time in milliseconds (default 30000 or adapter timeoutMs)."), mcp.Min(0)),
 	tabParam(),
 )
