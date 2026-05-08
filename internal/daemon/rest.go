@@ -415,6 +415,7 @@ func (b restBody) sinceValue() interface{} {
 	case float64:
 		return int(v)
 	case string:
+		v = strings.TrimSpace(v)
 		if v == "last_action" {
 			return v
 		}

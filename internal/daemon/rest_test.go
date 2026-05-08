@@ -43,6 +43,9 @@ func TestRestBody_SinceValue(t *testing.T) {
 	if got := (restBody{Since: "42"}).sinceValue(); got != 42 {
 		t.Fatalf("numeric string: got %v", got)
 	}
+	if got := (restBody{Since: " 42 "}).sinceValue(); got != 42 {
+		t.Fatalf("trimmed numeric string: got %v", got)
+	}
 	// Non-numeric string falls through to raw value.
 	if got := (restBody{Since: "garbage"}).sinceValue(); got != "garbage" {
 		t.Fatalf("non-numeric string: got %v", got)
