@@ -98,6 +98,9 @@ func TestRecordCLILocalBundleCommandsAndHelpers(t *testing.T) {
 	if got, err := parseBytes("1.5MB"); err != nil || got != 1572864 {
 		t.Fatalf("parseBytes: got %d err=%v", got, err)
 	}
+	if got := parsePositiveFloatFlag("--dpr", " 1.5 "); got != 1.5 {
+		t.Fatalf("parsePositiveFloatFlag = %v, want 1.5", got)
+	}
 	if _, err := parseBytes("9223372036854775808B"); err == nil {
 		t.Fatal("parseBytes should reject values larger than int64")
 	}
@@ -114,6 +117,16 @@ func TestRecordCLILocalBundleCommandsAndHelpers(t *testing.T) {
 		if _, err := parseMask(bad); err == nil {
 			t.Fatalf("parseMask should reject non-finite rect %q", bad)
 		}
+	}
+}
+
+func TestRecordStartRejectsInvalidDPR(t *testing.T) {
+	for _, dpr := range []string{"bad", "0", "-1", "NaN", "+Inf", "-Inf"} {
+		t.Run(dpr, func(t *testing.T) {
+			expectExit(t, 1, func() {
+				handleRecord([]string{"start"}, []string{"record", "start", "--dpr", dpr}, false)
+			})
+		})
 	}
 }
 

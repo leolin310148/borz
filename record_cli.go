@@ -55,9 +55,7 @@ func handleRecord(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			opts.FPS = parsePositiveIntFlag("--fps", fps)
 		}
 		if dpr := getArgValue(rawArgs, "--dpr"); dpr != "" {
-			if n, err := strconv.ParseFloat(dpr, 64); err == nil {
-				opts.DPR = n
-			}
+			opts.DPR = parsePositiveFloatFlag("--dpr", dpr)
 		}
 		if maxSize := getArgValue(rawArgs, "--max-size"); maxSize != "" {
 			n, err := parseBytes(maxSize)
@@ -269,6 +267,14 @@ func parsePositiveIntFlag(name, value string) int {
 	n, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || n <= 0 {
 		fatal(name + " must be a positive integer")
+	}
+	return n
+}
+
+func parsePositiveFloatFlag(name, value string) float64 {
+	n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n <= 0 {
+		fatal(name + " must be a positive number")
 	}
 	return n
 }
