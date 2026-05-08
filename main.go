@@ -1352,7 +1352,7 @@ func handleSiteRun(name string, cmdArgs []string, jsonOutput bool, globalTabID s
 			fatal(err.Error())
 		}
 	}
-	timeoutMs, err := parsePositiveIntArg("--timeout", getArgValue(rawArgs, "--timeout"))
+	timeoutMs, err := parseOptionalPositiveIntFlag(rawArgs, "--timeout")
 	if err != nil {
 		fatal(err.Error())
 	}
@@ -1442,6 +1442,17 @@ func parsePositiveIntArg(name, raw string) (int, error) {
 		return 0, fmt.Errorf("%s must be a positive integer", name)
 	}
 	return n, nil
+}
+
+func parseOptionalPositiveIntFlag(args []string, flag string) (int, error) {
+	raw, ok := getArgValueOK(args, flag)
+	if !ok {
+		return 0, nil
+	}
+	if strings.TrimSpace(raw) == "" {
+		return 0, fmt.Errorf("%s must be a positive integer", flag)
+	}
+	return parsePositiveIntArg(flag, raw)
 }
 
 // --- Helpers ---

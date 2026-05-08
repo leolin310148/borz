@@ -312,6 +312,29 @@ func TestParsePositiveIntArg(t *testing.T) {
 	}
 }
 
+func TestParseOptionalPositiveIntFlag(t *testing.T) {
+	if got, err := parseOptionalPositiveIntFlag([]string{"site", "run", "demo/search"}, "--timeout"); err != nil || got != 0 {
+		t.Fatalf("absent parseOptionalPositiveIntFlag = %d, %v; want 0, nil", got, err)
+	}
+
+	got, err := parseOptionalPositiveIntFlag([]string{"site", "run", "demo/search", "--timeout=2500"}, "--timeout")
+	if err != nil {
+		t.Fatalf("parseOptionalPositiveIntFlag returned error: %v", err)
+	}
+	if got != 2500 {
+		t.Fatalf("parseOptionalPositiveIntFlag = %d, want 2500", got)
+	}
+
+	for _, args := range [][]string{
+		{"site", "run", "demo/search", "--timeout="},
+		{"site", "run", "demo/search", "--timeout", "--json"},
+	} {
+		if _, err := parseOptionalPositiveIntFlag(args, "--timeout"); err == nil || !strings.Contains(err.Error(), "--timeout must be a positive integer") {
+			t.Fatalf("parseOptionalPositiveIntFlag(%v) error = %v", args, err)
+		}
+	}
+}
+
 func TestStripFlags(t *testing.T) {
 	in := []string{"open", "--json", "--id", "1", "https://x", "--filter", "foo", "arg2"}
 	got := stripFlags(in, nil, nil)
