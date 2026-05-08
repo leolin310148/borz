@@ -52,11 +52,11 @@ func hasViewportFlags(rawArgs []string) bool {
 		hasFlag(rawArgs, "--touch") ||
 		hasFlag(rawArgs, "--no-touch") ||
 		hasFlag(rawArgs, "--reset") ||
-		getArgValue(rawArgs, "--width") != "" ||
-		getArgValue(rawArgs, "--height") != "" ||
-		getArgValue(rawArgs, "--dpr") != "" ||
-		getArgValue(rawArgs, "--preset") != "" ||
-		getArgValue(rawArgs, "--viewport") != ""
+		hasArgValue(rawArgs, "--width") ||
+		hasArgValue(rawArgs, "--height") ||
+		hasArgValue(rawArgs, "--dpr") ||
+		hasArgValue(rawArgs, "--preset") ||
+		hasArgValue(rawArgs, "--viewport")
 }
 
 func hasViewportSettingFlags(rawArgs []string) bool {
@@ -64,9 +64,14 @@ func hasViewportSettingFlags(rawArgs []string) bool {
 		hasFlag(rawArgs, "--touch") ||
 		hasFlag(rawArgs, "--no-touch") ||
 		hasFlag(rawArgs, "--reset") ||
-		getArgValue(rawArgs, "--width") != "" ||
-		getArgValue(rawArgs, "--height") != "" ||
-		getArgValue(rawArgs, "--dpr") != ""
+		hasArgValue(rawArgs, "--width") ||
+		hasArgValue(rawArgs, "--height") ||
+		hasArgValue(rawArgs, "--dpr")
+}
+
+func hasArgValue(rawArgs []string, flag string) bool {
+	_, ok := getArgValueOK(rawArgs, flag)
+	return ok
 }
 
 func buildViewportOptions(spec string, rawArgs []string, allowStatus bool) *protocol.ViewportOptions {
@@ -99,13 +104,13 @@ func buildViewportOptions(spec string, rawArgs []string, allowStatus bool) *prot
 		}
 	}
 
-	if v := getArgValue(rawArgs, "--width"); v != "" {
+	if v, ok := getArgValueOK(rawArgs, "--width"); ok {
 		opts.Width = parseViewportInt("--width", v)
 	}
-	if v := getArgValue(rawArgs, "--height"); v != "" {
+	if v, ok := getArgValueOK(rawArgs, "--height"); ok {
 		opts.Height = parseViewportInt("--height", v)
 	}
-	if v := getArgValue(rawArgs, "--dpr"); v != "" {
+	if v, ok := getArgValueOK(rawArgs, "--dpr"); ok {
 		dpr, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
 		if err != nil || math.IsNaN(dpr) || math.IsInf(dpr, 0) || dpr <= 0 {
 			fatal("--dpr must be a positive number")

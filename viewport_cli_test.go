@@ -50,6 +50,24 @@ func TestBuildViewportOptionsRejectsNonFiniteDPR(t *testing.T) {
 	}
 }
 
+func TestViewportOptionsRejectsEmptyValueFlags(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		rawArgs []string
+	}{
+		{name: "width inline", rawArgs: []string{"viewport", "--width="}},
+		{name: "width separate", rawArgs: []string{"viewport", "--width"}},
+		{name: "height inline", rawArgs: []string{"viewport", "--height="}},
+		{name: "dpr inline", rawArgs: []string{"viewport", "800x600", "--dpr="}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expectExit(t, 1, func() {
+				_ = viewportOptionsFromCommand(nil, tc.rawArgs)
+			})
+		})
+	}
+}
+
 func TestViewportOptionsFromCommandAllowsStatusFlag(t *testing.T) {
 	for _, spec := range []string{"status", "current"} {
 		t.Run(spec, func(t *testing.T) {
