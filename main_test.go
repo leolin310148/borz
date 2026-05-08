@@ -61,6 +61,33 @@ func TestServerOptionsFromArgs(t *testing.T) {
 	}
 }
 
+func TestServerOptionsFromArgsTrimsPortValues(t *testing.T) {
+	t.Setenv("BORZ_SERVER_HOST", "")
+	t.Setenv("BB_BROWSER_SERVER_HOST", "")
+	t.Setenv("BORZ_SERVER_PORT", " 20001 ")
+	t.Setenv("BB_BROWSER_SERVER_PORT", "")
+	t.Setenv("BORZ_TOKEN", "")
+	t.Setenv("BB_BROWSER_TOKEN", "")
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
+
+	opts, err := serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1", "--cdp-port", " 9224 "}, "0.0.0.0")
+	if err != nil {
+		t.Fatalf("serverOptionsFromArgs returned error: %v", err)
+	}
+	if opts.Port != 20001 || opts.CDPPort != 9224 {
+		t.Fatalf("ports = %d/%d, want 20001/9224", opts.Port, opts.CDPPort)
+	}
+
+	opts, err = serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1", "--port", " 20002 "}, "0.0.0.0")
+	if err != nil {
+		t.Fatalf("serverOptionsFromArgs with port flag returned error: %v", err)
+	}
+	if opts.Port != 20002 {
+		t.Fatalf("port flag = %d, want 20002", opts.Port)
+	}
+}
+
 func TestServiceRunArgs(t *testing.T) {
 	t.Cleanup(func() { _ = config.SetProfile("") })
 	opts, err := serverOptionsFromArgs([]string{"service", "install", "--host", "127.0.0.1", "--port", "19824", "--token", "secret"}, "127.0.0.1")

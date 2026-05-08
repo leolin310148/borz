@@ -994,7 +994,7 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 	}
 	cdpPort := 19825
 	if v := getArgValue(rawArgs, "--cdp-port"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil {
+		if p, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 			cdpPort = p
 		}
 	}
@@ -1009,11 +1009,11 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 
 	port := 19824
 	if v := getArgValue(rawArgs, "--port"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil {
+		if p, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 			port = p
 		}
 	} else if v := config.Env("BORZ_SERVER_PORT", "BB_BROWSER_SERVER_PORT"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil {
+		if p, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
 			port = p
 		}
 	}
