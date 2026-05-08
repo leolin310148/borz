@@ -230,10 +230,13 @@ func TestGetArgValue(t *testing.T) {
 	if got := getArgValue([]string{"--id"}, "--id"); got != "" {
 		t.Errorf("trailing flag: got %q want empty", got)
 	}
+	if got := getArgValue([]string{"--id", "--json"}, "--id"); got != "" {
+		t.Errorf("missing value before next flag: got %q want empty", got)
+	}
 }
 
 func TestGetAllArgValues(t *testing.T) {
-	args := []string{"cmd", "--json-arg", "user={}", "--json-arg=limit=3"}
+	args := []string{"cmd", "--json-arg", "user={}", "--json-arg=limit=3", "--json-arg", "--json"}
 	got := getAllArgValues(args, "--json-arg")
 	want := []string{"user={}", "limit=3"}
 	if !reflect.DeepEqual(got, want) {

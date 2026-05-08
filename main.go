@@ -1628,7 +1628,7 @@ func getArgValue(args []string, flag string) string {
 		if value, ok := inlineArgValue(a, flag); ok {
 			return value
 		}
-		if a == flag && i+1 < len(args) {
+		if a == flag && i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
 			return args[i+1]
 		}
 	}
@@ -1644,7 +1644,7 @@ func getAllArgValues(args []string, flag string) []string {
 			out = append(out, value)
 			continue
 		}
-		if a == flag && i+1 < len(args) {
+		if a == flag && i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
 			out = append(out, args[i+1])
 		}
 	}
