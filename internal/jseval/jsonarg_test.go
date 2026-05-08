@@ -12,15 +12,19 @@ func TestParseJSONArgs_Valid(t *testing.T) {
 		`flags=[1,2,3]`,
 		`opts={"x":1}`,
 		`nilable=null`,
+		` spaced = true`,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(args) != 5 {
-		t.Fatalf("expected 5 args, got %d", len(args))
+	if len(args) != 6 {
+		t.Fatalf("expected 6 args, got %d", len(args))
 	}
 	if args[0].Name != "name" || args[0].RawValue != `"alice"` {
 		t.Errorf("name arg mismatch: %+v", args[0])
+	}
+	if args[5].Name != "spaced" || args[5].RawValue != "true" {
+		t.Errorf("spaced arg mismatch: %+v", args[5])
 	}
 }
 
