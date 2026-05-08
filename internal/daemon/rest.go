@@ -142,6 +142,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			Method:         body.Method,
 			Status:         body.Status,
 			Since:          body.sinceValue(),
+			Limit:          body.Limit,
 			TabID:          body.tabID(),
 		})
 	}))
@@ -155,6 +156,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			ConsoleCommand: cmd,
 			Filter:         body.Filter,
 			Since:          body.sinceValue(),
+			Limit:          body.Limit,
 			TabID:          body.tabID(),
 		})
 	}))
@@ -168,6 +170,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			ErrorsCommand: cmd,
 			Filter:        body.Filter,
 			Since:         body.sinceValue(),
+			Limit:         body.Limit,
 			TabID:         body.tabID(),
 		})
 	}))
@@ -281,6 +284,7 @@ type restBody struct {
 	Status      string                    `json:"status,omitempty"`
 	WithBody    bool                      `json:"withBody,omitempty"`
 	Since       interface{}               `json:"since,omitempty"`
+	Limit       *int                      `json:"limit,omitempty"`
 	TabID       interface{}               `json:"tabId,omitempty"`
 	Tab         string                    `json:"tab,omitempty"`
 	Index       *int                      `json:"index,omitempty"`

@@ -72,7 +72,7 @@ func TestRestBody_ApplyWait(t *testing.T) {
 
 func TestReadBody_ParsesNewFields(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/x",
-		strings.NewReader(`{"waitFor":".x","timeoutMs":250,"mode":"text"}`))
+		strings.NewReader(`{"waitFor":".x","timeoutMs":250,"mode":"text","limit":12}`))
 	body, err := readBody(req)
 	if err != nil {
 		t.Fatalf("readBody: %v", err)
@@ -85,6 +85,9 @@ func TestReadBody_ParsesNewFields(t *testing.T) {
 	}
 	if body.Mode != "text" {
 		t.Errorf("mode = %q", body.Mode)
+	}
+	if body.Limit == nil || *body.Limit != 12 {
+		t.Errorf("limit = %v", body.Limit)
 	}
 }
 
@@ -321,9 +324,9 @@ func TestRESTRoutes_RequestBuilders(t *testing.T) {
 		{"/v1/snapshot", `{"diff":true}`},
 		{"/v1/screenshot", `{"path":"/tmp/shot.png","activate":true}`},
 		{"/v1/get", `{"attribute":"text","ref":"e1","activate":true}`},
-		{"/v1/network", `{"command":"requests","filter":"api","withBody":true,"method":"GET","status":"200","since":"last_action","activate":true}`},
-		{"/v1/console", `{"command":"clear","filter":"x","since":3,"activate":true}`},
-		{"/v1/errors", `{"command":"clear","filter":"x","since":"4","activate":true}`},
+		{"/v1/network", `{"command":"requests","filter":"api","withBody":true,"method":"GET","status":"200","since":"last_action","limit":10,"activate":true}`},
+		{"/v1/console", `{"command":"clear","filter":"x","since":3,"limit":10,"activate":true}`},
+		{"/v1/errors", `{"command":"clear","filter":"x","since":"4","limit":10,"activate":true}`},
 		{"/v1/fetch", `{"url":"https://api.test","method":"post","activate":true}`},
 		{"/v1/tabs/select", `{"index":0}`},
 		{"/v1/tabs/select", `{"tabId":"T1"}`},

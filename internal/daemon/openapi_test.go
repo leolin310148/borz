@@ -61,6 +61,19 @@ func TestOpenAPIRoutes(t *testing.T) {
 		}
 	})
 
+	t.Run("spec documents observation limits", func(t *testing.T) {
+		body := string(openAPISpec)
+		for _, summary := range []string{
+			"Return at most this many newest matching requests",
+			"Return at most this many newest matching messages",
+			"Return at most this many newest matching errors",
+		} {
+			if !strings.Contains(body, summary) {
+				t.Fatalf("observation limit field missing from OpenAPI spec: %q", summary)
+			}
+		}
+	})
+
 	t.Run("non-GET rejected", func(t *testing.T) {
 		for _, path := range []string{"/openapi.yaml", "/docs"} {
 			rec := httptest.NewRecorder()

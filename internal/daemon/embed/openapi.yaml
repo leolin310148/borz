@@ -544,6 +544,7 @@ paths:
                     status: { type: string, description: Status code or class (e.g. `200`, `4xx`) }
                     withBody: { type: boolean }
                     since: { $ref: "#/components/schemas/Since" }
+                    limit: { type: integer, minimum: 1, description: Return at most this many newest matching requests }
       responses:
         "200":
           description: Captured requests
@@ -579,6 +580,7 @@ paths:
                       default: get
                     filter: { type: string }
                     since: { $ref: "#/components/schemas/Since" }
+                    limit: { type: integer, minimum: 1, description: Return at most this many newest matching messages }
       responses:
         "200":
           description: Console messages
@@ -614,6 +616,7 @@ paths:
                       default: get
                     filter: { type: string }
                     since: { $ref: "#/components/schemas/Since" }
+                    limit: { type: integer, minimum: 1, description: Return at most this many newest matching errors }
       responses:
         "200":
           description: JS errors
