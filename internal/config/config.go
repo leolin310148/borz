@@ -6,10 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 var userHomeDir = os.UserHomeDir
-var activeProfile string
+
+var (
+	profileMu     sync.RWMutex
+	activeProfile string
+)
 
 const (
 	DaemonPort     = 19824
@@ -41,6 +46,8 @@ func Env(name, legacyName string) string {
 // default profile uses the historical top-level paths for compatibility.
 func SetProfile(name string) error {
 	name = strings.TrimSpace(name)
+	profileMu.Lock()
+	defer profileMu.Unlock()
 	if name == "" || name == "default" {
 		activeProfile = ""
 		return nil
@@ -54,6 +61,8 @@ func SetProfile(name string) error {
 
 // Profile returns the selected local browser profile name, or "" for default.
 func Profile() string {
+	profileMu.RLock()
+	defer profileMu.RUnlock()
 	return activeProfile
 }
 
@@ -121,10 +130,11 @@ func dirExists(path string) bool {
 }
 
 func runtimeDir() string {
-	if activeProfile == "" {
+	profile := Profile()
+	if profile == "" {
 		return HomeDir()
 	}
-	return filepath.Join(HomeDir(), "profiles", activeProfile)
+	return filepath.Join(HomeDir(), "profiles", profile)
 }
 
 // EnsureRuntimeDir creates the directory used for daemon/browser runtime files.

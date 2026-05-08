@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -269,6 +270,37 @@ func TestProfileRuntimePaths(t *testing.T) {
 			t.Fatalf("SetProfile(%q) succeeded, want error", bad)
 		}
 	}
+}
+
+func TestProfileConcurrentAccess(t *testing.T) {
+	t.Cleanup(func() { _ = SetProfile("") })
+	t.Setenv("BORZ_HOME", "/tmp/borz")
+	t.Setenv("BB_BROWSER_HOME", "")
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				if err := SetProfile("work"); err != nil {
+					t.Errorf("SetProfile(work): %v", err)
+				}
+				if err := SetProfile(""); err != nil {
+					t.Errorf("SetProfile(default): %v", err)
+				}
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				_ = Profile()
+				_ = DaemonJSONPath()
+				_ = ManagedBrowserDir()
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestConstants(t *testing.T) {
