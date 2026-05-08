@@ -77,9 +77,11 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 		stSingle
 		stDouble
 		stTemplate
+		stRegex
 	)
 	state := stCode
 	depth := 0
+	regexClass := false
 	i := 0
 	for i < len(src) {
 		c := src[i]
@@ -101,6 +103,10 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 			case c == '/' && i+1 < len(src) && src[i+1] == '*':
 				state = stBlockComment
 				i += 2
+			case c == '/' && slashStartsRegex(src, i):
+				state = stRegex
+				regexClass = false
+				i++
 			case c == '(' || c == '{' || c == '[':
 				depth++
 				i++
@@ -161,9 +167,53 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 				// we don't auto-wrap; the user can drop --no-auto-await.
 				i++
 			}
+		case stRegex:
+			switch {
+			case c == '\\' && i+1 < len(src):
+				i += 2
+			case c == '[':
+				regexClass = true
+				i++
+			case c == ']' && regexClass:
+				regexClass = false
+				i++
+			case c == '/' && !regexClass:
+				state = stCode
+				i++
+				for i < len(src) && isIdentChar(src[i]) {
+					i++
+				}
+			default:
+				i++
+			}
 		}
 	}
 	return
+}
+
+func slashStartsRegex(src string, i int) bool {
+	prev, ok := prevSignificantByte(src, i-1)
+	if !ok {
+		return true
+	}
+	if isIdentChar(prev) {
+		switch previousIdentifier(src, i-1) {
+		case "case", "delete", "in", "new", "of", "return", "throw", "typeof", "void", "yield":
+			return true
+		}
+	}
+	return strings.ContainsRune("([{=,:;!&|?+-*%^~<>", rune(prev))
+}
+
+func previousIdentifier(src string, i int) string {
+	for i >= 0 && !isIdentChar(src[i]) {
+		i--
+	}
+	end := i + 1
+	for i >= 0 && isIdentChar(src[i]) {
+		i--
+	}
+	return src[i+1 : end]
 }
 
 // matchKeyword reports whether kw is at src[i:] AND is bounded by

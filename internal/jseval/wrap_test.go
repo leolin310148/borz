@@ -104,6 +104,26 @@ func TestAutoWrapAwait(t *testing.T) {
 			want: "obj.await + 1",
 		},
 		{
+			name: "await inside top-level regex literal is ignored",
+			in:   "/await/.test(text)",
+			want: "/await/.test(text)",
+		},
+		{
+			name: "await inside assigned regex literal is ignored",
+			in:   "const re = /aw[ai\\/]t/g",
+			want: "const re = /aw[ai\\/]t/g",
+		},
+		{
+			name: "await inside regex literal after return is ignored",
+			in:   "return /await/.test(text)",
+			want: "return /await/.test(text)",
+		},
+		{
+			name: "division before await is still detected",
+			in:   "total / await divisor()",
+			want: "(async () => { return (total / await divisor()) })()",
+		},
+		{
 			name: "optional-chain property named await is ignored",
 			in:   "obj?.await()",
 			want: "obj?.await()",
