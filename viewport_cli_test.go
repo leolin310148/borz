@@ -39,3 +39,13 @@ func TestBuildViewportOptionsTrimsNumericFlags(t *testing.T) {
 		t.Fatalf("viewport options = %+v", opts)
 	}
 }
+
+func TestBuildViewportOptionsRejectsNonFiniteDPR(t *testing.T) {
+	for _, dpr := range []string{"NaN", "+Inf", "-Inf"} {
+		t.Run(dpr, func(t *testing.T) {
+			expectExit(t, 1, func() {
+				_ = buildViewportOptions("800x600", []string{"--dpr", dpr})
+			})
+		})
+	}
+}

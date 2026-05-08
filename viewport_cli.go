@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -93,7 +94,7 @@ func buildViewportOptions(spec string, rawArgs []string) *protocol.ViewportOptio
 	}
 	if v := getArgValue(rawArgs, "--dpr"); v != "" {
 		dpr, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-		if err != nil || dpr <= 0 {
+		if err != nil || math.IsNaN(dpr) || math.IsInf(dpr, 0) || dpr <= 0 {
 			fatal("--dpr must be a positive number")
 		}
 		opts.DPR = dpr
