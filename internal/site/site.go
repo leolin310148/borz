@@ -577,9 +577,15 @@ func RecordUsage(name string) {
 
 // NewAdapterScaffold creates a local adapter template and returns the file path.
 func NewAdapterScaffold(name string) (string, error) {
-	name = strings.Trim(strings.TrimSpace(name), "/")
-	if name == "" || strings.Contains(name, "..") || strings.HasPrefix(name, "/") || strings.Contains(name, "\\") {
+	rawName := strings.TrimSpace(name)
+	name = strings.Trim(rawName, "/")
+	if rawName == "" || strings.HasPrefix(rawName, "/") || strings.Contains(rawName, "..") || strings.Contains(rawName, "\\") {
 		return "", fmt.Errorf("invalid adapter name: %q", name)
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == "" || part == "." {
+			return "", fmt.Errorf("invalid adapter name: %q", name)
+		}
 	}
 	if _, err := config.EnsureHomeDir(); err != nil {
 		return "", err

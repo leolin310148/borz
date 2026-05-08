@@ -506,6 +506,15 @@ func TestNewAdapterScaffoldAndLint(t *testing.T) {
 	}
 }
 
+func TestNewAdapterScaffoldRejectsInvalidPathSegments(t *testing.T) {
+	t.Setenv("BORZ_HOME", t.TempDir())
+	for _, name := range []string{".", "./demo", "demo/./new", "demo//new", "/demo/new"} {
+		if _, err := NewAdapterScaffold(name); err == nil {
+			t.Fatalf("NewAdapterScaffold(%q) succeeded, want error", name)
+		}
+	}
+}
+
 func TestRecordUsageSortsAllSites(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BORZ_HOME", home)
