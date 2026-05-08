@@ -117,8 +117,10 @@ func applyWaitFor(cdp *CdpConnection, targetID string, req *protocol.Request) er
 		return nil
 	}
 	timeout := 10 * time.Second
-	if req.TimeoutMs != nil && *req.TimeoutMs > 0 {
-		timeout = time.Duration(*req.TimeoutMs) * time.Millisecond
+	if req.TimeoutMs != nil {
+		if *req.TimeoutMs >= 0 {
+			timeout = time.Duration(*req.TimeoutMs) * time.Millisecond
+		}
 	}
 	return waitForSelector(cdp, targetID, req.WaitFor, timeout)
 }
@@ -204,7 +206,7 @@ func waitForSelector(cdp *CdpConnection, targetID, selector string, timeout time
 				return nil
 			}
 		}
-		if time.Now().After(deadline) {
+		if !time.Now().Before(deadline) {
 			return fmt.Errorf("wait-for selector %q: timeout after %s", selector, timeout)
 		}
 		time.Sleep(100 * time.Millisecond)

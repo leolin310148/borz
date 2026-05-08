@@ -185,6 +185,45 @@ func TestDispatch_Eval_WaitFor_Timeout(t *testing.T) {
 	}
 }
 
+func TestDispatch_Eval_WaitFor_ExplicitZeroTimeout(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	var probes int32
+	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			Expression string `json:"expression"`
+		}
+		_ = json.Unmarshal(params, &p)
+		if !strings.Contains(p.Expression, "querySelector") {
+			return map[string]interface{}{"result": map[string]interface{}{"type": "number", "value": 2}}, nil
+		}
+		atomic.AddInt32(&probes, 1)
+		return map[string]interface{}{
+			"result": map[string]interface{}{"type": "boolean", "value": false},
+		}, nil
+	})
+	c := connectCdp(t, f)
+
+	timeoutMs := 0
+	start := time.Now()
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionEval, Script: "1+1",
+		WaitFor: ".never", TimeoutMs: &timeoutMs,
+	})
+	if resp.Success {
+		t.Fatalf("expected timeout failure, got success: %+v", resp)
+	}
+	if !strings.Contains(resp.Error, "timeout after 0s") {
+		t.Fatalf("expected explicit zero timeout error, got: %q", resp.Error)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("explicit zero timeout took %s; expected immediate timeout", elapsed)
+	}
+	if got := atomic.LoadInt32(&probes); got != 1 {
+		t.Fatalf("wait-for probes = %d, want exactly one immediate probe", got)
+	}
+}
+
 func TestDispatch_Open_ReuseExisting(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://ex.test", "Existing")
