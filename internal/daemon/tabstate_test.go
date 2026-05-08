@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"testing"
+	"time"
 
 	"github.com/leolin310148/borz/internal/protocol"
 )
@@ -62,6 +63,31 @@ func TestTabStateManager_ShortIDCollision(t *testing.T) {
 	if len(b.ShortID) <= len(a.ShortID) {
 		// b was forced to grow because the 4-char suffix "1234" was taken.
 		t.Fatalf("expected b short id to be longer than a's (a=%q b=%q)", a.ShortID, b.ShortID)
+	}
+}
+
+func TestTabStateManager_AllTabsDeterministicOrder(t *testing.T) {
+	m := NewTabStateManager()
+	newer := m.AddTab("target-newer")
+	tieB := m.AddTab("target-tie-b")
+	older := m.AddTab("target-older")
+	tieA := m.AddTab("target-tie-a")
+
+	base := time.Unix(100, 0)
+	newer.CreatedAt = base.Add(2 * time.Second)
+	tieB.CreatedAt = base.Add(time.Second)
+	older.CreatedAt = base
+	tieA.CreatedAt = base.Add(time.Second)
+
+	got := m.AllTabs()
+	want := []string{"target-older", "target-tie-a", "target-tie-b", "target-newer"}
+	if len(got) != len(want) {
+		t.Fatalf("AllTabs len: got %d want %d", len(got), len(want))
+	}
+	for i, tab := range got {
+		if tab.TargetID != want[i] {
+			t.Fatalf("AllTabs[%d].TargetID = %q, want %q (full order: %+v)", i, tab.TargetID, want[i], got)
+		}
 	}
 }
 

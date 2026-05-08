@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -393,7 +394,7 @@ func (m *TabStateManager) GetShortID(targetID string) string {
 	return m.targetToShort[targetID]
 }
 
-// AllTabs returns all active tab states.
+// AllTabs returns all active tab states in deterministic creation order.
 func (m *TabStateManager) AllTabs() []*TabState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -401,5 +402,11 @@ func (m *TabStateManager) AllTabs() []*TabState {
 	for _, tab := range m.tabs {
 		tabs = append(tabs, tab)
 	}
+	sort.Slice(tabs, func(i, j int) bool {
+		if tabs[i].CreatedAt.Equal(tabs[j].CreatedAt) {
+			return tabs[i].TargetID < tabs[j].TargetID
+		}
+		return tabs[i].CreatedAt.Before(tabs[j].CreatedAt)
+	})
 	return tabs
 }
