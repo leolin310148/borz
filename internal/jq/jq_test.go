@@ -422,6 +422,12 @@ func TestCompareValues(t *testing.T) {
 	if !compareValues(float64(5), "<=", float64(5)) {
 		t.Error("5<=5")
 	}
+	if !compareValues(int64(6), ">", uint(5)) {
+		t.Error("ordered comparisons should support non-int numeric Go types")
+	}
+	if !compareValues(json.Number("7"), ">=", int32(7)) {
+		t.Error("ordered comparisons should support json.Number")
+	}
 	if compareValues("x", "??", "y") {
 		t.Error("unknown op should be false")
 	}

@@ -358,11 +358,10 @@ func numberValue(v interface{}) (float64, bool) {
 }
 
 func toFloat(v interface{}) float64 {
-	switch n := v.(type) {
-	case float64:
+	if n, ok := numberValue(v); ok {
 		return n
-	case int:
-		return float64(n)
+	}
+	switch n := v.(type) {
 	case string:
 		f, _ := strconv.ParseFloat(n, 64)
 		return f
