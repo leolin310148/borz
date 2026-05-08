@@ -715,7 +715,7 @@ var commandHelp = map[string]cmdHelp{
 		Usage:    "borz tab new [url]",
 		Examples: []string{"  borz tab new", "  borz tab new https://github.com"},
 		Notes: "Unlike 'borz open', this always creates a fresh tab and never reuses an " +
-			"existing one. Use 'open --new' if you want the same force-new behaviour from the " +
+			"existing one. Use 'open --new' if you want the same force-new behavior from the " +
 			"navigation flow.",
 	},
 	"tab.select": {
