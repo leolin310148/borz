@@ -178,7 +178,7 @@ func TestRecordingRoutesErrorBranches(t *testing.T) {
 			t.Fatalf("preview %s got %d", path, rec.Code)
 		}
 	}
-	if got := htmlEscape(`<>&"`); got != "&lt;&gt;&amp;&#34;" {
+	if got := htmlEscape(`<>&"'`); got != "&lt;&gt;&amp;&#34;&#39;" {
 		t.Fatalf("htmlEscape = %q", got)
 	}
 }

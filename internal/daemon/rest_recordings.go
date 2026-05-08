@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -163,6 +164,5 @@ func (s *Server) registerRecordingPreviewRoutes(mux *http.ServeMux) {
 }
 
 func htmlEscape(s string) string {
-	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;")
-	return r.Replace(s)
+	return html.EscapeString(s)
 }
