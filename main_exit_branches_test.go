@@ -80,6 +80,15 @@ func TestExitBackedFatalBranches(t *testing.T) {
 		{"record start bad max size", func() {
 			handleRecord([]string{"start"}, []string{"record", "start", "--max-size", "bad"}, false)
 		}},
+		{"record start bad fps", func() {
+			handleRecord([]string{"start"}, []string{"record", "start", "--fps", "bad"}, false)
+		}},
+		{"record render bad fps", func() {
+			handleRecord([]string{"render", "x.borzrec"}, []string{"record", "render", "x.borzrec", "--fps", "0"}, false)
+		}},
+		{"record render bad width", func() {
+			handleRecord([]string{"render", "x.borzrec"}, []string{"record", "render", "x.borzrec", "--width", "bad"}, false)
+		}},
 		{"record export bad format", func() {
 			handleRecord([]string{"export", "x.borzrec"}, []string{"record", "export", "x.borzrec", "--format", "mp4"}, false)
 		}},

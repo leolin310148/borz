@@ -52,9 +52,7 @@ func handleRecord(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			opts.Tab = tab
 		}
 		if fps := getArgValue(rawArgs, "--fps"); fps != "" {
-			if n, err := strconv.Atoi(fps); err == nil {
-				opts.FPS = n
-			}
+			opts.FPS = parsePositiveIntFlag("--fps", fps)
 		}
 		if dpr := getArgValue(rawArgs, "--dpr"); dpr != "" {
 			if n, err := strconv.ParseFloat(dpr, 64); err == nil {
@@ -173,13 +171,13 @@ func handleRecord(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			Chapters:    getArgValue(rawArgs, "--chapters"),
 		}
 		if v := getArgValue(rawArgs, "--fps"); v != "" {
-			opts.FPS, _ = strconv.Atoi(v)
+			opts.FPS = parsePositiveIntFlag("--fps", v)
 		}
 		if v := getArgValue(rawArgs, "--width"); v != "" {
-			opts.Width, _ = strconv.Atoi(v)
+			opts.Width = parsePositiveIntFlag("--width", v)
 		}
 		if v := getArgValue(rawArgs, "--height"); v != "" {
-			opts.Height, _ = strconv.Atoi(v)
+			opts.Height = parsePositiveIntFlag("--height", v)
 		}
 		if err := recorder.Render(cmdArgs[1], opts); err != nil {
 			fatal(err.Error())
@@ -265,6 +263,14 @@ func postRecordJSON(path string, body any, timeout time.Duration) json.RawMessag
 		fatal(err.Error())
 	}
 	return raw
+}
+
+func parsePositiveIntFlag(name, value string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || n <= 0 {
+		fatal(name + " must be a positive integer")
+	}
+	return n
 }
 
 func splitCSV(s string) []string {
