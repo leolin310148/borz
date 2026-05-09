@@ -975,6 +975,21 @@ func TestServerOptionsRejectsInvalidPorts(t *testing.T) {
 			args: []string{"server", "--host", "127.0.0.1", "--cdp-port", "65536"},
 			want: "--cdp-port must be a TCP port between 1 and 65535",
 		},
+		{
+			name: "missing port value",
+			args: []string{"server", "--host", "127.0.0.1", "--port"},
+			want: "--port must be a TCP port between 1 and 65535",
+		},
+		{
+			name: "blank inline port value",
+			args: []string{"server", "--host", "127.0.0.1", "--port="},
+			want: "--port must be a TCP port between 1 and 65535",
+		},
+		{
+			name: "missing cdp port value before next flag",
+			args: []string{"server", "--host", "127.0.0.1", "--cdp-port", "--token", "secret"},
+			want: "--cdp-port must be a TCP port between 1 and 65535",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := serverOptionsFromArgs(tc.args, "127.0.0.1")

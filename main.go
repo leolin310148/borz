@@ -916,7 +916,7 @@ func startDaemonForeground(rawArgs []string) {
 	if cdpHost == "" {
 		cdpHost = "127.0.0.1"
 	}
-	cdpPort, err := parseTCPPort("--cdp-port", getArgValue(rawArgs, "--cdp-port"), 19825)
+	cdpPort, _, err := parseTCPPortFlag(rawArgs, "--cdp-port", 19825)
 	if err != nil {
 		fatal(err.Error())
 	}
@@ -924,15 +924,14 @@ func startDaemonForeground(rawArgs []string) {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	portRaw := getArgValue(rawArgs, "--port")
-	port, err := parseTCPPort("--port", portRaw, config.DaemonPort)
+	port, portFlagSet, err := parseTCPPortFlag(rawArgs, "--port", config.DaemonPort)
 	if err != nil {
 		fatal(err.Error())
 	}
 
 	// If a healthy daemon is already running, don't try to bind (which would
 	// clobber daemon.json and then fail with "address already in use").
-	if existing, err := client.ReadDaemonJSON(); err == nil && existing != nil && (portRaw == "" || existing.Port == port) && existing.Host == host {
+	if existing, err := client.ReadDaemonJSON(); err == nil && existing != nil && (!portFlagSet || existing.Port == port) && existing.Host == host {
 		if client.IsProcessAlive(existing.PID) {
 			if _, err := client.GetLocalDaemonStatus(); err == nil {
 				fmt.Fprintf(os.Stderr, "borz daemon already running on %s:%d (pid %d)\n", existing.Host, existing.Port, existing.PID)
@@ -940,7 +939,7 @@ func startDaemonForeground(rawArgs []string) {
 			}
 		}
 	}
-	if portRaw == "" && config.Profile() != "" {
+	if !portFlagSet && config.Profile() != "" {
 		if p, err := client.DaemonPortForProfile(); err == nil {
 			port = p
 		}
@@ -1018,7 +1017,7 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 	if cdpHost == "" {
 		cdpHost = "127.0.0.1"
 	}
-	cdpPort, err := parseTCPPort("--cdp-port", getArgValue(rawArgs, "--cdp-port"), 19825)
+	cdpPort, _, err := parseTCPPortFlag(rawArgs, "--cdp-port", 19825)
 	if err != nil {
 		return daemon.ServerOptions{}, err
 	}
@@ -1033,11 +1032,9 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 	}
 
 	port := 19824
-	if v := getArgValue(rawArgs, "--port"); v != "" {
-		p, err := parseTCPPort("--port", v, 19824)
-		if err != nil {
-			return daemon.ServerOptions{}, err
-		}
+	if p, ok, err := parseTCPPortFlag(rawArgs, "--port", 19824); err != nil {
+		return daemon.ServerOptions{}, err
+	} else if ok {
 		port = p
 	} else if v, name := config.EnvWithName("BORZ_SERVER_PORT", "BB_BROWSER_SERVER_PORT"); v != "" {
 		p, err := parseTCPPort(name, v, 19824)
@@ -1071,6 +1068,9 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 func parseTCPPort(name, raw string, fallback int) (int, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
+		if fallback <= 0 {
+			return 0, fmt.Errorf("%s must be a TCP port between 1 and 65535", name)
+		}
 		return fallback, nil
 	}
 	port, err := strconv.Atoi(raw)
@@ -1078,6 +1078,18 @@ func parseTCPPort(name, raw string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be a TCP port between 1 and 65535", name)
 	}
 	return port, nil
+}
+
+func parseTCPPortFlag(args []string, flag string, fallback int) (int, bool, error) {
+	raw, ok := getArgValueOK(args, flag)
+	if !ok {
+		return fallback, false, nil
+	}
+	port, err := parseTCPPort(flag, raw, 0)
+	if err != nil {
+		return 0, true, err
+	}
+	return port, true, nil
 }
 
 // --- Windows service handling ---
