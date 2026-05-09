@@ -30,7 +30,7 @@ Every response carries a short `tab` id (e.g. `ab1c`); pass it as `--tab <id>` (
 ```bash
 borz open <url>                              # reuses tab with same URL; --new forces fresh
 borz open <url> --wait-for '<selector>' [--timeout <ms>]  # block until selector found (10s default)
-borz snapshot [-i] [-c] [-d N]               # accessibility tree with refs
+borz snapshot [-i] [-c] [-d N] [--role role] # accessibility tree with refs
 borz snapshot --text-only                    # reader-mode plain text (no refs)
 borz snapshot --diff                         # only +/-/~ changes since last snapshot of this tab
 borz viewport [mobile|tablet|desktop|WxH|reset]  # responsive viewport emulation
@@ -115,7 +115,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 | POST | `/v1/tabs/select` \| `/tabs/close` | `{tabId?, index?}` |
 | POST | `/v1/open` | `{url, new?, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/back` \| `/forward` \| `/refresh` \| `/close` | `{tab?}` |
-| POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, diff?, tab?}` |
+| POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, role?, diff?, tab?}` |
 | POST | `/v1/screenshot` | `{path?, tab?}` |
 | POST | `/v1/viewport` | `{preset?, width?, height?, dpr?, mobile?, touch?, reset?, tab?}` |
 | POST | `/v1/get` | `{attribute, ref?, tab?}` |

@@ -172,18 +172,20 @@ var commandHelp = map[string]cmdHelp{
 	// --- Observation ---
 	"snapshot": {
 		Summary: "Emit the accessibility tree of the page with [ref=N] handles.",
-		Usage:   "borz snapshot [-i] [-c] [-d N] [-s <selector>] [--text-only] [--diff] [--tab <id>]",
+		Usage:   "borz snapshot [-i] [-c] [-d N] [-s <selector>] [--role <role>] [--text-only] [--diff] [--tab <id>]",
 		Flags: []string{
 			"  -i, --interactive   Include only clickable/fillable elements (much shorter)",
 			"  -c, --compact       Collapse whitespace and redundant nesting",
 			"  -d, --depth N       Limit tree depth to N levels",
-			"  -s, --selector CSS  Snapshot only the subtree matching a CSS selector",
+			"  -s, --selector <s>  Keep nodes whose tag/role/name/xpath/attributes contain <s>",
+			"  --role <role>       Keep only nodes with this exact accessibility role",
 			"  --text-only         Reader-mode plain text (no refs, no tree); good for LLM context",
 			"  --diff              Print only what changed since the previous snapshot of this tab (+/-/~)",
 		},
 		Examples: []string{
 			"  borz snapshot -i -c",
 			"  borz snapshot -d 4 -s '#app'",
+			"  borz snapshot --role button",
 			"  borz snapshot --text-only",
 			"  borz snapshot --diff",
 		},

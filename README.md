@@ -535,8 +535,11 @@ borz snapshot -c
 # Limit tree depth
 borz snapshot -d 3
 
-# Filter by selector/keyword
+# Filter by selector/keyword substring
 borz snapshot -s "search"
+
+# Filter by exact accessibility role
+borz snapshot --role button
 
 # Combine flags
 borz snapshot -i -c

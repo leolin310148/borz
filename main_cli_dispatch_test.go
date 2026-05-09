@@ -230,10 +230,10 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 		},
 		{
 			name:   "snapshot options",
-			args:   []string{"snapshot", "--text", "-i", "-c", "-d", "3", "-s", "main"},
+			args:   []string{"snapshot", "--text", "-i", "-c", "-d", "3", "-s", "main", "--role", "button"},
 			action: protocol.ActionSnapshot,
 			check: func(t *testing.T, req protocol.Request, out string) {
-				if req.Mode != "text" || !req.Interactive || !req.Compact || req.MaxDepth == nil || *req.MaxDepth != 3 || req.Selector != "main" {
+				if req.Mode != "text" || !req.Interactive || !req.Compact || req.MaxDepth == nil || *req.MaxDepth != 3 || req.Selector != "main" || req.Role != "button" {
 					t.Fatalf("snapshot request = %+v", req)
 				}
 				if !strings.Contains(out, "Page snapshot") {

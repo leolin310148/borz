@@ -40,7 +40,7 @@ var cliValueFlags = []string{
 	"--timeout", "--json-arg", "--interval", "--limit", "--title", "--parent",
 	"--filename", "--state", "--name", "--display-name", "--description", "--out",
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
-	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format",
+	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--role",
 	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect", "--ref",
 }
 
@@ -198,6 +198,9 @@ func main() {
 		}
 		if v := getArgValue(args, "--selector"); v != "" {
 			req.Selector = v
+		}
+		if v := getArgValue(args, "--role"); v != "" {
+			req.Role = v
 		}
 		if globalTabID != "" {
 			req.TabID = globalTabID
@@ -1827,7 +1830,7 @@ Interaction:
                                 consts, repeatable)
 
 Observation:
-  snapshot [-i] [-c] [-d N] [-s <sel>] [--text-only] [--diff]
+  snapshot [-i] [-c] [-d N] [-s <sel>] [--role <role>] [--text-only] [--diff]
                                 Get accessibility tree (or reader-mode
                                 plain text with --text-only; --diff shows
                                 changes since the previous snapshot)

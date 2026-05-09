@@ -25,8 +25,8 @@ func TestMainAdditionalDispatchBranches(t *testing.T) {
 		action protocol.ActionType
 		check  func(*testing.T, protocol.Request, string)
 	}{
-		{"snapshot long flags", []string{"--tab", "tab-x", "snapshot", "--depth", "4", "--selector", "main"}, protocol.ActionSnapshot, func(t *testing.T, req protocol.Request, out string) {
-			if req.TabID != "tab-x" || req.MaxDepth == nil || *req.MaxDepth != 4 || req.Selector != "main" {
+		{"snapshot long flags", []string{"--tab", "tab-x", "snapshot", "--depth", "4", "--selector", "main", "--role", "link"}, protocol.ActionSnapshot, func(t *testing.T, req protocol.Request, out string) {
+			if req.TabID != "tab-x" || req.MaxDepth == nil || *req.MaxDepth != 4 || req.Selector != "main" || req.Role != "link" {
 				t.Fatalf("snapshot req = %+v", req)
 			}
 		}},
