@@ -39,6 +39,16 @@ func TestAutoWrapAwait(t *testing.T) {
 			want: "(async () => { return (await foo() +\n  1) })()",
 		},
 		{
+			name: "await inside call arguments is wrapped with return",
+			in:   "JSON.stringify(await foo())",
+			want: "(async () => { return (JSON.stringify(await foo())) })()",
+		},
+		{
+			name: "await inside array literal is wrapped with return",
+			in:   "Promise.all([await first(), await second()])",
+			want: "(async () => { return (Promise.all([await first(), await second()])) })()",
+		},
+		{
 			name: "multi-statement await is wrapped without forced return",
 			in:   "var x = await fetch('/x'); x.status",
 			want: "(async () => { var x = await fetch('/x'); x.status })()",

@@ -66,9 +66,9 @@ func isStatementLike(s string) bool {
 }
 
 // scanTopLevel walks the script ignoring strings, template literals, and
-// comments. It reports whether a top-level (depth 0) `await` keyword is
-// present and whether any top-level `;` or statement-separating newline is
-// present.
+// comments. It reports whether an `await` appears at depth 0 or nested only
+// inside parentheses/brackets, and whether any top-level `;` or
+// statement-separating newline is present.
 func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 	const (
 		stCode = iota
@@ -81,6 +81,7 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 	)
 	state := stCode
 	depth := 0
+	braceDepth := 0
 	regexClass := false
 	var templateExprBase []int
 	i := 0
@@ -113,11 +114,17 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 				regexClass = false
 				i++
 			case c == '(' || c == '{' || c == '[':
+				if c == '{' {
+					braceDepth++
+				}
 				depth++
 				i++
 			case c == ')' || c == '}' || c == ']':
 				if depth > 0 {
 					depth--
+				}
+				if c == '}' && braceDepth > 0 {
+					braceDepth--
 				}
 				i++
 			case depth == 0 && c == ';':
@@ -128,7 +135,7 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 					hasTopSemi = true
 				}
 				i++
-			case depth == 0 && c == 'a' && matchKeyword(src, i, "await"):
+			case braceDepth == 0 && c == 'a' && matchKeyword(src, i, "await"):
 				hasAwait = true
 				i += len("await")
 			default:
