@@ -163,6 +163,23 @@ func TestTabNewHelpMentionsViewportFlags(t *testing.T) {
 	}
 }
 
+func TestViewportHelpMentionsStatusMode(t *testing.T) {
+	out := captureStdout(t, func() {
+		if !printCommandHelp("viewport") {
+			t.Fatal("printCommandHelp should return true for viewport")
+		}
+	})
+	for _, want := range []string{
+		"borz viewport [status|mobile|tablet|desktop|reset|<width>x<height>]",
+		"borz viewport status",
+		"Run without arguments, or with `status`/`current`, to inspect",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("viewport help missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestPrintCommandHelpUnknownFallsBack(t *testing.T) {
 	out := captureStdout(t, func() {
 		if printCommandHelp("notarealcommand") {

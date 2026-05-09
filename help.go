@@ -211,7 +211,7 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"viewport": {
 		Summary: "Inspect or emulate a tab viewport for responsive testing.",
-		Usage:   "borz viewport [mobile|tablet|desktop|reset|<width>x<height>] [--dpr N] [--mobile] [--touch|--no-touch] [--tab <id>]",
+		Usage:   "borz viewport [status|mobile|tablet|desktop|reset|<width>x<height>] [--dpr N] [--mobile] [--touch|--no-touch] [--tab <id>]",
 		Flags: []string{
 			"  --viewport <preset|WxH>  Apply a viewport when used with open/tab new",
 			"  --width <px>             Custom width (overrides preset)",
@@ -222,12 +222,14 @@ var commandHelp = map[string]cmdHelp{
 			"  --reset                  Clear CDP viewport and touch emulation",
 		},
 		Examples: []string{
+			"  borz viewport",
+			"  borz viewport status",
 			"  borz viewport mobile",
 			"  borz viewport 390x844 --dpr 3 --mobile",
 			"  borz open http://localhost:3000 --viewport mobile",
 			"  borz viewport reset",
 		},
-		Notes: "Viewport emulation is per tab and persists across navigations in that tab until reset. It changes layout, so refs from previous snapshots should be treated as stale.",
+		Notes: "Run without arguments, or with `status`/`current`, to inspect the current tab viewport. Viewport emulation is per tab and persists across navigations in that tab until reset. It changes layout, so refs from previous snapshots should be treated as stale.",
 	},
 	"get": {
 		Summary: "Read a single attribute — page-level or from a ref.",
