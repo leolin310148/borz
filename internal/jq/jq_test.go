@@ -410,6 +410,17 @@ func TestApply_NullLiteralSelect(t *testing.T) {
 	}
 }
 
+func TestApply_SelectMissingFieldAsNull(t *testing.T) {
+	data := mustJSON(t, `[{"name":"missing"},{"x":null},{"x":1}]`)
+	got := Apply(data, `.[] | select(.x == null)`)
+	if len(got) != 2 {
+		t.Fatalf("select missing or null = %v, want two matches", got)
+	}
+	if got[0].(map[string]interface{})["name"] != "missing" {
+		t.Fatalf("first match = %v, want missing-field object", got[0])
+	}
+}
+
 func TestParseLiteral(t *testing.T) {
 	cases := []struct {
 		in   string

@@ -61,10 +61,10 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 		var results []interface{}
 		for _, item := range inputs {
 			leftVals := applyExpression([]interface{}{item}, leftExpr)
-			if len(leftVals) == 0 {
-				continue
+			var left interface{}
+			if len(leftVals) > 0 {
+				left = leftVals[0]
 			}
-			left := leftVals[0]
 			if compareValues(left, op, expected) {
 				results = append(results, item)
 			}
