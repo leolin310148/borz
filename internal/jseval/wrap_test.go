@@ -109,6 +109,21 @@ func TestAutoWrapAwait(t *testing.T) {
 			want: "/await/.test(text)",
 		},
 		{
+			name: "await inside template text is ignored",
+			in:   "`await text`",
+			want: "`await text`",
+		},
+		{
+			name: "await inside template substitution is wrapped with return",
+			in:   "`value ${await foo()}`",
+			want: "(async () => { return (`value ${await foo()}`) })()",
+		},
+		{
+			name: "await inside nested template substitution is wrapped with return",
+			in:   "`${`value ${await foo()}`}`",
+			want: "(async () => { return (`${`value ${await foo()}`}`) })()",
+		},
+		{
 			name: "await inside assigned regex literal is ignored",
 			in:   "const re = /aw[ai\\/]t/g",
 			want: "const re = /aw[ai\\/]t/g",

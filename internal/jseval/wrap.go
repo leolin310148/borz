@@ -82,12 +82,17 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 	state := stCode
 	depth := 0
 	regexClass := false
+	var templateExprBase []int
 	i := 0
 	for i < len(src) {
 		c := src[i]
 		switch state {
 		case stCode:
 			switch {
+			case c == '}' && len(templateExprBase) > 0 && depth == templateExprBase[len(templateExprBase)-1]:
+				templateExprBase = templateExprBase[:len(templateExprBase)-1]
+				state = stTemplate
+				i++
 			case c == '"':
 				state = stDouble
 				i++
@@ -157,14 +162,14 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 		case stTemplate:
 			if c == '\\' && i+1 < len(src) {
 				i += 2
+			} else if c == '$' && i+1 < len(src) && src[i+1] == '{' {
+				templateExprBase = append(templateExprBase, depth)
+				state = stCode
+				i += 2
 			} else if c == '`' {
 				state = stCode
 				i++
 			} else {
-				// Note: ${...} substitutions can host arbitrary JS, but await
-				// inside a template at the top level is exotic enough that we
-				// happily ignore it. Returning a false negative here just means
-				// we don't auto-wrap; the user can drop --no-auto-await.
 				i++
 			}
 		case stRegex:
