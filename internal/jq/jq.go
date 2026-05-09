@@ -3,6 +3,7 @@ package jq
 
 import (
 	"encoding/json"
+	"math"
 	"reflect"
 	"regexp"
 	"sort"
@@ -110,6 +111,16 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 				}
 			}
 			results = append(results, obj)
+		}
+		return results
+	}
+
+	// has(key)
+	if strings.HasPrefix(expr, "has(") && strings.HasSuffix(expr, ")") {
+		arg := parseLiteral(expr[len("has(") : len(expr)-1])
+		results := make([]interface{}, len(inputs))
+		for i, item := range inputs {
+			results[i] = hasValue(item, arg)
 		}
 		return results
 	}
@@ -281,6 +292,26 @@ func getField(value interface{}, field string) interface{} {
 func isMissing(value interface{}) bool {
 	_, ok := value.(missingValue)
 	return ok
+}
+
+func hasValue(value interface{}, key interface{}) bool {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		keyString, ok := key.(string)
+		if !ok {
+			return false
+		}
+		_, exists := v[keyString]
+		return exists
+	case []interface{}:
+		idx, ok := numberValue(key)
+		if !ok || idx < 0 || idx >= float64(len(v)) || idx != math.Trunc(idx) {
+			return false
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func parseLiteral(value string) interface{} {

@@ -355,6 +355,47 @@ func TestApply_KeysForArray(t *testing.T) {
 	}
 }
 
+func TestApply_HasObjectKey(t *testing.T) {
+	data := mustJSON(t, `{"present":null,"other":1}`)
+	got := Apply(data, `has("present")`)
+	if !reflect.DeepEqual(got, []interface{}{true}) {
+		t.Fatalf(`has("present") = %v, want [true]`, got)
+	}
+	got = Apply(data, `has("missing")`)
+	if !reflect.DeepEqual(got, []interface{}{false}) {
+		t.Fatalf(`has("missing") = %v, want [false]`, got)
+	}
+}
+
+func TestApply_HasArrayIndex(t *testing.T) {
+	data := mustJSON(t, `["a","b"]`)
+	cases := []struct {
+		expr string
+		want bool
+	}{
+		{`has(0)`, true},
+		{`has(1)`, true},
+		{`has(2)`, false},
+		{`has(-1)`, false},
+		{`has(1.5)`, false},
+		{`has("1")`, false},
+	}
+	for _, c := range cases {
+		got := Apply(data, c.expr)
+		if !reflect.DeepEqual(got, []interface{}{c.want}) {
+			t.Fatalf("%s = %v, want [%v]", c.expr, got, c.want)
+		}
+	}
+}
+
+func TestApply_HasInSelect(t *testing.T) {
+	data := mustJSON(t, `[{"status":200},{"url":"/health"},{"status":404}]`)
+	got := Apply(data, `.[] | select(has("status") == true) | .status`)
+	if !reflect.DeepEqual(got, []interface{}{float64(200), float64(404)}) {
+		t.Fatalf(`select(has("status")) = %v, want [200 404]`, got)
+	}
+}
+
 func TestApply_Length(t *testing.T) {
 	cases := []struct {
 		input string
