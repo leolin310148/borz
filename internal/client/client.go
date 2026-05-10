@@ -765,6 +765,11 @@ func parseCDPEndpointURL(raw string) (host string, port int, ok bool) {
 	if err != nil {
 		return "", 0, false
 	}
+	switch u.Scheme {
+	case "http", "https", "ws", "wss":
+	default:
+		return "", 0, false
+	}
 	host = u.Hostname()
 	portStr := u.Port()
 	if host == "" || portStr == "" {

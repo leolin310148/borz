@@ -874,8 +874,20 @@ func TestParseCDPEndpointURL(t *testing.T) {
 			wantOK:   true,
 		},
 		{
+			name:     "websocket debugger URL",
+			raw:      "ws://127.0.0.1:9222/devtools/browser/abc",
+			wantHost: "127.0.0.1",
+			wantPort: 9222,
+			wantOK:   true,
+		},
+		{
 			name:   "missing port",
 			raw:    "http://localhost/json/version",
+			wantOK: false,
+		},
+		{
+			name:   "unsupported scheme",
+			raw:    "ftp://localhost:9222",
 			wantOK: false,
 		},
 		{
