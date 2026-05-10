@@ -5,7 +5,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/leolin310148/borz/internal/protocol"
 )
@@ -143,33 +142,7 @@ func buildViewportOptions(spec string, rawArgs []string, allowStatus bool) *prot
 }
 
 func parseViewportSize(raw string) (int, int, bool) {
-	raw = strings.TrimSpace(raw)
-	sep, sepWidth := -1, 0
-	for i, r := range raw {
-		if !isViewportSizeSeparator(r) {
-			continue
-		}
-		if sep >= 0 {
-			return 0, 0, false
-		}
-		sep, sepWidth = i, utf8.RuneLen(r)
-	}
-	if sep < 0 {
-		return 0, 0, false
-	}
-	width, err := strconv.Atoi(strings.TrimSpace(raw[:sep]))
-	if err != nil || width <= 0 {
-		return 0, 0, false
-	}
-	height, err := strconv.Atoi(strings.TrimSpace(raw[sep+sepWidth:]))
-	if err != nil || height <= 0 {
-		return 0, 0, false
-	}
-	return width, height, true
-}
-
-func isViewportSizeSeparator(r rune) bool {
-	return r == 'x' || r == 'X' || r == '\u00d7'
+	return protocol.ParseViewportSize(raw)
 }
 
 func parseViewportInt(flag, raw string) int {

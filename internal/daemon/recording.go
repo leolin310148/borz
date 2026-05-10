@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -90,17 +91,23 @@ func (m *recordingManager) Start(opts recorder.CaptureOptions) (RecordingInfo, e
 	if opts.Mode == "client" && m.extHub.Connected() == 0 {
 		return RecordingInfo{}, fmt.Errorf("client recording requires a connected borz extension")
 	}
+	recordingViewport, err := recordingViewportOptions(opts)
+	if err != nil {
+		return RecordingInfo{}, err
+	}
 
 	var target *CdpTargetInfo
 	if opts.Mode == "cdp" {
+		openedWithViewport := false
 		if opts.URL != "" && opts.Tab == "" {
-			resp := DispatchRequest(m.cdp, &protocol.Request{ID: "record-open", Action: protocol.ActionOpen, URL: opts.URL, New: true})
+			resp := DispatchRequest(m.cdp, &protocol.Request{ID: "record-open", Action: protocol.ActionOpen, URL: opts.URL, New: true, Viewport: recordingViewport})
 			if !resp.Success {
 				return RecordingInfo{}, fmt.Errorf("open recording URL: %s", resp.Error)
 			}
 			if resp.Data != nil && resp.Data.TabID != nil {
 				opts.Tab = fmt.Sprintf("%v", resp.Data.TabID)
 			}
+			openedWithViewport = recordingViewport != nil
 		}
 		t, err := m.cdp.EnsurePageTarget(opts.Tab)
 		if err != nil {
@@ -109,6 +116,11 @@ func (m *recordingManager) Start(opts recorder.CaptureOptions) (RecordingInfo, e
 		target = t
 		if opts.URL == "" {
 			opts.URL = target.URL
+		}
+		if recordingViewport != nil && !openedWithViewport {
+			if _, err := applyViewport(m.cdp, target.ID, recordingViewport); err != nil {
+				return RecordingInfo{}, err
+			}
 		}
 	}
 
@@ -145,6 +157,33 @@ func (m *recordingManager) Start(opts recorder.CaptureOptions) (RecordingInfo, e
 		go m.runCDP(ctx, ar)
 	}
 	return ar.snapshotInfo(), nil
+}
+
+func recordingViewportOptions(opts recorder.CaptureOptions) (*protocol.ViewportOptions, error) {
+	spec := strings.TrimSpace(opts.Viewport)
+	if spec == "" {
+		return nil, nil
+	}
+	if math.IsNaN(opts.DPR) || math.IsInf(opts.DPR, 0) || opts.DPR < 0 {
+		return nil, fmt.Errorf("recording viewport dpr must be a positive number")
+	}
+
+	var viewport protocol.ViewportOptions
+	if preset, ok := protocol.ViewportPreset(spec); ok {
+		viewport = preset
+	} else if width, height, ok := protocol.ParseViewportSize(spec); ok {
+		viewport.Width = width
+		viewport.Height = height
+	} else {
+		return nil, fmt.Errorf("recording viewport must be mobile, tablet, desktop, or <width>x<height>")
+	}
+	if opts.DPR > 0 {
+		viewport.DPR = opts.DPR
+	}
+	if viewport.DPR <= 0 {
+		viewport.DPR = 1
+	}
+	return &viewport, nil
 }
 
 func (m *recordingManager) Stop(id string, recoverPartial bool) (RecordingInfo, error) {

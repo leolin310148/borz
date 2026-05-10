@@ -1,6 +1,10 @@
 package protocol
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+	"unicode/utf8"
+)
 
 var canonicalViewportPresetNames = []string{"mobile", "tablet", "desktop"}
 
@@ -30,6 +34,37 @@ func ViewportPreset(name string) (ViewportOptions, bool) {
 // accepted by ViewportPreset but are intentionally omitted here.
 func ViewportPresetNames() []string {
 	return append([]string(nil), canonicalViewportPresetNames...)
+}
+
+// ParseViewportSize parses a CLI-style viewport size, such as "800x600".
+func ParseViewportSize(raw string) (int, int, bool) {
+	raw = strings.TrimSpace(raw)
+	sep, sepWidth := -1, 0
+	for i, r := range raw {
+		if !isViewportSizeSeparator(r) {
+			continue
+		}
+		if sep >= 0 {
+			return 0, 0, false
+		}
+		sep, sepWidth = i, utf8.RuneLen(r)
+	}
+	if sep < 0 {
+		return 0, 0, false
+	}
+	width, err := strconv.Atoi(strings.TrimSpace(raw[:sep]))
+	if err != nil || width <= 0 {
+		return 0, 0, false
+	}
+	height, err := strconv.Atoi(strings.TrimSpace(raw[sep+sepWidth:]))
+	if err != nil || height <= 0 {
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
+func isViewportSizeSeparator(r rune) bool {
+	return r == 'x' || r == 'X' || r == '\u00d7'
 }
 
 func viewportPreset(width, height int, dpr float64, mobile, touch bool) ViewportOptions {

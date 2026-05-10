@@ -78,6 +78,56 @@ func TestRecordingManagerCDPLifecycle(t *testing.T) {
 	}
 }
 
+func TestRecordingManagerAppliesViewportOption(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://example.test", "Example")
+	c := connectCdp(t, f)
+	m := newRecordingManager(c, nil)
+
+	if _, err := m.Start(recorder.CaptureOptions{
+		ID:       "rec-viewport",
+		Mode:     "cdp",
+		Tab:      "T1",
+		Out:      filepath.Join(t.TempDir(), "rec-viewport.borzrec"),
+		Viewport: "800x600",
+		DPR:      2,
+		FPS:      1,
+	}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, err := m.Stop("rec-viewport", false); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	var metrics struct {
+		Width             int     `json:"width"`
+		Height            int     `json:"height"`
+		DeviceScaleFactor float64 `json:"deviceScaleFactor"`
+		Mobile            bool    `json:"mobile"`
+	}
+	var touch struct {
+		Enabled bool `json:"enabled"`
+	}
+	for _, call := range f.Calls() {
+		switch call.Method {
+		case "Emulation.setDeviceMetricsOverride":
+			if err := json.Unmarshal(call.Params, &metrics); err != nil {
+				t.Fatalf("metrics params: %v", err)
+			}
+		case "Emulation.setTouchEmulationEnabled":
+			if err := json.Unmarshal(call.Params, &touch); err != nil {
+				t.Fatalf("touch params: %v", err)
+			}
+		}
+	}
+	if metrics.Width != 800 || metrics.Height != 600 || metrics.DeviceScaleFactor != 2 || metrics.Mobile {
+		t.Fatalf("device metrics = %+v", metrics)
+	}
+	if touch.Enabled {
+		t.Fatalf("touch should remain disabled for custom desktop viewport: %+v", touch)
+	}
+}
+
 func TestRecordingRoutesListInfoRedactAndPreview(t *testing.T) {
 	s := newTestServer(t, "")
 	dir := filepath.Join(t.TempDir(), "route.borzrec")
