@@ -19,7 +19,7 @@ func (s *Server) registerSiteRoutes(mux *http.ServeMux) {
 
 func (s *Server) handleSiteList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+		sendMethodNotAllowed(w, http.MethodGet)
 		return
 	}
 	sites := site.AllSites()
@@ -39,7 +39,7 @@ type siteInfoBody struct {
 
 func (s *Server) handleSiteInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+		sendMethodNotAllowed(w, http.MethodPost)
 		return
 	}
 	raw, err := io.ReadAll(r.Body)
@@ -100,7 +100,7 @@ func (b siteRunBody) tabID() interface{} {
 
 func (s *Server) handleSiteRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
+		sendMethodNotAllowed(w, http.MethodPost)
 		return
 	}
 	raw, err := io.ReadAll(r.Body)

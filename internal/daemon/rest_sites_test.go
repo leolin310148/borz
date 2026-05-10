@@ -102,6 +102,9 @@ func TestRestSites_List_MethodRejected(t *testing.T) {
 	if rec.Code != 405 {
 		t.Fatalf("POST /v1/sites: got %d want 405", rec.Code)
 	}
+	if got := rec.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("POST /v1/sites Allow = %q, want %q", got, http.MethodGet)
+	}
 }
 
 func TestRestSites_Info_Success(t *testing.T) {
@@ -180,6 +183,9 @@ func TestRestSites_Info_MethodRejected(t *testing.T) {
 	if rec.Code != 405 {
 		t.Fatalf("GET /v1/sites/info: got %d want 405", rec.Code)
 	}
+	if got := rec.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("GET /v1/sites/info Allow = %q, want %q", got, http.MethodPost)
+	}
 }
 
 func TestRestSites_Run_NotFound(t *testing.T) {
@@ -232,6 +238,9 @@ func TestRestSites_Run_MethodRejected(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != 405 {
 		t.Fatalf("GET /v1/sites/run: got %d want 405", rec.Code)
+	}
+	if got := rec.Header().Get("Allow"); got != http.MethodPost {
+		t.Fatalf("GET /v1/sites/run Allow = %q, want %q", got, http.MethodPost)
 	}
 }
 
