@@ -180,6 +180,22 @@ func TestHandleNavigate_Success(t *testing.T) {
 	}
 }
 
+func TestHandleNavigate_AppliesViewport(t *testing.T) {
+	cap := capturingSend(t, ok())
+	res, _ := handleNavigate(context.Background(), mkReq(map[string]any{"url": "https://example.com", "preset": "mobile"}))
+	if res.IsError {
+		t.Fatalf("unexpected error: %v", res)
+	}
+	if cap.req.Viewport == nil || cap.req.Viewport.Width != 390 || cap.req.Viewport.Height != 844 || !cap.req.Viewport.Mobile {
+		t.Fatalf("viewport = %+v", cap.req.Viewport)
+	}
+
+	res, _ = handleNavigate(context.Background(), mkReq(map[string]any{"url": "https://example.com", "width": float64(390)}))
+	if !res.IsError {
+		t.Fatal("expected viewport validation error without height")
+	}
+}
+
 func TestHandleNavigate_SendError(t *testing.T) {
 	stubSend(t, func(*protocol.Request) (*protocol.Response, error) {
 		return nil, errors.New("down")
@@ -464,9 +480,12 @@ func TestHandleTabList(t *testing.T) {
 
 func TestHandleTabNew(t *testing.T) {
 	cap := capturingSend(t, ok())
-	_, _ = handleTabNew(context.Background(), mkReq(map[string]any{"url": "https://x"}))
+	_, _ = handleTabNew(context.Background(), mkReq(map[string]any{"url": "https://x", "width": float64(800), "height": float64(600), "dpr": float64(2)}))
 	if cap.req.URL != "https://x" {
 		t.Errorf("url = %q", cap.req.URL)
+	}
+	if cap.req.Viewport == nil || cap.req.Viewport.Width != 800 || cap.req.Viewport.Height != 600 || cap.req.Viewport.DPR != 2 {
+		t.Fatalf("viewport = %+v", cap.req.Viewport)
 	}
 
 	cap = capturingSend(t, ok())

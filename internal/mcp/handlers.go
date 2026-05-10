@@ -78,6 +78,11 @@ func handleNavigate(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 	if r.GetBool("new", false) {
 		req.New = true
 	}
+	opts, validationMsg := viewportOptionsFromMCP(r)
+	if validationMsg != "" {
+		return mcp.NewToolResultError(validationMsg), nil
+	}
+	req.Viewport = opts
 	setTab(req, r)
 	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
@@ -321,9 +326,9 @@ func handleScreenshot(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallTool
 }
 
 func handleViewport(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	opts, msg := viewportOptionsFromMCP(r)
-	if msg != "" {
-		return mcp.NewToolResultError(msg), nil
+	opts, validationMsg := viewportOptionsFromMCP(r)
+	if validationMsg != "" {
+		return mcp.NewToolResultError(validationMsg), nil
 	}
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionViewport, Viewport: opts}
 	setTab(req, r)
@@ -451,6 +456,11 @@ func handleTabNew(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResu
 	if url := r.GetString("url", ""); url != "" {
 		req.URL = url
 	}
+	opts, validationMsg := viewportOptionsFromMCP(r)
+	if validationMsg != "" {
+		return mcp.NewToolResultError(validationMsg), nil
+	}
+	req.Viewport = opts
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil

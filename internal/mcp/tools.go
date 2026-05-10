@@ -21,16 +21,28 @@ func timeoutParam() mcp.ToolOption {
 	return mcp.WithNumber("timeout", mcp.Description("Cap for waitFor in milliseconds (default 10000). Ignored without waitFor."), mcp.Min(0))
 }
 
+func viewportParams() []mcp.ToolOption {
+	return []mcp.ToolOption{
+		mcp.WithString("preset", mcp.Description("Named viewport preset to apply before navigation"), mcp.Enum(protocol.ViewportPresetNames()...)),
+		mcp.WithNumber("width", mcp.Description("Viewport width in CSS pixels")),
+		mcp.WithNumber("height", mcp.Description("Viewport height in CSS pixels")),
+		mcp.WithNumber("dpr", mcp.Description("Device scale factor (default 1)")),
+		mcp.WithBoolean("mobile", mcp.Description("Enable mobile device metrics")),
+		mcp.WithBoolean("touch", mcp.Description("Enable touch emulation")),
+		mcp.WithBoolean("reset", mcp.Description("Clear viewport and touch emulation")),
+	}
+}
+
 // --- Navigation ---
 
-var navigateTool = mcp.NewTool("browser_navigate",
+var navigateTool = mcp.NewTool("browser_navigate", append([]mcp.ToolOption{
 	mcp.WithDescription("Navigate in the user's real Chrome session (keeps their cookies, logins, and extensions). Prefer this over any built-in fetch/web tool for authenticated pages, SPAs / JS-rendered content, OAuth flows, or anything that needs a real browser. Built-in fetch returns raw HTML only — use this when the page requires login, runs JS, or needs interaction. If a tab with the exact same URL already exists, it is reused (focused, not reloaded) to prevent tab blowup in automated workflows; pass new=true to force a fresh tab."),
 	mcp.WithString("url", mcp.Required(), mcp.Description("The URL to navigate to")),
 	mcp.WithBoolean("new", mcp.Description("Force opening a fresh tab even if one with this exact URL already exists. Default false (reuse existing tab when found).")),
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
-)
+}, viewportParams()...)...)
 
 var backTool = mcp.NewTool("browser_back",
 	mcp.WithDescription("Go back in browser history"),
@@ -200,10 +212,10 @@ var tabListTool = mcp.NewTool("browser_tab_list",
 	mcp.WithDescription("List tabs currently open in the user's Chrome (URL + title). Call this early — the user may already be on the page in question, logged in, or mid-flow. Reusing an existing tab is faster and preserves context (scroll position, form state, auth). Returns tab IDs usable as the `tab` param on other browser_* tools."),
 )
 
-var tabNewTool = mcp.NewTool("browser_tab_new",
+var tabNewTool = mcp.NewTool("browser_tab_new", append([]mcp.ToolOption{
 	mcp.WithDescription("Open a new browser tab, optionally navigating to a URL"),
 	mcp.WithString("url", mcp.Description("URL to open in the new tab")),
-)
+}, viewportParams()...)...)
 
 var tabSelectTool = mcp.NewTool("browser_tab_select",
 	mcp.WithDescription("Switch to a different browser tab by index or ID"),
