@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func mustRaw(t *testing.T, v interface{}) json.RawMessage {
@@ -127,6 +128,12 @@ func TestTruncateText(t *testing.T) {
 	}
 	if got := truncateText("this is a long string", 10); got != "this is..." {
 		t.Fatalf("over: got %q", got)
+	}
+	if got := truncateText("台灣測試文字", 5); got != "台灣..." || !utf8.ValidString(got) {
+		t.Fatalf("unicode: got %q (valid=%v), want valid truncated text", got, utf8.ValidString(got))
+	}
+	if got := truncateText("abcdef", 2); got != ".." {
+		t.Fatalf("small max: got %q", got)
 	}
 }
 

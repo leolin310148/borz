@@ -142,10 +142,17 @@ func getName(el rawDomElementNode, nodeMap map[string]json.RawMessage) string {
 }
 
 func truncateText(text string, maxLen int) string {
-	if len(text) <= maxLen {
+	if maxLen <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= maxLen {
 		return text
 	}
-	return text[:maxLen-3] + "..."
+	if maxLen <= 3 {
+		return strings.Repeat(".", maxLen)
+	}
+	return string(runes[:maxLen-3]) + "..."
 }
 
 func matchesSelector(el rawDomElementNode, role, name, selector string) bool {
