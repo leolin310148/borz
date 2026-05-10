@@ -134,6 +134,36 @@ func TestNewID_HexLength(t *testing.T) {
 	}
 }
 
+func TestNewIDFallsBackWhenRandomReaderFails(t *testing.T) {
+	prev := randomReader
+	randomReader = errReader{}
+	fallbackIDCounter.Store(0)
+	t.Cleanup(func() { randomReader = prev })
+
+	id1 := newID()
+	id2 := newID()
+	if id1 == id2 {
+		t.Fatalf("fallback IDs should differ, got %q twice", id1)
+	}
+	for _, id := range []string{id1, id2} {
+		if len(id) != 16 {
+			t.Fatalf("fallback ID length = %d", len(id))
+		}
+		if id == "0000000000000000" {
+			t.Fatalf("fallback ID should not be all zeroes")
+		}
+		if _, err := strconv.ParseUint(id, 16, 64); err != nil {
+			t.Fatalf("fallback ID is not hex: %q", id)
+		}
+	}
+}
+
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) {
+	return 0, os.ErrInvalid
+}
+
 func TestSetTab(t *testing.T) {
 	req := &protocol.Request{}
 	setTab(req, mkReq(map[string]any{"tab": "t1"}))

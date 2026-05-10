@@ -3,11 +3,15 @@ package mcp
 import (
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/leolin310148/borz/internal/client"
@@ -26,9 +30,17 @@ var (
 	siteBuilder = site.BuildEvalRequestWithOptions
 )
 
+var (
+	randomReader      io.Reader = rand.Reader
+	fallbackIDCounter atomic.Uint64
+)
+
 func newID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := io.ReadFull(randomReader, b); err != nil {
+		fallback := uint64(os.Getpid())<<32 ^ fallbackIDCounter.Add(1)
+		binary.BigEndian.PutUint64(b, fallback)
+	}
 	return hex.EncodeToString(b)
 }
 
