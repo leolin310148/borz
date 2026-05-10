@@ -166,6 +166,15 @@ func TestApply_SelectNumeric(t *testing.T) {
 	}
 }
 
+func TestApply_SelectMatchesAnyLeftValue(t *testing.T) {
+	data := mustJSON(t, `[{"id":"a","items":[1,2]},{"id":"b","items":[3]},{"id":"c","items":[2,2]}]`)
+	got := Apply(data, `.[] | select(.items[] == 2) | .id`)
+	want := []interface{}{"a", "c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("select over array values = %v, want %v", got, want)
+	}
+}
+
 func TestApply_SelectStringOrdering(t *testing.T) {
 	data := mustJSON(t, `[{"name":"alpha"},{"name":"beta"},{"name":"gamma"}]`)
 	got := Apply(data, `.[] | select(.name >= "beta")`)
