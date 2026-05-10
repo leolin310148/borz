@@ -118,6 +118,23 @@ func TestReadDaemonJSON_ZeroFields(t *testing.T) {
 	}
 }
 
+func TestReadDaemonJSON_RejectsInvalidPIDAndPort(t *testing.T) {
+	for _, body := range []string{
+		`{"pid":-1,"host":"127.0.0.1","port":19824}`,
+		`{"pid":123,"host":"127.0.0.1","port":-1}`,
+		`{"pid":123,"host":"127.0.0.1","port":65536}`,
+	} {
+		home := t.TempDir()
+		t.Setenv("BORZ_HOME", home)
+		if err := os.WriteFile(filepath.Join(home, "daemon.json"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadDaemonJSON(); err == nil || !strings.Contains(err.Error(), "invalid") {
+			t.Fatalf("ReadDaemonJSON(%s) error = %v, want invalid", body, err)
+		}
+	}
+}
+
 func TestRemoteConfigReadWriteAndToggle(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)

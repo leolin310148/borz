@@ -230,7 +230,7 @@ func ReadDaemonJSON() (*protocol.DaemonInfo, error) {
 	if err := json.Unmarshal(data, &info); err != nil {
 		return nil, err
 	}
-	if info.PID == 0 || info.Host == "" || info.Port == 0 {
+	if info.PID <= 0 || info.Host == "" || info.Port <= 0 || info.Port > 65535 {
 		return nil, fmt.Errorf("invalid daemon.json")
 	}
 	return &info, nil
