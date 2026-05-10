@@ -22,8 +22,11 @@ func TestIsRemoteBind(t *testing.T) {
 		{"LOCALHOST", false},
 		{"::1", false},
 		{"[::1]", false},
+		{"::1%lo0", false},
+		{"[::1%lo0]", false},
 		{"0.0.0.0", true},
 		{"10.0.0.1", true},
+		{"fe80::1%en0", true},
 		{"example.com", true},
 		{"", true},
 	} {

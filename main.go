@@ -1194,6 +1194,9 @@ func isRemoteBind(host string) bool {
 	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
 		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
 	}
+	if i := strings.LastIndex(host, "%"); i >= 0 {
+		host = host[:i]
+	}
 	ip := net.ParseIP(host)
 	return ip == nil || !ip.IsLoopback()
 }
