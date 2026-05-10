@@ -187,7 +187,7 @@ func TestViewportHelpMentionsStatusMode(t *testing.T) {
 		}
 	})
 	for _, want := range []string{
-		"borz viewport [status|mobile|tablet|desktop|reset|<width>x<height>]",
+		"borz viewport [status|current|mobile|tablet|desktop|reset|<width>x<height>]",
 		"borz viewport status",
 		"Run without arguments, or with `status`/`current`, to inspect",
 	} {

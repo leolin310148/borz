@@ -211,7 +211,7 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"viewport": {
 		Summary: "Inspect or emulate a tab viewport for responsive testing.",
-		Usage:   "borz viewport [status|mobile|tablet|desktop|reset|<width>x<height>] [--dpr N] [--mobile] [--touch|--no-touch] [--tab <id>]",
+		Usage:   "borz viewport [status|current|mobile|tablet|desktop|reset|<width>x<height>] [--dpr N] [--mobile] [--touch|--no-touch] [--tab <id>]",
 		Flags: []string{
 			"  --viewport <preset|WxH>  Apply a viewport when used with open/tab new",
 			"  --width <px>             Custom width (overrides preset)",

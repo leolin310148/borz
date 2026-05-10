@@ -1847,7 +1847,7 @@ Observation:
                                 plain text with --text-only; --diff shows
                                 changes since the previous snapshot)
   screenshot [path]             Take screenshot (path saves on the CLI host)
-  viewport [mobile|tablet|desktop|WxH|reset]
+  viewport [status|current|mobile|tablet|desktop|WxH|reset]
                                 Inspect or emulate viewport for responsive UI
   get <attribute> [ref]         Get element attribute
   network [requests|clear] [--tail]
