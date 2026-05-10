@@ -351,6 +351,8 @@ func TestHttpJSONHTTPErrorFormatsBody(t *testing.T) {
 		want       string
 	}{
 		{name: "trimmed body", statusCode: http.StatusUnauthorized, body: "\n denied \t", want: "borz HTTP 401: denied"},
+		{name: "json error", statusCode: http.StatusUnauthorized, body: `{"error":"Unauthorized"}`, want: "borz HTTP 401: Unauthorized"},
+		{name: "json message", statusCode: http.StatusBadGateway, body: `{"message":"upstream failed"}`, want: "borz HTTP 502: upstream failed"},
 		{name: "empty body", statusCode: http.StatusNotFound, body: " \n ", want: "borz HTTP 404: Not Found"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

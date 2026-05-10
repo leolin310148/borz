@@ -288,6 +288,9 @@ func httpJSONEndpoint(method, baseURL, token, urlPath string, body interface{}, 
 
 func formatHTTPError(statusCode int, status string, body []byte) error {
 	message := strings.TrimSpace(string(body))
+	if extracted := jsonErrorMessage(body); extracted != "" {
+		message = extracted
+	}
 	if message == "" {
 		message = http.StatusText(statusCode)
 	}
@@ -295,6 +298,20 @@ func formatHTTPError(statusCode int, status string, body []byte) error {
 		message = status
 	}
 	return fmt.Errorf("borz HTTP %d: %s", statusCode, message)
+}
+
+func jsonErrorMessage(body []byte) string {
+	var payload struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	if message := strings.TrimSpace(payload.Error); message != "" {
+		return message
+	}
+	return strings.TrimSpace(payload.Message)
 }
 
 // httpJSON sends an HTTP request to the local daemon and returns the raw JSON
