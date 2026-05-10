@@ -283,9 +283,41 @@ func TestProfileRuntimePaths(t *testing.T) {
 		t.Fatalf("default profile did not reset: profile=%q daemon=%q", Profile(), DaemonJSONPath())
 	}
 
+}
+
+func TestSetProfileTrimsNameAndDefault(t *testing.T) {
+	t.Cleanup(func() { _ = SetProfile("") })
+
+	if err := SetProfile(" work "); err != nil {
+		t.Fatal(err)
+	}
+	if got := Profile(); got != "work" {
+		t.Fatalf("Profile = %q, want work", got)
+	}
+
+	for _, name := range []string{" default ", " \t\n "} {
+		if err := SetProfile(name); err != nil {
+			t.Fatalf("SetProfile(%q): %v", name, err)
+		}
+		if got := Profile(); got != "" {
+			t.Fatalf("Profile after SetProfile(%q) = %q, want default profile", name, got)
+		}
+	}
+}
+
+func TestSetProfileRejectsPathSegments(t *testing.T) {
+	t.Cleanup(func() { _ = SetProfile("") })
+
+	if err := SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, bad := range []string{"../x", "a/b", `a\b`, ".", ".."} {
 		if err := SetProfile(bad); err == nil {
 			t.Fatalf("SetProfile(%q) succeeded, want error", bad)
+		}
+		if got := Profile(); got != "work" {
+			t.Fatalf("Profile after rejected SetProfile(%q) = %q, want unchanged profile", bad, got)
 		}
 	}
 }
