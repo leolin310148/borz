@@ -228,6 +228,7 @@ func (ts *TabState) GetNetworkRequests(opts QueryOptions) QueryResult[protocol.N
 	threshold := ts.sinceThreshold(opts.Since)
 	ts.mu.RUnlock()
 	method := strings.TrimSpace(opts.Method)
+	status := strings.TrimSpace(opts.Status)
 
 	return queryEvents(items, threshold, opts.Limit, func(item protocol.NetworkRequestInfo) int {
 		return item.Seq
@@ -238,8 +239,8 @@ func (ts *TabState) GetNetworkRequests(opts QueryOptions) QueryResult[protocol.N
 		if method != "" && !strings.EqualFold(item.Method, method) {
 			return false
 		}
-		if opts.Status != "" {
-			if !matchStatus(item.Status, opts.Status) {
+		if status != "" {
+			if !matchStatus(item.Status, status) {
 				return false
 			}
 		}

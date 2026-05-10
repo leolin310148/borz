@@ -212,6 +212,10 @@ func TestTabState_GetNetworkRequests_Filters(t *testing.T) {
 	if len(res.Items) != 0 {
 		t.Fatalf("status invalid pattern: got %+v", res.Items)
 	}
+	res = tab.GetNetworkRequests(QueryOptions{Status: "   "})
+	if len(res.Items) != 4 {
+		t.Fatalf("blank status filter: got %d want 4", len(res.Items))
+	}
 
 	// Since: int threshold excludes earlier seqs.
 	res = tab.GetNetworkRequests(QueryOptions{Since: 2})
