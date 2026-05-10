@@ -1253,6 +1253,9 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		if req.Ms != nil {
 			ms = *req.Ms
 		}
+		if ms < 0 {
+			return failResp(req.ID, "wait ms must be a non-negative integer")
+		}
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 		return okResp(req.ID, &protocol.ResponseData{Tab: shortID})
 

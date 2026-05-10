@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -300,6 +301,24 @@ func TestApplyCLIWaitForTrimsSelector(t *testing.T) {
 	applyCLIWaitFor(req, []string{"open", "https://example.test", "--wait-for", " .ready "})
 	if req.WaitFor != ".ready" {
 		t.Fatalf("waitFor = %q, want .ready", req.WaitFor)
+	}
+}
+
+func TestMainWaitRejectsInvalidDuration(t *testing.T) {
+	for _, arg := range []string{"abc", "-1"} {
+		t.Run(arg, func(t *testing.T) {
+			errOut := captureStderr(t, func() {
+				expectExit(t, 1, func() {
+					oldArgs := os.Args
+					os.Args = []string{"borz", "wait", arg}
+					defer func() { os.Args = oldArgs }()
+					main()
+				})
+			})
+			if !strings.Contains(errOut, "wait requires a non-negative integer") {
+				t.Fatalf("stderr = %q", errOut)
+			}
+		})
 	}
 }
 

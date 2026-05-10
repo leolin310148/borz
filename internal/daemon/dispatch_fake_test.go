@@ -490,6 +490,21 @@ func TestDispatch_Wait(t *testing.T) {
 	}
 }
 
+func TestDispatch_WaitRejectsNegativeDuration(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	c := connectCdp(t, f)
+
+	ms := -1
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionWait, Ms: &ms})
+	if resp.Success {
+		t.Fatalf("negative wait succeeded: %+v", resp)
+	}
+	if !strings.Contains(resp.Error, "non-negative integer") {
+		t.Fatalf("negative wait error = %q", resp.Error)
+	}
+}
+
 func TestDispatch_Eval(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")

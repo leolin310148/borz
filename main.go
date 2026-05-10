@@ -434,8 +434,10 @@ func main() {
 	case "wait":
 		ms := 1000
 		if len(cmdArgs) > 0 {
-			if m, err := strconv.Atoi(cmdArgs[0]); err == nil {
+			if m, err := strconv.Atoi(strings.TrimSpace(cmdArgs[0])); err == nil && m >= 0 {
 				ms = m
+			} else {
+				fatal("wait requires a non-negative integer (ms)")
 			}
 		}
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionWait, Ms: &ms}
