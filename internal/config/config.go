@@ -64,8 +64,8 @@ func SetProfile(name string) error {
 		activeProfile = ""
 		return nil
 	}
-	if strings.ContainsAny(name, `/\`) || filepath.Base(name) != name || name == "." || name == ".." || filepath.IsAbs(name) {
-		return fmt.Errorf("profile name must be a single path segment")
+	if strings.ContainsAny(name, `/\<>:"|?*`) || filepath.Base(name) != name || name == "." || name == ".." || filepath.IsAbs(name) {
+		return fmt.Errorf("profile name must be a portable single path segment")
 	}
 	activeProfile = name
 	return nil
