@@ -211,6 +211,9 @@ func normalizeServerURL(raw string) (string, error) {
 	if u.Host == "" {
 		return "", fmt.Errorf("server URL must include a host")
 	}
+	if u.User != nil {
+		return "", fmt.Errorf("server URL must not include user info")
+	}
 	u.RawQuery = ""
 	u.Fragment = ""
 	u.Path = strings.TrimRight(u.Path, "/")
