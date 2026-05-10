@@ -80,6 +80,9 @@ func decodeViewportInfo(raw json.RawMessage) (*protocol.ViewportInfo, error) {
 	if err := json.Unmarshal(raw, &encoded); err != nil {
 		return nil, fmt.Errorf("decode viewport info: %w", err)
 	}
+	if rawJSONFirstByte([]byte(encoded)) != '{' {
+		return nil, fmt.Errorf("decode viewport info: expected object or encoded object")
+	}
 	if err := json.Unmarshal([]byte(encoded), &info); err != nil {
 		return nil, fmt.Errorf("decode encoded viewport info: %w", err)
 	}

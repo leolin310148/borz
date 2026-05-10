@@ -39,3 +39,17 @@ func TestDecodeViewportInfo_RejectsNull(t *testing.T) {
 		t.Fatalf("error = %q", err)
 	}
 }
+
+func TestDecodeViewportInfo_RejectsEncodedNull(t *testing.T) {
+	raw, err := json.Marshal(`null`)
+	if err != nil {
+		t.Fatalf("marshal encoded null: %v", err)
+	}
+	_, err = decodeViewportInfo(raw)
+	if err == nil {
+		t.Fatal("expected encoded null viewport decode to fail")
+	}
+	if !strings.Contains(err.Error(), "decode viewport info") {
+		t.Fatalf("error = %q", err)
+	}
+}
