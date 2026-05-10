@@ -730,7 +730,7 @@ func DiscoverCDPPort() (*CDPEndpoint, error) {
 
 	// Priority 2: Managed browser port file
 	if data, err := os.ReadFile(config.ManagedPortFile()); err == nil {
-		if port, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && port > 0 {
+		if port, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && port > 0 && port <= 65535 {
 			if canConnect("127.0.0.1", port) {
 				return &CDPEndpoint{Host: "127.0.0.1", Port: port}, nil
 			}

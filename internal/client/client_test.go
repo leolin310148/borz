@@ -823,6 +823,46 @@ func TestDiscoverCDPPort_ManagedPortFile(t *testing.T) {
 	}
 }
 
+func TestDiscoverCDPPort_IgnoresOutOfRangeManagedPortFile(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	t.Setenv("BORZ_CDP_URL", "")
+	if err := config.SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(config.ManagedBrowserDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.ManagedPortFile(), []byte("70000"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldCanConnect := canConnect
+	oldFinder := browserExecutableFinder
+	var attemptedPorts []int
+	canConnect = func(host string, port int) bool {
+		attemptedPorts = append(attemptedPorts, port)
+		return false
+	}
+	browserExecutableFinder = func() string { return "" }
+	t.Cleanup(func() {
+		canConnect = oldCanConnect
+		browserExecutableFinder = oldFinder
+	})
+
+	if _, err := DiscoverCDPPort(); err == nil {
+		t.Fatal("DiscoverCDPPort succeeded with only an invalid managed port")
+	}
+	for _, port := range attemptedPorts {
+		if port == 70000 {
+			t.Fatalf("attempted to connect to invalid managed port: %v", attemptedPorts)
+		}
+	}
+}
+
 func TestDiscoverCDPPort_NamedProfileUsesProfileState(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
