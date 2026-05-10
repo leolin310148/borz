@@ -21,6 +21,7 @@ func TestHelpRequested(t *testing.T) {
 		{"--help as subcommand arg", []string{"click"}, []string{"--help"}, true},
 		{"--help as flag value", []string{"eval", "--json-arg", "--help", "flag"}, []string{"flag"}, false},
 		{"-h as flag value", []string{"open", "--wait-for", "-h", "https://example.com"}, []string{"https://example.com"}, false},
+		{"-h as timeout value", []string{"open", "--timeout", "-h", "https://example.com"}, []string{"https://example.com"}, false},
 		{"help token mid-args does not count",
 			[]string{"eval", "window.helping"}, []string{"window.helping"}, false},
 	} {
@@ -34,7 +35,7 @@ func TestHelpRequested(t *testing.T) {
 }
 
 func TestFlagConsumesNextArg(t *testing.T) {
-	for _, flag := range []string{"--json-arg", "--wait-for", "--profile", "--ref", "-d", "-s", "--role"} {
+	for _, flag := range []string{"--json-arg", "--wait-for", "--timeout", "--profile", "--ref", "-d", "-s", "--role"} {
 		if !flagConsumesNextArg(flag) {
 			t.Errorf("flagConsumesNextArg(%q) = false, want true", flag)
 		}
