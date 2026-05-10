@@ -153,6 +153,28 @@ func TestLatestRelease(t *testing.T) {
 	}
 }
 
+func TestLatestReleaseFromTrimsBaseURLTrailingSlash(t *testing.T) {
+	const wantPath = "/repos/owner/repo/releases/latest"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != wantPath {
+			t.Errorf("request path = %q, want %q", r.URL.Path, wantPath)
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"tag_name":"v0.5.0","assets":[]}`)
+	}))
+	defer srv.Close()
+
+	rel, err := LatestReleaseFrom(context.Background(), srv.URL+"/", "owner/repo", http.DefaultClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v0.5.0" {
+		t.Fatalf("TagName = %q, want v0.5.0", rel.TagName)
+	}
+}
+
 type rewriteTransport struct {
 	base   http.RoundTripper
 	target string

@@ -148,6 +148,7 @@ func LatestReleaseFrom(ctx context.Context, baseURL, repo string, client *http.C
 	if baseURL == "" {
 		baseURL = "https://api.github.com"
 	}
+	baseURL = strings.TrimRight(baseURL, "/")
 	url := fmt.Sprintf("%s/repos/%s/releases/latest", baseURL, repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
