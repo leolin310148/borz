@@ -76,8 +76,11 @@ func main() {
 	}
 
 	// Parse global flags
-	profileName := getArgValue(args, "--profile")
-	if profileName == "" {
+	profileName, profileFlagSet := getArgValueOK(args, "--profile")
+	if profileFlagSet && strings.TrimSpace(profileName) == "" {
+		fatal("--profile requires a non-empty value")
+	}
+	if !profileFlagSet {
 		profileName = config.Env("BORZ_PROFILE", "BB_BROWSER_PROFILE")
 	}
 	if err := config.SetProfile(profileName); err != nil {

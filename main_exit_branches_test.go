@@ -52,6 +52,16 @@ func TestExitBackedFatalBranches(t *testing.T) {
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
+	for _, args := range [][]string{{"--profile"}, {"--profile="}, {"--profile", "--json"}} {
+		t.Run("missing profile value "+strings.Join(args, "-"), func(t *testing.T) {
+			errOut := captureStderr(t, func() {
+				expectExit(t, 1, func() { runMainArgsForExit(args...) })
+			})
+			if !strings.Contains(errOut, "--profile requires a non-empty value") {
+				t.Fatalf("stderr = %q", errOut)
+			}
+		})
+	}
 
 	for _, tc := range []struct {
 		name string
