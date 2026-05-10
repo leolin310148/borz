@@ -186,6 +186,22 @@ func TestApply_SelectStringOrdering(t *testing.T) {
 	}
 }
 
+func TestApply_SelectQuotedFieldWithComparatorCharacter(t *testing.T) {
+	data := mustJSON(t, `[{"a>b":1,"id":"match"},{"a>b":0,"id":"skip"}]`)
+	got := Apply(data, `.[] | select(.["a>b"] == 1) | .id`)
+	if !reflect.DeepEqual(got, []interface{}{"match"}) {
+		t.Fatalf(`select .["a>b"] = %v, want [match]`, got)
+	}
+}
+
+func TestApply_SelectQuotedLiteralWithComparatorCharacter(t *testing.T) {
+	data := mustJSON(t, `[{"url":"https://example.test?a>=1","id":"match"},{"url":"other","id":"skip"}]`)
+	got := Apply(data, `.[] | select(.url == "https://example.test?a>=1") | .id`)
+	if !reflect.DeepEqual(got, []interface{}{"match"}) {
+		t.Fatalf("select quoted comparator literal = %v, want [match]", got)
+	}
+}
+
 func TestApply_SelectBoolean(t *testing.T) {
 	data := mustJSON(t, `[{"ok":true},{"ok":false}]`)
 	got := Apply(data, `.[] | select(.ok == true)`)

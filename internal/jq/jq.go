@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	selectExprRegexp = regexp.MustCompile(`^select\((.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)\)$`)
 	arrayIndexRegexp = regexp.MustCompile(`^\[(-?\d+)\]`)
 	fieldNameRegexp  = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)`)
 )
@@ -50,13 +49,10 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 
 	// select(...)
 	if strings.HasPrefix(expr, "select(") {
-		matches := selectExprRegexp.FindStringSubmatch(expr)
-		if matches == nil {
+		leftExpr, op, rightExpr, ok := parseSelectComparison(expr)
+		if !ok {
 			return inputs
 		}
-		leftExpr := matches[1]
-		op := matches[2]
-		rightExpr := matches[3]
 		expected := parseLiteral(rightExpr)
 
 		var results []interface{}
@@ -338,6 +334,66 @@ func parseJSONLiteral(value string) (interface{}, bool) {
 		return nil, false
 	}
 	return parsed, true
+}
+
+func parseSelectComparison(expr string) (string, string, string, bool) {
+	if !strings.HasPrefix(expr, "select(") || !strings.HasSuffix(expr, ")") {
+		return "", "", "", false
+	}
+	body := strings.TrimSpace(expr[len("select(") : len(expr)-1])
+	idx, op := indexTopLevelComparator(body)
+	if idx < 0 {
+		return "", "", "", false
+	}
+	left := strings.TrimSpace(body[:idx])
+	right := strings.TrimSpace(body[idx+len(op):])
+	if left == "" || right == "" {
+		return "", "", "", false
+	}
+	return left, op, right, true
+}
+
+func indexTopLevelComparator(input string) (int, string) {
+	depth := 0
+	inString := false
+	escapeNext := false
+	operators := []string{"==", "!=", ">=", "<=", ">", "<"}
+
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		if inString {
+			if escapeNext {
+				escapeNext = false
+				continue
+			}
+			if ch == '\\' {
+				escapeNext = true
+				continue
+			}
+			if ch == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '"':
+			inString = true
+		case '{', '(', '[':
+			depth++
+		case '}', ')', ']':
+			depth--
+		default:
+			if depth == 0 {
+				for _, op := range operators {
+					if strings.HasPrefix(input[i:], op) {
+						return i, op
+					}
+				}
+			}
+		}
+	}
+	return -1, ""
 }
 
 func compareValues(left interface{}, op string, right interface{}) bool {
