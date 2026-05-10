@@ -65,7 +65,7 @@ func SetProfile(name string) error {
 		activeProfile = ""
 		return nil
 	}
-	if strings.ContainsAny(name, `/\<>:"|?*`) || strings.ContainsFunc(name, unicode.IsControl) || filepath.Base(name) != name || name == "." || name == ".." || filepath.IsAbs(name) {
+	if strings.ContainsAny(name, `/\<>:"|?*`) || strings.ContainsFunc(name, unicode.IsControl) || filepath.Base(name) != name || name == "." || name == ".." || filepath.IsAbs(name) || isWindowsReservedName(name) {
 		return fmt.Errorf("profile name must be a portable single path segment")
 	}
 	activeProfile = name
@@ -77,6 +77,20 @@ func Profile() string {
 	profileMu.RLock()
 	defer profileMu.RUnlock()
 	return activeProfile
+}
+
+func isWindowsReservedName(name string) bool {
+	base, _, _ := strings.Cut(name, ".")
+	switch strings.ToUpper(base) {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	case "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9":
+		return true
+	case "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+		return true
+	default:
+		return false
+	}
 }
 
 // HomeDir returns the borz home directory. For read paths, it prefers ~/.borz

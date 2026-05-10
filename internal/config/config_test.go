@@ -322,6 +322,23 @@ func TestSetProfileRejectsPathSegments(t *testing.T) {
 	}
 }
 
+func TestSetProfileRejectsWindowsReservedNames(t *testing.T) {
+	t.Cleanup(func() { _ = SetProfile("") })
+
+	if err := SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, bad := range []string{"CON", "prn", "AUX.log", "nul", "COM1", "com9.dev", "LPT1", "lpt9.profile"} {
+		if err := SetProfile(bad); err == nil {
+			t.Fatalf("SetProfile(%q) succeeded, want error", bad)
+		}
+		if got := Profile(); got != "work" {
+			t.Fatalf("Profile after rejected SetProfile(%q) = %q, want unchanged profile", bad, got)
+		}
+	}
+}
+
 func TestProfileConcurrentAccess(t *testing.T) {
 	t.Cleanup(func() { _ = SetProfile("") })
 	t.Setenv("BORZ_HOME", "/tmp/borz")
