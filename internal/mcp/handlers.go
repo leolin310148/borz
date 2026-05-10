@@ -749,7 +749,7 @@ func handleBookmarks(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolR
 		raw, err := client.PostJSON("/v1/bookmarks/remove", map[string]interface{}{"id": id, "recursive": r.GetBool("recursive", false)}, 15*time.Second)
 		return rawToolResult(raw, err), nil
 	default:
-		return mcp.NewToolResultError("unknown bookmarks command"), nil
+		return mcp.NewToolResultError(unknownMCPCommand("bookmarks", cmd, "tree", "search", "create", "update", "remove")), nil
 	}
 }
 
@@ -772,7 +772,7 @@ func handleBrowserHistory(ctx context.Context, r mcp.CallToolRequest) (*mcp.Call
 		raw, err := client.PostJSON("/v1/browser-history/delete-url", map[string]interface{}{"url": u}, 15*time.Second)
 		return rawToolResult(raw, err), nil
 	default:
-		return mcp.NewToolResultError("unknown browser_history command"), nil
+		return mcp.NewToolResultError(unknownMCPCommand("browser_history", cmd, "search", "deleteUrl")), nil
 	}
 }
 
@@ -828,7 +828,7 @@ func handleDownloads(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolR
 		raw, err := client.PostJSON("/v1/downloads/show-default-folder", map[string]interface{}{}, 15*time.Second)
 		return rawToolResult(raw, err), nil
 	default:
-		return mcp.NewToolResultError("unknown downloads command"), nil
+		return mcp.NewToolResultError(unknownMCPCommand("downloads", cmd, "list", "search", "start", "erase", "cancel", "pause", "resume", "show", "showFolder")), nil
 	}
 }
 
@@ -860,8 +860,16 @@ func handleWindows(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRes
 		raw, err := client.PostJSON("/v1/windows/close", map[string]interface{}{"id": id}, 15*time.Second)
 		return rawToolResult(raw, err), nil
 	default:
-		return mcp.NewToolResultError("unknown windows command"), nil
+		return mcp.NewToolResultError(unknownMCPCommand("windows", cmd, "list", "new", "focus", "close")), nil
 	}
+}
+
+func unknownMCPCommand(tool, got string, valid ...string) string {
+	msg := fmt.Sprintf("unknown %s command: %s", tool, got)
+	if len(valid) > 0 {
+		msg += ". Valid commands: " + strings.Join(valid, ", ")
+	}
+	return msg
 }
 
 func rawToolResult(raw json.RawMessage, err error) *mcp.CallToolResult {

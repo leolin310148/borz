@@ -971,15 +971,15 @@ func TestExtensionBridgeHandlers_ValidationErrors(t *testing.T) {
 		{"bookmarks update missing id", handleBookmarks, map[string]any{"command": "update", "title": "x"}, "id is required"},
 		{"bookmarks update no changes", handleBookmarks, map[string]any{"command": "update", "id": "b1"}, "title or url is required"},
 		{"bookmarks remove missing id", handleBookmarks, map[string]any{"command": "remove"}, "id is required"},
-		{"bookmarks unknown", handleBookmarks, map[string]any{"command": "bad"}, "unknown bookmarks command"},
+		{"bookmarks unknown", handleBookmarks, map[string]any{"command": "bad"}, "unknown bookmarks command: bad. Valid commands: tree, search, create, update, remove"},
 		{"history delete missing url", handleBrowserHistory, map[string]any{"command": "deleteUrl"}, "url is required"},
-		{"history unknown", handleBrowserHistory, map[string]any{"command": "bad"}, "unknown browser_history command"},
+		{"history unknown", handleBrowserHistory, map[string]any{"command": "bad"}, "unknown browser_history command: bad. Valid commands: search, deleteUrl"},
 		{"downloads start missing url", handleDownloads, map[string]any{"command": "start"}, "url is required"},
 		{"downloads action missing id", handleDownloads, map[string]any{"command": "cancel"}, "id is required"},
-		{"downloads unknown", handleDownloads, map[string]any{"command": "bad"}, "unknown downloads command"},
+		{"downloads unknown", handleDownloads, map[string]any{"command": "bad"}, "unknown downloads command: bad. Valid commands: list, search, start, erase, cancel, pause, resume, show, showFolder"},
 		{"windows focus missing id", handleWindows, map[string]any{"command": "focus"}, "id is required"},
 		{"windows close missing id", handleWindows, map[string]any{"command": "close"}, "id is required"},
-		{"windows unknown", handleWindows, map[string]any{"command": "bad"}, "unknown windows command"},
+		{"windows unknown", handleWindows, map[string]any{"command": "bad"}, "unknown windows command: bad. Valid commands: list, new, focus, close"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
