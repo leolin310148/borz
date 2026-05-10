@@ -111,10 +111,17 @@ type extCookie struct {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	if n <= 0 {
+		if s == "" {
+			return ""
+		}
+		return "…"
+	}
+	runes := []rune(s)
+	if len(runes) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	return string(runes[:n]) + "…"
 }
 
 // handleTabEvents implements `borz tab events [--tail] [--since N]`.

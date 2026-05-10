@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/protocol"
@@ -47,6 +48,12 @@ func TestTruncate(t *testing.T) {
 	}
 	if got := truncate("abcdef", 3); got != "abc…" {
 		t.Errorf("long: got %q", got)
+	}
+	if got := truncate("台灣測試", 2); got != "台灣…" || !utf8.ValidString(got) {
+		t.Errorf("unicode: got %q", got)
+	}
+	if got := truncate("abc", 0); got != "…" {
+		t.Errorf("zero limit: got %q", got)
 	}
 }
 
