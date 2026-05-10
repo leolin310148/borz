@@ -28,6 +28,9 @@ func ParseJSONArgs(specs []string) ([]JSONArg, error) {
 		name := strings.TrimSpace(raw[:eq])
 		value := strings.TrimSpace(raw[eq+1:])
 		if !isValidIdent(name) {
+			if isReservedWord(name) {
+				return nil, fmt.Errorf("--json-arg %q: %q cannot be used as a JSON arg name", raw, name)
+			}
 			return nil, fmt.Errorf("--json-arg %q: %q is not a valid identifier", raw, name)
 		}
 		if seen[name] {
