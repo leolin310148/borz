@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -350,6 +352,40 @@ func TestTabState_Clear(t *testing.T) {
 	if len(tab.GetJSErrors(QueryOptions{}).Items) != 0 {
 		t.Fatal("ClearErrors did not empty ring")
 	}
+}
+
+func TestTabState_ConcurrentEventAccess(t *testing.T) {
+	m := NewTabStateManager()
+	tab := m.AddTab("t1")
+
+	var wg sync.WaitGroup
+	for worker := 0; worker < 8; worker++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			for i := 0; i < 50; i++ {
+				requestID := fmt.Sprintf("r-%d-%d", worker, i)
+				tab.AddNetworkRequest(requestID, protocol.NetworkRequestInfo{URL: "https://example.test", Method: "GET"})
+				tab.UpdateNetworkResponse(requestID, intP(200), "OK", nil, "")
+				tab.UpdateNetworkFailure(requestID, "net::ERR_FAILED")
+				tab.AddConsoleMessage(protocol.ConsoleMessageInfo{Text: requestID})
+				tab.AddJSError(protocol.JSErrorInfo{Message: requestID})
+				tab.RecordAction()
+
+				_ = tab.GetNetworkRequests(QueryOptions{Limit: 5})
+				_ = tab.GetConsoleMessages(QueryOptions{Limit: 5})
+				_ = tab.GetJSErrors(QueryOptions{Limit: 5})
+				_, _, _ = tab.EventCounts()
+				_ = tab.LastActionSequence()
+
+				if i%20 == 0 {
+					tab.ClearConsole()
+					tab.ClearErrors()
+				}
+			}
+		}(worker)
+	}
+	wg.Wait()
 }
 
 func TestMatchStatus(t *testing.T) {

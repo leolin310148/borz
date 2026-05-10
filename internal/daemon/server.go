@@ -308,13 +308,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	allTabs := s.cdp.TabManager.AllTabs()
 	tabs := make([]map[string]interface{}, 0, len(allTabs))
 	for _, tab := range allTabs {
+		networkRequests, consoleMessages, jsErrors := tab.EventCounts()
 		tabs = append(tabs, map[string]interface{}{
 			"shortId":         tab.ShortID,
 			"targetId":        tab.TargetID,
-			"networkRequests": tab.NetworkRequests.Size(),
-			"consoleMessages": tab.ConsoleMessages.Size(),
-			"jsErrors":        tab.JSErrors.Size(),
-			"lastActionSeq":   tab.LastActionSeq,
+			"networkRequests": networkRequests,
+			"consoleMessages": consoleMessages,
+			"jsErrors":        jsErrors,
+			"lastActionSeq":   tab.LastActionSequence(),
 		})
 	}
 

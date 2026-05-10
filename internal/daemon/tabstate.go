@@ -22,6 +22,8 @@ type TabState struct {
 	TargetID string
 	ShortID  string
 
+	mu sync.RWMutex
+
 	NetworkRequests *RingBuffer[protocol.NetworkRequestInfo]
 	ConsoleMessages *RingBuffer[protocol.ConsoleMessageInfo]
 	JSErrors        *RingBuffer[protocol.JSErrorInfo]
@@ -75,8 +77,10 @@ func newTabState(targetID, shortID string, nextSeq func() int) *TabState {
 
 // RecordAction increments global seq and records it as this tab's last action.
 func (ts *TabState) RecordAction() int {
+	ts.mu.Lock()
 	seq := ts.nextSeq()
 	ts.LastActionSeq = seq
+	ts.mu.Unlock()
 	ts.lastActionUnixNano.Store(time.Now().UnixNano())
 	return seq
 }
@@ -97,8 +101,24 @@ func (ts *TabState) IdleSince() time.Time {
 	return ts.CreatedAt
 }
 
+// LastActionSequence returns the last user-initiated action sequence.
+func (ts *TabState) LastActionSequence() int {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.LastActionSeq
+}
+
+// EventCounts returns counts for the per-tab event buffers.
+func (ts *TabState) EventCounts() (networkRequests, consoleMessages, jsErrors int) {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.NetworkRequests.Size(), ts.ConsoleMessages.Size(), ts.JSErrors.Size()
+}
+
 // AddNetworkRequest adds a new network request event.
 func (ts *TabState) AddNetworkRequest(requestID string, info protocol.NetworkRequestInfo) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 	seq := ts.nextSeq()
 	info.RequestID = requestID
 	info.Seq = seq
@@ -107,6 +127,8 @@ func (ts *TabState) AddNetworkRequest(requestID string, info protocol.NetworkReq
 
 // UpdateNetworkResponse updates an in-flight request with response data.
 func (ts *TabState) UpdateNetworkResponse(requestID string, status *int, statusText string, headers map[string]string, mimeType string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 	entry := ts.findNetworkRequest(requestID)
 	if entry == nil {
 		return
@@ -127,6 +149,8 @@ func (ts *TabState) UpdateNetworkResponse(requestID string, status *int, statusT
 
 // UpdateNetworkFailure marks a request as failed.
 func (ts *TabState) UpdateNetworkFailure(requestID, reason string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 	entry := ts.findNetworkRequest(requestID)
 	if entry == nil {
 		return
@@ -146,6 +170,8 @@ func (ts *TabState) findNetworkRequest(requestID string) *protocol.NetworkReques
 
 // AddConsoleMessage adds a console message event.
 func (ts *TabState) AddConsoleMessage(info protocol.ConsoleMessageInfo) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 	seq := ts.nextSeq()
 	info.Seq = seq
 	ts.ConsoleMessages.Push(info)
@@ -153,6 +179,8 @@ func (ts *TabState) AddConsoleMessage(info protocol.ConsoleMessageInfo) {
 
 // AddJSError adds a JavaScript error event.
 func (ts *TabState) AddJSError(info protocol.JSErrorInfo) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 	seq := ts.nextSeq()
 	info.Seq = seq
 	ts.JSErrors.Push(info)
@@ -195,8 +223,10 @@ func (ts *TabState) sinceThreshold(since interface{}) int {
 
 // GetNetworkRequests returns filtered network requests.
 func (ts *TabState) GetNetworkRequests(opts QueryOptions) QueryResult[protocol.NetworkRequestInfo] {
+	ts.mu.RLock()
 	items := ts.NetworkRequests.ToSlice()
 	threshold := ts.sinceThreshold(opts.Since)
+	ts.mu.RUnlock()
 	method := strings.TrimSpace(opts.Method)
 
 	return queryEvents(items, threshold, opts.Limit, func(item protocol.NetworkRequestInfo) int {
@@ -219,8 +249,10 @@ func (ts *TabState) GetNetworkRequests(opts QueryOptions) QueryResult[protocol.N
 
 // GetConsoleMessages returns filtered console messages.
 func (ts *TabState) GetConsoleMessages(opts QueryOptions) QueryResult[protocol.ConsoleMessageInfo] {
+	ts.mu.RLock()
 	items := ts.ConsoleMessages.ToSlice()
 	threshold := ts.sinceThreshold(opts.Since)
+	ts.mu.RUnlock()
 
 	return queryEvents(items, threshold, opts.Limit, func(item protocol.ConsoleMessageInfo) int {
 		return item.Seq
@@ -234,8 +266,10 @@ func (ts *TabState) GetConsoleMessages(opts QueryOptions) QueryResult[protocol.C
 
 // GetJSErrors returns filtered JavaScript errors.
 func (ts *TabState) GetJSErrors(opts QueryOptions) QueryResult[protocol.JSErrorInfo] {
+	ts.mu.RLock()
 	items := ts.JSErrors.ToSlice()
 	threshold := ts.sinceThreshold(opts.Since)
+	ts.mu.RUnlock()
 
 	return queryEvents(items, threshold, opts.Limit, func(item protocol.JSErrorInfo) int {
 		return item.Seq
@@ -275,14 +309,20 @@ func queryEvents[T any](items []T, threshold, limit int, seq func(T) int, match 
 }
 
 func (ts *TabState) ClearNetwork() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 	ts.NetworkRequests.Clear()
 }
 
 func (ts *TabState) ClearConsole() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 	ts.ConsoleMessages.Clear()
 }
 
 func (ts *TabState) ClearErrors() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
 	ts.JSErrors.Clear()
 }
 

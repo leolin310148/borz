@@ -755,7 +755,7 @@ func findTargetByExactURL(c *CdpConnection, url string) *CdpTargetInfo {
 		}
 		seq := -1
 		if ts := c.TabManager.GetTab(t.ID); ts != nil {
-			seq = ts.LastActionSeq
+			seq = ts.LastActionSequence()
 		}
 		if best == nil || seq > bestSeq {
 			best = &targets[i]
