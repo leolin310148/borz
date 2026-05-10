@@ -61,7 +61,7 @@ func SetProfile(name string) error {
 	name = strings.TrimSpace(name)
 	profileMu.Lock()
 	defer profileMu.Unlock()
-	if name == "" || name == "default" {
+	if name == "" || strings.EqualFold(name, "default") {
 		activeProfile = ""
 		return nil
 	}

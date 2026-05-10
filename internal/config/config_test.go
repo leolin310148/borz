@@ -295,7 +295,7 @@ func TestSetProfileTrimsNameAndDefault(t *testing.T) {
 		t.Fatalf("Profile = %q, want work", got)
 	}
 
-	for _, name := range []string{" default ", " \t\n "} {
+	for _, name := range []string{" default ", "DEFAULT", " Default ", " \t\n "} {
 		if err := SetProfile(name); err != nil {
 			t.Fatalf("SetProfile(%q): %v", name, err)
 		}
