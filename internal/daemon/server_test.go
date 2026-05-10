@@ -155,6 +155,9 @@ func TestAuthMiddleware_TokenRequired(t *testing.T) {
 	if rec.Code != 401 {
 		t.Fatalf("status: got %d want 401", rec.Code)
 	}
+	if got := rec.Header().Get("WWW-Authenticate"); got != "Bearer" {
+		t.Fatalf("WWW-Authenticate = %q, want Bearer", got)
+	}
 
 	// Wrong token: 401.
 	called = false

@@ -235,6 +235,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 				}
 			}
 			if !validBearerToken(auth, s.opts.Token) {
+				w.Header().Set("WWW-Authenticate", "Bearer")
 				sendJSON(w, 401, map[string]string{"error": "Unauthorized"})
 				return
 			}
