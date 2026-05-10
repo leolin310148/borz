@@ -208,7 +208,7 @@ func normalizeServerURL(raw string) (string, error) {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return "", fmt.Errorf("server URL must use http or https")
 	}
-	if u.Host == "" {
+	if u.Host == "" || u.Hostname() == "" {
 		return "", fmt.Errorf("server URL must include a host")
 	}
 	if u.User != nil {

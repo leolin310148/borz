@@ -182,7 +182,7 @@ func TestRemoteConfigReadWriteAndToggle(t *testing.T) {
 }
 
 func TestRemoteConfigValidation(t *testing.T) {
-	for _, raw := range []string{"", "ftp://example.test", "http:///missing-host", "http://user:pass@example.test"} {
+	for _, raw := range []string{"", "ftp://example.test", "http:///missing-host", "http://:19824", "http://user:pass@example.test"} {
 		if _, err := ConfigureRemote(raw, ""); err == nil {
 			t.Fatalf("ConfigureRemote(%q) expected error", raw)
 		}
@@ -218,6 +218,12 @@ func TestReadRemoteConfigValidationErrors(t *testing.T) {
 	}
 	if _, err := ReadRemoteConfig(); err == nil || !strings.Contains(err.Error(), "must use http") {
 		t.Fatalf("bad-url err = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "client.json"), []byte(`{"url":"http://:19824"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadRemoteConfig(); err == nil || !strings.Contains(err.Error(), "include a host") {
+		t.Fatalf("missing-host err = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(home, "client.json"), []byte(`{"url":"http://user:pass@example.test"}`), 0o600); err != nil {
 		t.Fatal(err)
