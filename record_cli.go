@@ -305,7 +305,12 @@ func parseBytes(s string) (int64, error) {
 	for _, suffix := range []struct {
 		s string
 		m int64
-	}{{"GB", 1 << 30}, {"G", 1 << 30}, {"MB", 1 << 20}, {"M", 1 << 20}, {"KB", 1 << 10}, {"K", 1 << 10}, {"B", 1}} {
+	}{
+		{"GIB", 1 << 30}, {"GB", 1 << 30}, {"G", 1 << 30},
+		{"MIB", 1 << 20}, {"MB", 1 << 20}, {"M", 1 << 20},
+		{"KIB", 1 << 10}, {"KB", 1 << 10}, {"K", 1 << 10},
+		{"B", 1},
+	} {
 		if strings.HasSuffix(s, suffix.s) {
 			mult = suffix.m
 			s = strings.TrimSuffix(s, suffix.s)
