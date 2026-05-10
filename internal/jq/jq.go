@@ -202,7 +202,12 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 			if matches == nil {
 				break
 			}
-			idx, _ := strconv.Atoi(matches[1])
+			idx, err := strconv.Atoi(matches[1])
+			if err != nil {
+				current = nil
+				remaining = remaining[len(matches[0]):]
+				continue
+			}
 			var results []interface{}
 			for _, item := range current {
 				if arr, ok := item.([]interface{}); ok {

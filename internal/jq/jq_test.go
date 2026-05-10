@@ -123,6 +123,14 @@ func TestApply_ArrayIndexOutOfRange(t *testing.T) {
 	}
 }
 
+func TestApply_ArrayIndexOverflow(t *testing.T) {
+	data := mustJSON(t, `[10,20]`)
+	got := Apply(data, ".[999999999999999999999999]")
+	if len(got) != 0 {
+		t.Errorf("overflowing array index = %v, want empty", got)
+	}
+}
+
 func TestApply_Pipe(t *testing.T) {
 	data := mustJSON(t, `{"user":{"name":"alice"}}`)
 	got := Apply(data, ". | .user | .name")
