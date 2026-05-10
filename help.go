@@ -613,12 +613,14 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"extension": {
 		Summary: "Download, locate, or inspect the borz Chrome extension.",
-		Usage:   "borz extension [download|update|path|status|call]",
+		Usage:   "borz extension [download|update|install|path|status|capabilities|call]",
 		Flags: []string{
 			"  download              Download the latest extension zip and extract it (default)",
 			"  update                Alias for 'download' — overwrites the current install",
+			"  install               Alias for 'download'",
 			"  path                  Print the local install directory and exit",
 			"  status                Query the connected extension capabilities",
+			"  capabilities          Alias for 'status'",
 			"  call <method> [json]  Raw extension RPC escape hatch",
 		},
 		Examples: []string{

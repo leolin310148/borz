@@ -110,6 +110,23 @@ func TestHelpCommandHelpMentionsAllFlag(t *testing.T) {
 	}
 }
 
+func TestExtensionHelpMentionsAliases(t *testing.T) {
+	out := captureStdout(t, func() {
+		if !printCommandHelp("extension") {
+			t.Fatal("printCommandHelp should return true for extension")
+		}
+	})
+	for _, want := range []string{
+		"download|update|install|path|status|capabilities|call",
+		"install               Alias for 'download'",
+		"capabilities          Alias for 'status'",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("extension help missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestNetworkRequestsHelpMentionsTailFlags(t *testing.T) {
 	out := captureStdout(t, func() {
 		if !printCommandHelp("network.requests") {
