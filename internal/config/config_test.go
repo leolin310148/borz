@@ -312,7 +312,7 @@ func TestSetProfileRejectsPathSegments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, bad := range []string{"../x", "a/b", `a\b`, ".", "..", "work:dev", "bad*name", `quote"name`, "pipe|name", "what?now", "<hidden>", "line\nbreak", "tab\tname", "nul\x00name"} {
+	for _, bad := range []string{"../x", "a/b", `a\b`, ".", "..", "work.", "work:dev", "bad*name", `quote"name`, "pipe|name", "what?now", "<hidden>", "line\nbreak", "tab\tname", "nul\x00name"} {
 		if err := SetProfile(bad); err == nil {
 			t.Fatalf("SetProfile(%q) succeeded, want error", bad)
 		}
