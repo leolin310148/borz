@@ -50,20 +50,34 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 	// select(...)
 	if strings.HasPrefix(expr, "select(") {
 		leftExpr, op, rightExpr, ok := parseSelectComparison(expr)
+		if ok {
+			expected := parseLiteral(rightExpr)
+
+			var results []interface{}
+			for _, item := range inputs {
+				leftVals := applyExpression([]interface{}{item}, leftExpr)
+				if len(leftVals) == 0 && compareValues(nil, op, expected) {
+					results = append(results, item)
+					continue
+				}
+				for _, left := range leftVals {
+					if compareValues(left, op, expected) {
+						results = append(results, item)
+						break
+					}
+				}
+			}
+			return results
+		}
+
+		predicate, ok := parseSelectPredicate(expr)
 		if !ok {
 			return inputs
 		}
-		expected := parseLiteral(rightExpr)
-
 		var results []interface{}
 		for _, item := range inputs {
-			leftVals := applyExpression([]interface{}{item}, leftExpr)
-			if len(leftVals) == 0 && compareValues(nil, op, expected) {
-				results = append(results, item)
-				continue
-			}
-			for _, left := range leftVals {
-				if compareValues(left, op, expected) {
+			for _, value := range applyExpression([]interface{}{item}, predicate) {
+				if isTruthy(value) {
 					results = append(results, item)
 					break
 				}
@@ -358,6 +372,20 @@ func parseSelectComparison(expr string) (string, string, string, bool) {
 	return left, op, right, true
 }
 
+func parseSelectPredicate(expr string) (string, bool) {
+	if !strings.HasPrefix(expr, "select(") || !strings.HasSuffix(expr, ")") {
+		return "", false
+	}
+	body := strings.TrimSpace(expr[len("select(") : len(expr)-1])
+	if body == "" {
+		return "", false
+	}
+	if idx, _ := indexTopLevelComparator(body); idx >= 0 {
+		return "", false
+	}
+	return body, true
+}
+
 func indexTopLevelComparator(input string) (int, string) {
 	depth := 0
 	inString := false
@@ -421,6 +449,17 @@ func compareValues(left interface{}, op string, right interface{}) bool {
 		return ok && cmp <= 0
 	}
 	return false
+}
+
+func isTruthy(value interface{}) bool {
+	switch v := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return v
+	default:
+		return true
+	}
 }
 
 func equalValues(left interface{}, right interface{}) bool {

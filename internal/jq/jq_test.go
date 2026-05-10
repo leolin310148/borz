@@ -218,6 +218,15 @@ func TestApply_SelectBoolean(t *testing.T) {
 	}
 }
 
+func TestApply_SelectTruthyPredicate(t *testing.T) {
+	data := mustJSON(t, `[{"id":"yes","ok":true},{"id":"no","ok":false},{"id":"missing"},{"id":"zero","ok":0},{"id":"empty","ok":""}]`)
+	got := Apply(data, `.[] | select(.ok) | .id`)
+	want := []interface{}{"yes", "zero", "empty"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("select truthy predicate = %v, want %v", got, want)
+	}
+}
+
 func TestApply_SelectEqualityIsTypeAware(t *testing.T) {
 	data := mustJSON(t, `[{"value":true},{"value":"true"},{"value":1},{"value":"1"}]`)
 	got := Apply(data, `.[] | select(.value == "true")`)
@@ -456,12 +465,19 @@ func TestApply_UnknownExpressionReturnsInputs(t *testing.T) {
 	}
 }
 
-func TestApply_SelectInvalidSyntaxReturnsInputs(t *testing.T) {
+func TestApply_SelectEmptyPredicateReturnsInputs(t *testing.T) {
 	data := mustJSON(t, `[1,2,3]`)
-	// No comparator — falls through unchanged
-	got := Apply(data, `select(.x)`)
+	got := Apply(data, `select()`)
 	if len(got) != 1 {
-		t.Errorf("invalid select = %v", got)
+		t.Errorf("empty select = %v", got)
+	}
+}
+
+func TestApply_SelectMalformedComparisonReturnsInputs(t *testing.T) {
+	data := mustJSON(t, `{"ok":true}`)
+	got := Apply(data, `select(.ok ==)`)
+	if len(got) != 1 || !reflect.DeepEqual(got[0], data) {
+		t.Errorf("malformed select comparison = %v", got)
 	}
 }
 
