@@ -227,6 +227,20 @@ func TestApply_SelectTruthyPredicate(t *testing.T) {
 	}
 }
 
+func TestApply_SelectLiteralPredicate(t *testing.T) {
+	data := mustJSON(t, `[{"id":"a"},{"id":"b"}]`)
+	if got := Apply(data, `.[] | select(false)`); len(got) != 0 {
+		t.Fatalf("select false = %v, want empty", got)
+	}
+	if got := Apply(data, `.[] | select(null)`); len(got) != 0 {
+		t.Fatalf("select null = %v, want empty", got)
+	}
+	got := Apply(data, `.[] | select(0) | .id`)
+	if !reflect.DeepEqual(got, []interface{}{"a", "b"}) {
+		t.Fatalf("select 0 = %v, want both inputs", got)
+	}
+}
+
 func TestApply_SelectEqualityIsTypeAware(t *testing.T) {
 	data := mustJSON(t, `[{"value":true},{"value":"true"},{"value":1},{"value":"1"}]`)
 	got := Apply(data, `.[] | select(.value == "true")`)
@@ -478,6 +492,14 @@ func TestApply_SelectMalformedComparisonReturnsInputs(t *testing.T) {
 	got := Apply(data, `select(.ok ==)`)
 	if len(got) != 1 || !reflect.DeepEqual(got[0], data) {
 		t.Errorf("malformed select comparison = %v", got)
+	}
+}
+
+func TestApply_SelectUnknownPredicateReturnsInputs(t *testing.T) {
+	data := mustJSON(t, `false`)
+	got := Apply(data, `select(not_a_keyword)`)
+	if len(got) != 1 || got[0] != false {
+		t.Errorf("unknown select predicate = %v", got)
 	}
 }
 

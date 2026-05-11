@@ -47,6 +47,14 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 		return inputs
 	}
 
+	if value, ok := parseJSONLiteral(expr); ok {
+		results := make([]interface{}, len(inputs))
+		for i := range results {
+			results[i] = value
+		}
+		return results
+	}
+
 	// select(...)
 	if strings.HasPrefix(expr, "select(") {
 		leftExpr, op, rightExpr, ok := parseSelectComparison(expr)
@@ -383,7 +391,25 @@ func parseSelectPredicate(expr string) (string, bool) {
 	if idx, _ := indexTopLevelComparator(body); idx >= 0 {
 		return "", false
 	}
+	if !isSupportedPredicateExpression(body) {
+		return "", false
+	}
 	return body, true
+}
+
+func isSupportedPredicateExpression(expr string) bool {
+	expr = strings.TrimSpace(expr)
+	if strings.HasPrefix(expr, ".") || expr == "keys" || expr == "length" {
+		return true
+	}
+	if strings.HasPrefix(expr, "has(") && strings.HasSuffix(expr, ")") {
+		return true
+	}
+	if strings.HasPrefix(expr, "{") && strings.HasSuffix(expr, "}") {
+		return true
+	}
+	_, ok := parseJSONLiteral(expr)
+	return ok
 }
 
 func indexTopLevelComparator(input string) (int, string) {
