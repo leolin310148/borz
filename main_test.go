@@ -266,7 +266,7 @@ func TestGetArgValueOKReportsPresentEmptyValues(t *testing.T) {
 func TestGetAllArgValues(t *testing.T) {
 	args := []string{"cmd", "--json-arg", "user={}", "--json-arg=limit=3", "--json-arg", "--json"}
 	got := getAllArgValues(args, "--json-arg")
-	want := []string{"user={}", "limit=3"}
+	want := []string{"user={}", "limit=3", ""}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("getAllArgValues: got %v want %v", got, want)
 	}

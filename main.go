@@ -1740,7 +1740,8 @@ func getArgValueOK(args []string, flag string) (string, bool) {
 }
 
 // getAllArgValues collects every value of a repeatable flag, preserving the
-// order they appeared on the command line.
+// order they appeared on the command line. Missing values are preserved as
+// empty strings so command-specific validation can report a useful error.
 func getAllArgValues(args []string, flag string) []string {
 	var out []string
 	for i, a := range args {
@@ -1748,8 +1749,12 @@ func getAllArgValues(args []string, flag string) []string {
 			out = append(out, value)
 			continue
 		}
-		if a == flag && i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-			out = append(out, args[i+1])
+		if a == flag {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				out = append(out, args[i+1])
+			} else {
+				out = append(out, "")
+			}
 		}
 	}
 	return out
