@@ -120,6 +120,10 @@ func Run(ctx context.Context, opts Options) error {
 		exePath = resolved
 	}
 
+	if err := checkDestWritable(exePath); err != nil {
+		return err
+	}
+
 	fmt.Fprintf(opts.Stderr, "Downloading %s (%s)...\n", asset.Name, humanSize(asset.Size))
 	tmpPath, err := downloadVerified(ctx, opts.HTTPClient, asset.DownloadURL, exePath, expected)
 	if err != nil {
@@ -309,6 +313,29 @@ func FetchChecksums(ctx context.Context, rel *Release, client *http.Client) (map
 		return nil, fmt.Errorf("download checksums.txt: http %d", resp.StatusCode)
 	}
 	return ParseChecksums(resp.Body)
+}
+
+// checkDestWritable probes whether the directory holding destPath is writable
+// by the current process by creating and removing a tiny marker file. When it
+// isn't, the returned error includes an actionable hint so users don't have to
+// decode a raw "permission denied" on the temp file.
+func checkDestWritable(destPath string) error {
+	dir := filepath.Dir(destPath)
+	probe, err := os.CreateTemp(dir, ".borz-update-probe-*")
+	if err != nil {
+		if os.IsPermission(err) {
+			hint := "re-run with sudo"
+			if runtime.GOOS == "windows" {
+				hint = "re-run from an elevated prompt"
+			}
+			return fmt.Errorf("cannot write to %s (%s): %w", dir, hint, err)
+		}
+		return fmt.Errorf("check destination %s: %w", dir, err)
+	}
+	probePath := probe.Name()
+	probe.Close()
+	os.Remove(probePath)
+	return nil
 }
 
 func downloadVerified(ctx context.Context, client *http.Client, url, destPath, expectedSHA256 string) (string, error) {

@@ -594,3 +594,77 @@ func TestDownloadVerifiedHTTPError(t *testing.T) {
 		t.Fatalf("expected download HTTP error, got %v", err)
 	}
 }
+
+func TestCheckDestWritableOK(t *testing.T) {
+	dir := t.TempDir()
+	if err := checkDestWritable(filepath.Join(dir, "borz")); err != nil {
+		t.Fatalf("writable dir reported as unwritable: %v", err)
+	}
+	// Probe file must be cleaned up.
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Errorf("probe file left behind: %v", entries)
+	}
+}
+
+func TestCheckDestWritablePermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permission bits don't apply on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permission bits")
+	}
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	// Restore permissions so t.TempDir cleanup can recurse.
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+
+	err := checkDestWritable(filepath.Join(locked, "borz"))
+	if err == nil {
+		t.Fatal("expected permission error")
+	}
+	if !strings.Contains(err.Error(), "sudo") {
+		t.Errorf("error should hint at sudo, got %v", err)
+	}
+}
+
+func TestRunReportsUnwritableDest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permission bits don't apply on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permission bits")
+	}
+	newBin := []byte("payload")
+	sum := sha256.Sum256(newBin)
+	srv := newFakeReleaseServer(t, "v2.0.0", hex.EncodeToString(sum[:]), newBin, AssetName(runtime.GOOS, runtime.GOARCH))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	locked := filepath.Join(dir, "locked")
+	if err := os.Mkdir(locked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+	fakeExe := filepath.Join(locked, "borz")
+
+	err := Run(context.Background(), Options{
+		CurrentVersion: "1.0.0",
+		Repo:           "owner/repo",
+		APIBaseURL:     srv.URL,
+		ExecutablePath: fakeExe,
+		Stderr:         io.Discard,
+	})
+	if err == nil {
+		t.Fatal("expected unwritable destination error")
+	}
+	if !strings.Contains(err.Error(), "sudo") {
+		t.Errorf("error should hint at sudo, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "cannot write to") {
+		t.Errorf("error should name the unwritable directory, got %v", err)
+	}
+}
