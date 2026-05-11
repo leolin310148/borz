@@ -81,7 +81,8 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 	)
 	state := stCode
 	depth := 0
-	braceDepth := 0
+	blockBraceDepth := 0
+	var braceBlocks []bool
 	regexClass := false
 	var templateExprBase []int
 	i := 0
@@ -115,7 +116,11 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 				i++
 			case c == '(' || c == '{' || c == '[':
 				if c == '{' {
-					braceDepth++
+					isBlock := braceStartsCodeBlock(src, i, depth)
+					braceBlocks = append(braceBlocks, isBlock)
+					if isBlock {
+						blockBraceDepth++
+					}
 				}
 				depth++
 				i++
@@ -123,8 +128,12 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 				if depth > 0 {
 					depth--
 				}
-				if c == '}' && braceDepth > 0 {
-					braceDepth--
+				if c == '}' && len(braceBlocks) > 0 {
+					last := len(braceBlocks) - 1
+					if braceBlocks[last] && blockBraceDepth > 0 {
+						blockBraceDepth--
+					}
+					braceBlocks = braceBlocks[:last]
 				}
 				i++
 			case depth == 0 && c == ';':
@@ -135,7 +144,7 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 					hasTopSemi = true
 				}
 				i++
-			case braceDepth == 0 && c == 'a' && matchKeyword(src, i, "await"):
+			case blockBraceDepth == 0 && c == 'a' && matchKeyword(src, i, "await"):
 				hasAwait = true
 				i += len("await")
 			default:
@@ -215,6 +224,38 @@ func slashStartsRegex(src string, i int) bool {
 		}
 	}
 	return strings.ContainsRune("([{=,:;!&|?+-*%^~<>", rune(prev))
+}
+
+func braceStartsCodeBlock(src string, i, depth int) bool {
+	if depth == 0 {
+		return true
+	}
+	prev, ok := prevSignificantByte(src, i-1)
+	if !ok {
+		return true
+	}
+	if prev == ')' || prev == '>' {
+		return true
+	}
+	if !isIdentChar(prev) {
+		return false
+	}
+	switch previousIdentifier(src, i-1) {
+	case "class", "do", "else", "finally", "try":
+		return true
+	default:
+		return previousIdentifier(src, beforePreviousIdentifier(src, i-1)) == "class"
+	}
+}
+
+func beforePreviousIdentifier(src string, i int) int {
+	for i >= 0 && !isIdentChar(src[i]) {
+		i--
+	}
+	for i >= 0 && isIdentChar(src[i]) {
+		i--
+	}
+	return i
 }
 
 func previousIdentifier(src string, i int) string {

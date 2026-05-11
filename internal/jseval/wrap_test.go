@@ -49,6 +49,11 @@ func TestAutoWrapAwait(t *testing.T) {
 			want: "(async () => { return (Promise.all([await first(), await second()])) })()",
 		},
 		{
+			name: "await inside object literal is wrapped with return",
+			in:   "JSON.stringify({ok: await foo()})",
+			want: "(async () => { return (JSON.stringify({ok: await foo()})) })()",
+		},
+		{
 			name: "multi-statement await is wrapped without forced return",
 			in:   "var x = await fetch('/x'); x.status",
 			want: "(async () => { var x = await fetch('/x'); x.status })()",
@@ -97,6 +102,16 @@ func TestAutoWrapAwait(t *testing.T) {
 			name: "await inside function body (depth>0) does not trigger wrap",
 			in:   "function foo(){ return await x }",
 			want: "function foo(){ return await x }",
+		},
+		{
+			name: "await inside object method body is ignored",
+			in:   "({ async value(){ return await foo() } })",
+			want: "({ async value(){ return await foo() } })",
+		},
+		{
+			name: "await inside class method body is ignored",
+			in:   "class Example { async value(){ return await foo() } }",
+			want: "class Example { async value(){ return await foo() } }",
 		},
 		{
 			name: "identifier ending in await is ignored",
