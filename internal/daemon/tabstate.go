@@ -227,13 +227,14 @@ func (ts *TabState) GetNetworkRequests(opts QueryOptions) QueryResult[protocol.N
 	items := ts.NetworkRequests.ToSlice()
 	threshold := ts.sinceThreshold(opts.Since)
 	ts.mu.RUnlock()
+	filter := strings.TrimSpace(opts.Filter)
 	method := strings.TrimSpace(opts.Method)
 	status := strings.TrimSpace(opts.Status)
 
 	return queryEvents(items, threshold, opts.Limit, func(item protocol.NetworkRequestInfo) int {
 		return item.Seq
 	}, func(item protocol.NetworkRequestInfo) bool {
-		if opts.Filter != "" && !strings.Contains(item.URL, opts.Filter) {
+		if filter != "" && !strings.Contains(item.URL, filter) {
 			return false
 		}
 		if method != "" && !strings.EqualFold(item.Method, method) {

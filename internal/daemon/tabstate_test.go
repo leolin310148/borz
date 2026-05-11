@@ -182,6 +182,14 @@ func TestTabState_GetNetworkRequests_Filters(t *testing.T) {
 	if len(res.Items) != 2 {
 		t.Fatalf("filter b.test: got %d want 2", len(res.Items))
 	}
+	res = tab.GetNetworkRequests(QueryOptions{Filter: " b.test "})
+	if len(res.Items) != 2 {
+		t.Fatalf("filter b.test with spaces: got %d want 2", len(res.Items))
+	}
+	res = tab.GetNetworkRequests(QueryOptions{Filter: "   "})
+	if len(res.Items) != 4 {
+		t.Fatalf("blank filter: got %d want 4", len(res.Items))
+	}
 
 	res = tab.GetNetworkRequests(QueryOptions{Method: "post"})
 	if len(res.Items) != 1 || res.Items[0].RequestID != "2" {
