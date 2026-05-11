@@ -35,14 +35,25 @@ func TestHelpRequested(t *testing.T) {
 }
 
 func TestFlagConsumesNextArg(t *testing.T) {
-	for _, flag := range []string{"--json-arg", "--wait-for", "--timeout", "--profile", "--ref", "-d", "-s", "--role"} {
+	for _, flag := range cliValueFlags {
 		if !flagConsumesNextArg(flag) {
 			t.Errorf("flagConsumesNextArg(%q) = false, want true", flag)
 		}
 	}
-	for _, flag := range []string{"--json", "--help", "-h", "--new", "literal"} {
+	for _, flag := range cliBoolFlags {
 		if flagConsumesNextArg(flag) {
 			t.Errorf("flagConsumesNextArg(%q) = true, want false", flag)
+		}
+	}
+	if flagConsumesNextArg("literal") {
+		t.Errorf("flagConsumesNextArg(%q) = true, want false", "literal")
+	}
+}
+
+func TestCLIFlagTablesDoNotOverlap(t *testing.T) {
+	for _, flag := range cliBoolFlags {
+		if cliValueFlagSet[flag] {
+			t.Errorf("flag %q is registered as both a value flag and a bool flag", flag)
 		}
 	}
 }
