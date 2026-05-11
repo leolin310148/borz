@@ -36,6 +36,9 @@ func ParseJSONArgs(specs []string) ([]JSONArg, error) {
 		if seen[name] {
 			return nil, fmt.Errorf("--json-arg %q: duplicate name", raw)
 		}
+		if value == "" {
+			return nil, fmt.Errorf("--json-arg %s: missing JSON value", name)
+		}
 		var probe interface{}
 		if err := json.Unmarshal([]byte(value), &probe); err != nil {
 			return nil, fmt.Errorf("--json-arg %s: value is not valid JSON (%v)", name, err)

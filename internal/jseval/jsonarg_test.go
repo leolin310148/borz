@@ -37,6 +37,8 @@ func TestParseJSONArgs_Errors(t *testing.T) {
 		{"missing =", "foo", "expected name=value"},
 		{"empty name", "=42", "expected name=value"},
 		{"bad ident", "1foo=42", "not a valid identifier"},
+		{"empty value", "x=", "missing JSON value"},
+		{"blank value", "x=  ", "missing JSON value"},
 		{"bad json", "x=oops", "not valid JSON"},
 		{"reserved", "await=42", "cannot be used as a JSON arg name"},
 		{"reserved default", "default=42", "cannot be used as a JSON arg name"},
