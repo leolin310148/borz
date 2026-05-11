@@ -233,6 +233,9 @@ func TestRenderHelperBranches(t *testing.T) {
 			t.Fatalf("parseTrim invalid %q = %d %d", trim, start, end)
 		}
 	}
+	if !annotationEnabled([]string{" Cursor "}, "cursor") {
+		t.Fatal("annotation matching should ignore case and surrounding spaces")
+	}
 	if annotationEnabled([]string{" keys "}, "cursor") {
 		t.Fatal("unexpected annotation match")
 	}

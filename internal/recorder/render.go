@@ -297,7 +297,7 @@ func parseTimecode(s string) (int64, bool) {
 
 func annotationEnabled(xs []string, want string) bool {
 	for _, x := range xs {
-		if strings.TrimSpace(x) == want {
+		if strings.EqualFold(strings.TrimSpace(x), want) {
 			return true
 		}
 	}
