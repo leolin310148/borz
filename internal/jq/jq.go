@@ -59,19 +59,30 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 	if strings.HasPrefix(expr, "select(") {
 		leftExpr, op, rightExpr, ok := parseSelectComparison(expr)
 		if ok {
-			expected := parseLiteral(rightExpr)
-
 			var results []interface{}
 			for _, item := range inputs {
 				leftVals := applyExpression([]interface{}{item}, leftExpr)
-				if len(leftVals) == 0 && compareValues(nil, op, expected) {
-					results = append(results, item)
-					continue
-				}
+				rightVals := comparisonRightValues(item, rightExpr)
+				matched := false
 				for _, left := range leftVals {
-					if compareValues(left, op, expected) {
+					for _, right := range rightVals {
+						if !compareValues(left, op, right) {
+							continue
+						}
+						matched = true
 						results = append(results, item)
 						break
+					}
+					if matched {
+						break
+					}
+				}
+				if !matched && len(leftVals) == 0 {
+					for _, right := range rightVals {
+						if compareValues(nil, op, right) {
+							results = append(results, item)
+							break
+						}
 					}
 				}
 			}
@@ -378,6 +389,17 @@ func parseSelectComparison(expr string) (string, string, string, bool) {
 		return "", "", "", false
 	}
 	return left, op, right, true
+}
+
+func comparisonRightValues(item interface{}, expr string) []interface{} {
+	if strings.HasPrefix(strings.TrimSpace(expr), ".") {
+		values := applyExpression([]interface{}{item}, expr)
+		if len(values) == 0 {
+			return []interface{}{nil}
+		}
+		return values
+	}
+	return []interface{}{parseLiteral(expr)}
 }
 
 func parseSelectPredicate(expr string) (string, bool) {

@@ -262,6 +262,27 @@ func TestApply_SelectEqualityIsTypeAware(t *testing.T) {
 	}
 }
 
+func TestApply_SelectComparesRightFieldExpression(t *testing.T) {
+	data := mustJSON(t, `[
+		{"id":"same","actual":200,"expected":200},
+		{"id":"different","actual":404,"expected":200},
+		{"id":"missing-right","actual":null},
+		{"id":"missing-left","expected":null}
+	]`)
+
+	got := Apply(data, `.[] | select(.actual == .expected) | .id`)
+	want := []interface{}{"same", "missing-right", "missing-left"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("field comparison equality = %v, want %v", got, want)
+	}
+
+	got = Apply(data, `.[] | select(.actual != .expected) | .id`)
+	want = []interface{}{"different"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("field comparison inequality = %v, want %v", got, want)
+	}
+}
+
 func TestApply_ObjectProjection(t *testing.T) {
 	data := mustJSON(t, `[{"name":"a","age":1,"x":99},{"name":"b","age":2,"x":100}]`)
 	got := Apply(data, `.[] | {name, age}`)
