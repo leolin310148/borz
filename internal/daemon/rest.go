@@ -23,8 +23,12 @@ const maxRESTBodyBytes int64 = 8 << 20
 // it through the existing CDP pipeline.
 func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 	// Navigation
-	mux.HandleFunc("/v1/open", s.restJSON(func(body restBody) *protocol.Request {
-		return body.applyWait(&protocol.Request{Action: protocol.ActionOpen, URL: body.URL, New: body.New, TabID: body.tabID(), Viewport: body.viewportOptions()})
+	mux.HandleFunc("/v1/open", s.restJSONE(func(body restBody) (*protocol.Request, error) {
+		viewport, err := body.viewportOptions()
+		if err != nil {
+			return nil, err
+		}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionOpen, URL: body.URL, New: body.New, TabID: body.tabID(), Viewport: viewport}), nil
 	}))
 	mux.HandleFunc("/v1/back", s.restJSON(func(body restBody) *protocol.Request {
 		return body.applyWait(&protocol.Request{Action: protocol.ActionBack, TabID: body.tabID()})
@@ -105,8 +109,12 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/wait", s.restJSON(func(body restBody) *protocol.Request {
 		return body.withActivate(&protocol.Request{Action: protocol.ActionWait, Ms: body.Ms, TabID: body.tabID()})
 	}))
-	mux.HandleFunc("/v1/viewport", s.restJSON(func(body restBody) *protocol.Request {
-		return body.withActivate(&protocol.Request{Action: protocol.ActionViewport, TabID: body.tabID(), Viewport: body.viewportOptions()})
+	mux.HandleFunc("/v1/viewport", s.restJSONE(func(body restBody) (*protocol.Request, error) {
+		viewport, err := body.viewportOptions()
+		if err != nil {
+			return nil, err
+		}
+		return body.withActivate(&protocol.Request{Action: protocol.ActionViewport, TabID: body.tabID(), Viewport: viewport}), nil
 	}))
 
 	// Observation
@@ -190,7 +198,12 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			if url == "" {
 				url = "about:blank"
 			}
-			s.dispatchAndWrite(w, &protocol.Request{ID: newReqID(), Action: protocol.ActionTabNew, URL: url, Viewport: body.viewportOptions()})
+			viewport, err := body.viewportOptions()
+			if err != nil {
+				sendJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+			s.dispatchAndWrite(w, &protocol.Request{ID: newReqID(), Action: protocol.ActionTabNew, URL: url, Viewport: viewport})
 		default:
 			sendMethodNotAllowed(w, http.MethodGet, http.MethodPost)
 		}
@@ -349,12 +362,12 @@ func (b restBody) withActivate(req *protocol.Request) *protocol.Request {
 	return req
 }
 
-func (b restBody) viewportOptions() *protocol.ViewportOptions {
+func (b restBody) viewportOptions() (*protocol.ViewportOptions, error) {
 	if b.Viewport != nil {
-		return b.Viewport
+		return b.Viewport, nil
 	}
 	if b.Reset {
-		return &protocol.ViewportOptions{Reset: true}
+		return &protocol.ViewportOptions{Reset: true}, nil
 	}
 	var opts protocol.ViewportOptions
 	has := false
@@ -365,6 +378,8 @@ func (b restBody) viewportOptions() *protocol.ViewportOptions {
 	if presetName != "" {
 		if preset, ok := protocol.ViewportPreset(presetName); ok {
 			opts = preset
+		} else {
+			return nil, fmt.Errorf("preset must be one of: %s", strings.Join(protocol.ViewportPresetNames(), ", "))
 		}
 		has = true
 	}
@@ -389,9 +404,9 @@ func (b restBody) viewportOptions() *protocol.ViewportOptions {
 		has = true
 	}
 	if !has {
-		return nil
+		return nil, nil
 	}
-	return &opts
+	return &opts, nil
 }
 
 // tabID returns the tab identifier to pass through to the dispatcher.
@@ -429,6 +444,12 @@ func (b restBody) sinceValue() interface{} {
 // restJSON wraps a request-builder into an http.HandlerFunc that handles
 // method validation, body parsing, dispatch, and response serialization.
 func (s *Server) restJSON(build func(restBody) *protocol.Request) http.HandlerFunc {
+	return s.restJSONE(func(body restBody) (*protocol.Request, error) {
+		return build(body), nil
+	})
+}
+
+func (s *Server) restJSONE(build func(restBody) (*protocol.Request, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			sendMethodNotAllowed(w, http.MethodPost)
@@ -439,7 +460,11 @@ func (s *Server) restJSON(build func(restBody) *protocol.Request) http.HandlerFu
 			sendJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
-		req := build(body)
+		req, err := build(body)
+		if err != nil {
+			sendJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
 		req.ID = newReqID()
 		s.dispatchAndWrite(w, req)
 	}

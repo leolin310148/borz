@@ -99,24 +99,39 @@ func TestRestBody_ViewportOptions(t *testing.T) {
 	dpr := 3.0
 	touch := true
 	body := restBody{Preset: "mobile", Width: &width, Height: &height, DPR: &dpr, Touch: &touch}
-	vp := body.viewportOptions()
+	vp, err := body.viewportOptions()
+	if err != nil {
+		t.Fatalf("viewportOptions: %v", err)
+	}
 	if vp == nil || vp.Width != 414 || vp.Height != 896 || vp.DPR != 3 || !vp.Mobile || vp.Touch == nil || !*vp.Touch {
 		t.Fatalf("viewport options = %+v", vp)
 	}
-	vp = (restBody{Mobile: true}).viewportOptions()
+	vp, err = (restBody{Mobile: true}).viewportOptions()
+	if err != nil {
+		t.Fatalf("mobile shorthand viewportOptions: %v", err)
+	}
 	if vp == nil || vp.Width != 390 || vp.Height != 844 || vp.DPR != 3 || !vp.Mobile || vp.Touch == nil || !*vp.Touch {
 		t.Fatalf("mobile shorthand viewport options = %+v", vp)
 	}
-	vp = (restBody{Mobile: true, Width: &width, Height: &height}).viewportOptions()
+	vp, err = (restBody{Mobile: true, Width: &width, Height: &height}).viewportOptions()
+	if err != nil {
+		t.Fatalf("custom mobile viewportOptions: %v", err)
+	}
 	if vp == nil || vp.Width != 414 || vp.Height != 896 || vp.DPR != 0 || !vp.Mobile {
 		t.Fatalf("custom mobile viewport options = %+v", vp)
 	}
-	vp = (restBody{Reset: true}).viewportOptions()
+	vp, err = (restBody{Reset: true}).viewportOptions()
+	if err != nil {
+		t.Fatalf("reset viewportOptions: %v", err)
+	}
 	if vp == nil || !vp.Reset {
 		t.Fatalf("reset viewport options = %+v", vp)
 	}
-	if got := (restBody{}).viewportOptions(); got != nil {
+	if got, err := (restBody{}).viewportOptions(); err != nil || got != nil {
 		t.Fatalf("empty viewport options = %+v", got)
+	}
+	if _, err := (restBody{Preset: "moblie"}).viewportOptions(); err == nil || !strings.Contains(err.Error(), "preset must be one of") {
+		t.Fatalf("invalid preset error = %v", err)
 	}
 }
 
@@ -242,6 +257,22 @@ func TestRestJSON_BadJSON(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != 400 {
 		t.Fatalf("bad JSON: got %d want 400", rec.Code)
+	}
+}
+
+func TestRestJSON_InvalidViewportPreset(t *testing.T) {
+	s := newTestServer(t, "")
+	mux := http.NewServeMux()
+	s.registerRESTRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/viewport", strings.NewReader(`{"preset":"moblie"}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("invalid preset: got %d want 400", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "preset must be one of") {
+		t.Fatalf("invalid preset response = %s", rec.Body.String())
 	}
 }
 
