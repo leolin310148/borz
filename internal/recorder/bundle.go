@@ -15,6 +15,7 @@ import (
 	_ "image/png"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -435,7 +436,11 @@ func Verify(dir string) (*Bundle, error) {
 			return nil, fmt.Errorf("frame timestamps out of order at seq %d", fr.Seq)
 		}
 		lastTS = fr.Timestamp
-		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(fr.Path)))
+		framePath, err := frameFilePath(dir, fr.Path)
+		if err != nil {
+			return nil, fmt.Errorf("frame %d: %w", fr.Seq, err)
+		}
+		data, err := os.ReadFile(framePath)
 		if err != nil {
 			return nil, fmt.Errorf("frame %d: %w", fr.Seq, err)
 		}
@@ -455,6 +460,16 @@ func Verify(dir string) (*Bundle, error) {
 		lastTS = ev.Timestamp
 	}
 	return b, nil
+}
+
+func frameFilePath(dir, slashPath string) (string, error) {
+	clean := path.Clean(slashPath)
+	if slashPath == "" || path.IsAbs(slashPath) || clean == "." || clean == ".." ||
+		strings.HasPrefix(clean, "../") || strings.Contains(slashPath, `\`) ||
+		!strings.HasPrefix(clean, framesDir+"/") {
+		return "", fmt.Errorf("invalid frame path %q", slashPath)
+	}
+	return filepath.Join(dir, filepath.FromSlash(clean)), nil
 }
 
 // ExportTrace writes a stable JSON trace for tooling consumers.

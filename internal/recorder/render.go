@@ -189,7 +189,11 @@ func runFFmpeg(ffmpeg, temp string, opts RenderOptions) error {
 }
 
 func loadFrame(dir string, fr FrameRecord) (image.Image, error) {
-	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(fr.Path)))
+	framePath, err := frameFilePath(dir, fr.Path)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(framePath)
 	if err != nil {
 		return nil, err
 	}

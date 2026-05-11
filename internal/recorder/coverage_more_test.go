@@ -144,6 +144,20 @@ func TestBundleVerifyFailureBranches(t *testing.T) {
 			want: "no such file",
 		},
 		{
+			name: "escaped frame path",
+			mutate: func(dir string) {
+				rewriteFramesForTest(t, dir, func(fr *FrameRecord) { fr.Path = "../outside.png" })
+			},
+			want: "invalid frame path",
+		},
+		{
+			name: "backslash frame path",
+			mutate: func(dir string) {
+				rewriteFramesForTest(t, dir, func(fr *FrameRecord) { fr.Path = `frames\outside.png` })
+			},
+			want: "invalid frame path",
+		},
+		{
 			name: "checksum mismatch",
 			mutate: func(dir string) {
 				rewriteFramesForTest(t, dir, func(fr *FrameRecord) { fr.SHA256 = strings.Repeat("0", 64) })
@@ -257,8 +271,11 @@ func TestRenderDrawingAndFFmpegBranches(t *testing.T) {
 	if selectorMatchesAny("", []string{".secret"}) || selectorMatchesAny("input", []string{" "}) {
 		t.Fatal("empty selector matching should be false")
 	}
-	if _, err := loadFrame(t.TempDir(), FrameRecord{Path: "missing.png"}); err == nil {
+	if _, err := loadFrame(t.TempDir(), FrameRecord{Path: "frames/missing.png"}); err == nil {
 		t.Fatal("loadFrame should fail on missing file")
+	}
+	if _, err := loadFrame(t.TempDir(), FrameRecord{Path: "../missing.png"}); err == nil || !strings.Contains(err.Error(), "invalid frame path") {
+		t.Fatalf("loadFrame traversal error = %v", err)
 	}
 	if err := writePNG(filepath.Join(t.TempDir(), "missing", "x.png"), img); err == nil {
 		t.Fatal("writePNG should fail when parent is missing")
