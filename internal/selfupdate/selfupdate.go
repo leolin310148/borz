@@ -234,6 +234,7 @@ type parsedVersion struct {
 }
 
 func parseVersion(v string) parsedVersion {
+	v = strings.TrimSpace(v)
 	v = strings.TrimPrefix(v, "v")
 	if v == "" || v == "dev" {
 		return parsedVersion{parts: []int{0}, prerelease: true}
