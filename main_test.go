@@ -430,6 +430,12 @@ func TestStripFlags(t *testing.T) {
 	if !reflect.DeepEqual(got, []string{"open", "https://x"}) {
 		t.Errorf("--profile global flag: %v", got)
 	}
+
+	in = []string{"open", "https://x", "--timeout", "--unknown"}
+	got = stripFlags(in, nil, nil)
+	if !reflect.DeepEqual(got, []string{"open", "https://x", "--unknown"}) {
+		t.Errorf("missing value before another flag: %v", got)
+	}
 }
 
 func TestSetTab(t *testing.T) {

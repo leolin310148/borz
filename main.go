@@ -1787,13 +1787,15 @@ func stripFlags(args []string, valueFlags, boolFlags []string) []string {
 
 	var result []string
 	skip := false
-	for _, a := range args {
+	for i, a := range args {
 		if skip {
 			skip = false
 			continue
 		}
 		if valueFlagSet[a] {
-			skip = true
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				skip = true
+			}
 			continue
 		}
 		if hasInlineValueFlag(a, valueFlagSet) {
