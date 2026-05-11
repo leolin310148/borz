@@ -350,6 +350,11 @@ func TestSuggestSubcommands(t *testing.T) {
 		t.Fatalf("suggestSubcommands(extension, statu): want status first, got %v", got)
 	}
 
+	got = suggestSubcommands("cookies", "al", 3)
+	if len(got) == 0 || got[0] != "all" {
+		t.Fatalf("suggestSubcommands(cookies, al): want all first, got %v", got)
+	}
+
 	hint := unknownSubcommandHint("client", "enabel")
 	for _, want := range []string{
 		"Unknown client subcommand: enabel",

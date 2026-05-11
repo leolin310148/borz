@@ -373,6 +373,15 @@ var commandHelp = map[string]cmdHelp{
 		Notes: "Requires the borz Chrome extension. CDP can only return cookies " +
 			"scoped to the active page; the extension exposes cookies across all domains.",
 	},
+	"cookies.all": {
+		Summary: "Dump cookies across every domain visible to the extension.",
+		Usage:   "borz cookies all [domain-filter]",
+		Examples: []string{
+			"  borz cookies all",
+			"  borz cookies all github.com",
+		},
+		Notes: "Requires the borz Chrome extension. The optional filter matches cookie domains.",
+	},
 	"bookmarks": {
 		Summary: "Read and manage Chrome bookmarks through the borz extension.",
 		Usage:   "borz bookmarks [tree|search|create|update|remove]",
