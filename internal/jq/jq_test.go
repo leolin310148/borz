@@ -503,6 +503,8 @@ func TestApply_StringAffixFilters(t *testing.T) {
 		{`startswith("http://")`, false},
 		{`endswith("/path")`, true},
 		{`endswith("/other")`, false},
+		{`contains("example.test")`, true},
+		{`contains("missing")`, false},
 	}
 	for _, c := range cases {
 		got := Apply(data, c.expr)
@@ -519,7 +521,7 @@ func TestApply_StringAffixFiltersInSelect(t *testing.T) {
 		{"url":"https://example.test/assets/app.js"}
 	]`)
 
-	got := Apply(data, `.[] | select(.url | startswith("https://")) | select(.url | endswith("/api/users")) | .url`)
+	got := Apply(data, `.[] | select(.url | startswith("https://")) | select(.url | contains("/api/")) | select(.url | endswith("/api/users")) | .url`)
 	want := []interface{}{"https://example.test/api/users"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("affix select = %v, want %v", got, want)

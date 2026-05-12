@@ -203,12 +203,15 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 		return results
 	}
 
-	// startswith(str) / endswith(str)
+	// startswith(str) / endswith(str) / contains(str)
 	if strings.HasPrefix(expr, "startswith(") && strings.HasSuffix(expr, ")") {
 		return applyStringAffix(inputs, expr[len("startswith("):len(expr)-1], strings.HasPrefix)
 	}
 	if strings.HasPrefix(expr, "endswith(") && strings.HasSuffix(expr, ")") {
 		return applyStringAffix(inputs, expr[len("endswith("):len(expr)-1], strings.HasSuffix)
+	}
+	if strings.HasPrefix(expr, "contains(") && strings.HasSuffix(expr, ")") {
+		return applyStringAffix(inputs, expr[len("contains("):len(expr)-1], strings.Contains)
 	}
 
 	// Path expression starting with .
@@ -449,6 +452,9 @@ func isSupportedPredicateExpression(expr string) bool {
 		return true
 	}
 	if strings.HasPrefix(expr, "endswith(") && strings.HasSuffix(expr, ")") {
+		return true
+	}
+	if strings.HasPrefix(expr, "contains(") && strings.HasSuffix(expr, ")") {
 		return true
 	}
 	if strings.HasPrefix(expr, "{") && strings.HasSuffix(expr, "}") {
