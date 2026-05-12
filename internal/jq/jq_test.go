@@ -492,6 +492,48 @@ func TestApply_Length(t *testing.T) {
 	}
 }
 
+func TestApply_StringAffixFilters(t *testing.T) {
+	data := mustJSON(t, `"https://example.test/path"`)
+
+	cases := []struct {
+		expr string
+		want bool
+	}{
+		{`startswith("https://")`, true},
+		{`startswith("http://")`, false},
+		{`endswith("/path")`, true},
+		{`endswith("/other")`, false},
+	}
+	for _, c := range cases {
+		got := Apply(data, c.expr)
+		if !reflect.DeepEqual(got, []interface{}{c.want}) {
+			t.Fatalf("%s = %v, want [%v]", c.expr, got, c.want)
+		}
+	}
+}
+
+func TestApply_StringAffixFiltersInSelect(t *testing.T) {
+	data := mustJSON(t, `[
+		{"url":"https://example.test/api/users"},
+		{"url":"http://example.test/api/users"},
+		{"url":"https://example.test/assets/app.js"}
+	]`)
+
+	got := Apply(data, `.[] | select(.url | startswith("https://")) | select(.url | endswith("/api/users")) | .url`)
+	want := []interface{}{"https://example.test/api/users"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("affix select = %v, want %v", got, want)
+	}
+}
+
+func TestApply_StringAffixFiltersReturnFalseForNonStrings(t *testing.T) {
+	data := mustJSON(t, `[{"url":null},{"url":42},{"missing":true}]`)
+	got := Apply(data, `.[] | select(.url | startswith("https://"))`)
+	if len(got) != 0 {
+		t.Fatalf("non-string affix matches = %v, want empty", got)
+	}
+}
+
 func TestApply_UnknownExpressionReturnsInputs(t *testing.T) {
 	data := mustJSON(t, `{"a":1}`)
 	got := Apply(data, "not_a_keyword")

@@ -203,6 +203,14 @@ func applySegment(inputs []interface{}, expr string) []interface{} {
 		return results
 	}
 
+	// startswith(str) / endswith(str)
+	if strings.HasPrefix(expr, "startswith(") && strings.HasSuffix(expr, ")") {
+		return applyStringAffix(inputs, expr[len("startswith("):len(expr)-1], strings.HasPrefix)
+	}
+	if strings.HasPrefix(expr, "endswith(") && strings.HasSuffix(expr, ")") {
+		return applyStringAffix(inputs, expr[len("endswith("):len(expr)-1], strings.HasSuffix)
+	}
+
 	// Path expression starting with .
 	if !strings.HasPrefix(expr, ".") {
 		return inputs
@@ -351,6 +359,16 @@ func hasValue(value interface{}, key interface{}) bool {
 	}
 }
 
+func applyStringAffix(inputs []interface{}, rawArg string, match func(string, string) bool) []interface{} {
+	arg, ok := parseLiteral(rawArg).(string)
+	results := make([]interface{}, len(inputs))
+	for i, item := range inputs {
+		s, isString := item.(string)
+		results[i] = ok && isString && match(s, arg)
+	}
+	return results
+}
+
 func parseLiteral(value string) interface{} {
 	trimmed := strings.TrimSpace(value)
 	if parsed, ok := parseJSONLiteral(trimmed); ok {
@@ -425,6 +443,12 @@ func isSupportedPredicateExpression(expr string) bool {
 		return true
 	}
 	if strings.HasPrefix(expr, "has(") && strings.HasSuffix(expr, ")") {
+		return true
+	}
+	if strings.HasPrefix(expr, "startswith(") && strings.HasSuffix(expr, ")") {
+		return true
+	}
+	if strings.HasPrefix(expr, "endswith(") && strings.HasSuffix(expr, ")") {
 		return true
 	}
 	if strings.HasPrefix(expr, "{") && strings.HasSuffix(expr, "}") {
