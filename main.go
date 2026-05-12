@@ -307,6 +307,19 @@ func main() {
 			fmt.Printf("Selected: %s\n", value)
 		})
 
+	case "upload":
+		if len(cmdArgs) < 2 {
+			fatal("Usage: borz upload <ref> <file> [file...]")
+		}
+		ref := normalizeRef(cmdArgs[0])
+		files := append([]string{}, cmdArgs[1:]...)
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionUpload, Ref: ref, Files: files}
+		setTab(req, globalTabID)
+		applyCLIWaitFor(req, args)
+		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+			fmt.Printf("Uploaded %d file(s)\n", len(files))
+		})
+
 	case "eval":
 		filePath := getArgValue(args, "--file")
 		var script string

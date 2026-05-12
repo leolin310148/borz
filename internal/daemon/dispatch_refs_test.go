@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -129,6 +131,74 @@ func TestDispatch_Check_Uncheck_Select(t *testing.T) {
 	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionSelect, Ref: "1", Value: "opt2"})
 	if !resp.Success {
 		t.Fatalf("select: %+v", resp)
+	}
+}
+
+func TestDispatch_Upload(t *testing.T) {
+	dir := t.TempDir()
+	file1 := filepath.Join(dir, "a.txt")
+	file2 := filepath.Join(dir, "b.txt")
+	if err := os.WriteFile(file1, []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file2, []byte("b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	var sawFiles []interface{}
+	f.On("DOM.setFileInputFiles", func(raw json.RawMessage) (interface{}, error) {
+		var params struct {
+			BackendNodeID int           `json:"backendNodeId"`
+			Files         []interface{} `json:"files"`
+		}
+		json.Unmarshal(raw, &params)
+		sawFiles = params.Files
+		return map[string]interface{}{}, nil
+	})
+	c := connectCdp(t, f)
+
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "1", &protocol.RefInfo{BackendDOMNodeID: 10})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionUpload, Ref: "1", Files: []string{file1, file2}})
+	if !resp.Success {
+		t.Fatalf("upload: %+v", resp)
+	}
+	if len(sawFiles) != 2 {
+		t.Fatalf("CDP received %d files, want 2", len(sawFiles))
+	}
+
+	// Missing ref -> fail.
+	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionUpload, Files: []string{file1}})
+	if resp.Success || !strings.Contains(resp.Error, "missing ref") {
+		t.Fatalf("missing ref: %+v", resp)
+	}
+
+	// Missing files -> fail.
+	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionUpload, Ref: "1"})
+	if resp.Success || !strings.Contains(resp.Error, "missing files") {
+		t.Fatalf("missing files: %+v", resp)
+	}
+
+	// File that doesn't exist -> stat error.
+	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionUpload, Ref: "1", Files: []string{filepath.Join(dir, "does-not-exist")}})
+	if resp.Success || !strings.Contains(resp.Error, "stat") {
+		t.Fatalf("missing file should fail: %+v", resp)
+	}
+
+	// Directory rejected.
+	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionUpload, Ref: "1", Files: []string{dir}})
+	if resp.Success || !strings.Contains(resp.Error, "directory") {
+		t.Fatalf("directory should fail: %+v", resp)
+	}
+
+	// Unknown ref -> fail (after files validate).
+	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionUpload, Ref: "ghost", Files: []string{file1}})
+	if resp.Success || !strings.Contains(resp.Error, "unknown ref") {
+		t.Fatalf("unknown ref: %+v", resp)
 	}
 }
 

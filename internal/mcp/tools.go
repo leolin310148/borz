@@ -131,6 +131,15 @@ var selectTool = mcp.NewTool("browser_select",
 	timeoutParam(),
 )
 
+var uploadTool = mcp.NewTool("browser_upload",
+	mcp.WithDescription("Attach files to an <input type=file> element. Wraps CDP DOM.setFileInputFiles — the files dialog never opens. Paths are resolved on the daemon's filesystem (where Chrome runs), so for remote daemons the files must live on the daemon host."),
+	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot (must point at an <input type=file>)")),
+	mcp.WithArray("files", mcp.Required(), mcp.Description("Absolute file paths on the daemon host. Pass one entry for single-file inputs, multiple for inputs with the `multiple` attribute."), mcp.Items(map[string]any{"type": "string"})),
+	tabParam(),
+	waitForParam(),
+	timeoutParam(),
+)
+
 var pressTool = mcp.NewTool("browser_press",
 	mcp.WithDescription("Press a keyboard key (e.g. Enter, Tab, ArrowDown, a, A)"),
 	mcp.WithString("key", mcp.Required(), mcp.Description("Key to press (e.g. \"Enter\", \"Tab\", \"Escape\", \"ArrowDown\")")),

@@ -273,6 +273,22 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			},
 		},
 		{
+			name:   "upload multiple files",
+			args:   []string{"upload", "@photos", "/tmp/a.jpg", "/tmp/b.jpg"},
+			action: protocol.ActionUpload,
+			check: func(t *testing.T, req protocol.Request, out string) {
+				if req.Ref != "photos" {
+					t.Fatalf("upload ref = %q", req.Ref)
+				}
+				if len(req.Files) != 2 || req.Files[0] != "/tmp/a.jpg" || req.Files[1] != "/tmp/b.jpg" {
+					t.Fatalf("upload files = %v", req.Files)
+				}
+				if !strings.Contains(out, "Uploaded 2 file(s)") {
+					t.Fatalf("upload output = %q", out)
+				}
+			},
+		},
+		{
 			name:   "eval unwrap",
 			args:   []string{"eval", "--unwrap", "--no-auto-await", "1 + 1"},
 			action: protocol.ActionEval,

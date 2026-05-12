@@ -65,6 +65,13 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/select", s.restJSON(func(body restBody) *protocol.Request {
 		return body.applyWait(&protocol.Request{Action: protocol.ActionSelect, Ref: body.Ref, Value: body.Value, TabID: body.tabID()})
 	}))
+	mux.HandleFunc("/v1/upload", s.restJSONE(func(body restBody) (*protocol.Request, error) {
+		files := body.uploadFiles()
+		if len(files) == 0 {
+			return nil, fmt.Errorf("files (or file) is required")
+		}
+		return body.applyWait(&protocol.Request{Action: protocol.ActionUpload, Ref: body.Ref, Files: files, TabID: body.tabID()}), nil
+	}))
 	mux.HandleFunc("/v1/press", s.restJSON(func(body restBody) *protocol.Request {
 		return body.applyWait(&protocol.Request{Action: protocol.ActionPress, Key: body.Key, Modifiers: body.Modifiers, TabID: body.tabID()})
 	}))
@@ -335,6 +342,29 @@ type restBody struct {
 	DeltaX     *float64 `json:"deltaX,omitempty"`
 	DeltaY     *float64 `json:"deltaY,omitempty"`
 	ClickCount *int     `json:"clickCount,omitempty"`
+
+	// Upload — absolute file paths on the daemon's filesystem. `file` is
+	// a convenience alias for a single-file upload.
+	Files []string `json:"files,omitempty"`
+	File  string   `json:"file,omitempty"`
+}
+
+// uploadFiles returns the file list for an /v1/upload request, accepting
+// either `files: [...]` or the single-string alias `file: "..."`.
+func (b restBody) uploadFiles() []string {
+	if len(b.Files) > 0 {
+		out := make([]string, 0, len(b.Files))
+		for _, p := range b.Files {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	if p := strings.TrimSpace(b.File); p != "" {
+		return []string{p}
+	}
+	return nil
 }
 
 // applyWait copies WaitFor / TimeoutMs / Activate onto req when the body

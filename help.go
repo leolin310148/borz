@@ -116,6 +116,17 @@ var commandHelp = map[string]cmdHelp{
 		Examples: []string{"  borz select 9 'us-east-1'"},
 		Notes:    refNote,
 	},
+	"upload": {
+		Summary: "Attach one or more files to an <input type=file> by ref.",
+		Usage:   "borz upload <ref> <file> [file...] [--tab <id>]" + waitForUsageSuffix,
+		Examples: []string{
+			"  borz upload 5 ./photo.jpg",
+			"  borz upload 5 ./a.pdf ./b.pdf  # multi-file input",
+		},
+		Notes: refNote + "\nWraps CDP DOM.setFileInputFiles. Paths are resolved on the daemon's\n" +
+			"filesystem (where Chrome runs) — for `--remote`, the files must live on\n" +
+			"the daemon host, not on the client.",
+	},
 	"press": {
 		Summary: "Dispatch a single key press to the active element.",
 		Usage:   "borz press <key> [--tab <id>]" + waitForUsageSuffix,

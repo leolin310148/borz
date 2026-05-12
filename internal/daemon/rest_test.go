@@ -346,6 +346,8 @@ func TestRESTRoutes_RequestBuilders(t *testing.T) {
 		{"/v1/check", `{"ref":"e1"}`},
 		{"/v1/uncheck", `{"ref":"e1"}`},
 		{"/v1/select", `{"ref":"e1","value":"x"}`},
+		{"/v1/upload", `{"ref":"e1","files":["/tmp/borz-upload-test.bin"]}`},
+		{"/v1/upload", `{"ref":"e1","file":"/tmp/borz-upload-test.bin"}`},
 		{"/v1/press", `{"key":"Enter","modifiers":["shift"]}`},
 		{"/v1/key", `{"keyType":"press","key":"A","code":"KeyA","text":"a","modifiers":["ctrl"],"activate":true}`},
 		{"/v1/mouse", `{"mouseType":"click","x":1,"y":2,"button":"left","clickCount":1,"activate":true}`},
@@ -377,6 +379,37 @@ func TestRESTRoutes_RequestBuilders(t *testing.T) {
 				t.Fatalf("%s returned %d: %s", tc.path, rec.Code, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestRestBody_UploadFiles(t *testing.T) {
+	if got := (restBody{Files: []string{"/a", "  ", "/b"}}).uploadFiles(); len(got) != 2 || got[0] != "/a" || got[1] != "/b" {
+		t.Errorf("Files: %v", got)
+	}
+	if got := (restBody{File: "  /c  "}).uploadFiles(); len(got) != 1 || got[0] != "/c" {
+		t.Errorf("File single: %v", got)
+	}
+	if got := (restBody{File: "   "}).uploadFiles(); got != nil {
+		t.Errorf("blank File: %v", got)
+	}
+	if got := (restBody{}).uploadFiles(); got != nil {
+		t.Errorf("empty: %v", got)
+	}
+}
+
+func TestRESTUpload_MissingFiles(t *testing.T) {
+	s, _ := serverWithFakeCDP(t)
+	mux := http.NewServeMux()
+	s.registerRESTRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/upload", strings.NewReader(`{"ref":"e1"}`))
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("missing files: got %d want 400; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "files") {
+		t.Errorf("expected error about files; got %s", rec.Body.String())
 	}
 }
 

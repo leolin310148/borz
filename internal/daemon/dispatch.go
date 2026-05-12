@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -1000,6 +1001,41 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 			"functionDeclaration": fmt.Sprintf(`function() { this.value = %s; this.dispatchEvent(new Event('input', { bubbles: true })); this.dispatchEvent(new Event('change', { bubbles: true })); }`, string(valueJSON)),
 		})
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Value: req.Value, Tab: shortID, Seq: intPtr(seq)}))
+
+	case protocol.ActionUpload:
+		if req.Ref == "" {
+			return failResp(req.ID, "missing ref parameter")
+		}
+		if len(req.Files) == 0 {
+			return failResp(req.ID, "missing files parameter")
+		}
+		absFiles := make([]string, 0, len(req.Files))
+		for _, p := range req.Files {
+			abs, err := filepath.Abs(p)
+			if err != nil {
+				return failResp(req.ID, fmt.Errorf("resolve %q: %w", p, err))
+			}
+			info, err := os.Stat(abs)
+			if err != nil {
+				return failResp(req.ID, fmt.Errorf("stat %q: %w", abs, err))
+			}
+			if info.IsDir() {
+				return failResp(req.ID, fmt.Errorf("%q is a directory, not a file", abs))
+			}
+			absFiles = append(absFiles, abs)
+		}
+		seq := tab.RecordAction()
+		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
+		if err != nil {
+			return failResp(req.ID, err)
+		}
+		if _, err := cdp.SessionCommand(target.ID, "DOM.setFileInputFiles", map[string]interface{}{
+			"backendNodeId": backendID,
+			"files":         absFiles,
+		}); err != nil {
+			return failResp(req.ID, err)
+		}
+		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionGet:
 		if req.Attribute == "" {

@@ -266,6 +266,42 @@ func handleSelect(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResu
 	return textResult(resp, fmt.Sprintf("Selected %q on element @%s", value, normalizeRef(ref))), nil
 }
 
+func handleUpload(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ref, err := r.RequireString("ref")
+	if err != nil {
+		return mcp.NewToolResultError("ref is required"), nil
+	}
+	raw, ok := r.GetArguments()["files"]
+	if !ok || raw == nil {
+		return mcp.NewToolResultError("files is required"), nil
+	}
+	rawList, ok := raw.([]any)
+	if !ok {
+		return mcp.NewToolResultError("files must be an array of strings"), nil
+	}
+	files := make([]string, 0, len(rawList))
+	for i, v := range rawList {
+		s, ok := v.(string)
+		if !ok {
+			return mcp.NewToolResultError(fmt.Sprintf("files[%d] must be a string", i)), nil
+		}
+		if s = strings.TrimSpace(s); s != "" {
+			files = append(files, s)
+		}
+	}
+	if len(files) == 0 {
+		return mcp.NewToolResultError("files must contain at least one path"), nil
+	}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionUpload, Ref: normalizeRef(ref), Files: files}
+	setTab(req, r)
+	applyWaitFor(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	return textResult(resp, fmt.Sprintf("Uploaded %d file(s) to @%s", len(files), normalizeRef(ref))), nil
+}
+
 func handlePress(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	key, err := r.RequireString("key")
 	if err != nil {

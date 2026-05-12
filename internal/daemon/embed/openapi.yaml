@@ -241,6 +241,36 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
+  /v1/upload:
+    post:
+      tags: [interaction]
+      summary: Attach files to an `<input type=file>` by ref
+      description: |
+        Wraps CDP `DOM.setFileInputFiles`. Paths are resolved on the daemon's
+        filesystem (where Chrome runs) — remote clients must reference files
+        that exist on the daemon host, not on the client.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - $ref: "#/components/schemas/WaitOptions"
+                - type: object
+                  required: [ref]
+                  properties:
+                    ref: { type: string }
+                    files:
+                      type: array
+                      items: { type: string }
+                      description: Absolute file paths on the daemon host.
+                    file:
+                      type: string
+                      description: Single-file convenience alias for `files`.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
   /v1/press:
     post:
       tags: [input]

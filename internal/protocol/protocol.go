@@ -41,6 +41,7 @@ const (
 	ActionKey           ActionType = "key"
 	ActionMouse         ActionType = "mouse"
 	ActionClipboardRead ActionType = "clipboard_read"
+	ActionUpload        ActionType = "upload"
 )
 
 // Request is sent from CLI to daemon.
@@ -161,6 +162,11 @@ type Request struct {
 	DeltaX     *float64 `json:"deltaX,omitempty"`
 	DeltaY     *float64 `json:"deltaY,omitempty"`
 	ClickCount *int     `json:"clickCount,omitempty"`
+
+	// Upload (ActionUpload). Files is the list of absolute file paths to
+	// attach to an <input type=file> referenced by Ref. Paths are resolved
+	// on the daemon's filesystem.
+	Files []string `json:"files,omitempty"`
 }
 
 // RefInfo stores element reference information from a snapshot.

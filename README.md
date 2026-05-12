@@ -203,12 +203,12 @@ Add to your MCP client configuration (e.g. `.claude/settings.json` for Claude Co
 
 ### Available Tools
 
-The MCP server exposes 37 tools:
+The MCP server exposes 38 tools:
 
 | Category | Tools |
 |----------|-------|
 | **Navigation** | `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close` |
-| **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_press`, `browser_scroll` |
+| **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_press`, `browser_scroll` |
 | **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_wait` |
 | **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close` |
 | **Diagnostics** | `browser_network`, `browser_console`, `browser_errors`, `browser_doctor` |
@@ -387,6 +387,7 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/click` \| `/hover` \| `/check` \| `/uncheck` | `{ref, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/fill` \| `/type` | `{ref, text, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/select` | `{ref, value, tab?, waitFor?, timeoutMs?}` |
+| POST | `/v1/upload` | `{ref, files: [path,...] \| file, tab?, waitFor?, timeoutMs?}` — attach files to `<input type=file>` (paths resolved on daemon host) |
 | POST | `/v1/press` | `{key, modifiers?, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/key` | `{keyType?, key?, code?, text?, modifiers?, tab?}` — raw OS-level key input (reaches canvas apps / SSH) |
 | POST | `/v1/mouse` | `{mouseType?, x?, y?, button?, deltaX?, deltaY?, clickCount?, modifiers?, tab?}` — raw OS-level mouse input |
@@ -719,6 +720,18 @@ borz uncheck 7
 # Select a dropdown option by value
 borz select 6 "option2"
 ```
+
+#### `upload`
+
+```bash
+# Attach a file to an <input type=file>
+borz upload 5 ./photo.jpg
+
+# Multi-file input
+borz upload 5 ./a.pdf ./b.pdf
+```
+
+Paths are resolved on the daemon's filesystem (where Chrome runs). When using `--remote`, the files must live on the daemon host, not on the client. Wraps CDP `DOM.setFileInputFiles`, so the OS file picker never opens.
 
 #### `press`
 

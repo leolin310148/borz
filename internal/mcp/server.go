@@ -54,6 +54,7 @@ func newMCPServer(version string) *server.MCPServer {
 	s.AddTool(checkTool, handleCheck)
 	s.AddTool(uncheckTool, handleUncheck)
 	s.AddTool(selectTool, handleSelect)
+	s.AddTool(uploadTool, handleUpload)
 	s.AddTool(pressTool, handlePress)
 	s.AddTool(scrollTool, handleScroll)
 

@@ -354,6 +354,49 @@ func TestHandleType(t *testing.T) {
 	}
 }
 
+func TestHandleUpload(t *testing.T) {
+	// missing ref
+	res, _ := handleUpload(context.Background(), mkReq(nil))
+	if !res.IsError {
+		t.Error("missing ref should error")
+	}
+	// missing files
+	res, _ = handleUpload(context.Background(), mkReq(map[string]any{"ref": "1"}))
+	if !res.IsError {
+		t.Error("missing files should error")
+	}
+	// wrong type
+	res, _ = handleUpload(context.Background(), mkReq(map[string]any{"ref": "1", "files": "not-array"}))
+	if !res.IsError {
+		t.Error("non-array files should error")
+	}
+	// element not a string
+	res, _ = handleUpload(context.Background(), mkReq(map[string]any{"ref": "1", "files": []any{42}}))
+	if !res.IsError {
+		t.Error("non-string element should error")
+	}
+	// all blanks
+	res, _ = handleUpload(context.Background(), mkReq(map[string]any{"ref": "1", "files": []any{"  ", ""}}))
+	if !res.IsError {
+		t.Error("all-blank files should error")
+	}
+	// success
+	cap := capturingSend(t, ok())
+	_, _ = handleUpload(context.Background(), mkReq(map[string]any{"ref": "@5", "files": []any{"/tmp/a", " ", "/tmp/b"}, "tab": "T1"}))
+	if cap.req.Action != protocol.ActionUpload {
+		t.Errorf("action = %v", cap.req.Action)
+	}
+	if cap.req.Ref != "5" {
+		t.Errorf("ref = %q", cap.req.Ref)
+	}
+	if cap.req.TabID != "T1" {
+		t.Errorf("tab = %v", cap.req.TabID)
+	}
+	if len(cap.req.Files) != 2 || cap.req.Files[0] != "/tmp/a" || cap.req.Files[1] != "/tmp/b" {
+		t.Errorf("files = %v", cap.req.Files)
+	}
+}
+
 func TestHandleSelect(t *testing.T) {
 	res, _ := handleSelect(context.Background(), mkReq(nil))
 	if !res.IsError {
