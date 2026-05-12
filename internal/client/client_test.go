@@ -182,9 +182,22 @@ func TestRemoteConfigReadWriteAndToggle(t *testing.T) {
 }
 
 func TestRemoteConfigValidation(t *testing.T) {
-	for _, raw := range []string{"", "ftp://example.test", "http:///missing-host", "http://:19824", "http://user:pass@example.test"} {
-		if _, err := ConfigureRemote(raw, ""); err == nil {
-			t.Fatalf("ConfigureRemote(%q) expected error", raw)
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"", "required"},
+		{"ftp://example.test", "must use http"},
+		{"http:///missing-host", "include a host"},
+		{"http://:19824", "include a host"},
+		{"http://user:pass@example.test", "user info"},
+		{"http://example.test:0", "TCP port"},
+		{"http://example.test:65536", "TCP port"},
+		{"http://[::1]:", "TCP port"},
+	}
+	for _, tc := range cases {
+		if _, err := ConfigureRemote(tc.raw, ""); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("ConfigureRemote(%q) error = %v, want substring %q", tc.raw, err, tc.want)
 		}
 	}
 }

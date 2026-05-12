@@ -211,6 +211,9 @@ func normalizeServerURL(raw string) (string, error) {
 	if u.Host == "" || u.Hostname() == "" {
 		return "", fmt.Errorf("server URL must include a host")
 	}
+	if err := validateServerURLPort(u); err != nil {
+		return "", err
+	}
 	if u.User != nil {
 		return "", fmt.Errorf("server URL must not include user info")
 	}
@@ -218,6 +221,29 @@ func normalizeServerURL(raw string) (string, error) {
 	u.Fragment = ""
 	u.Path = strings.TrimRight(u.Path, "/")
 	return u.String(), nil
+}
+
+func validateServerURLPort(u *url.URL) error {
+	port := u.Port()
+	if port == "" {
+		if hasExplicitPort(u.Host) {
+			return fmt.Errorf("server URL port must be a TCP port between 1 and 65535")
+		}
+		return nil
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n <= 0 || n > 65535 {
+		return fmt.Errorf("server URL port must be a TCP port between 1 and 65535")
+	}
+	return nil
+}
+
+func hasExplicitPort(host string) bool {
+	if strings.HasPrefix(host, "[") {
+		close := strings.LastIndex(host, "]")
+		return close >= 0 && close+1 < len(host) && host[close+1] == ':'
+	}
+	return strings.Count(host, ":") == 1
 }
 
 // ReadDaemonJSON reads ~/.borz/daemon.json.
