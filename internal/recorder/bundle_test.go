@@ -93,6 +93,9 @@ func TestDecodeDataURLAndPrivacyRedaction(t *testing.T) {
 	if _, _, err := DecodeDataURL("not-a-data-url"); err == nil {
 		t.Fatal("DecodeDataURL should reject invalid input")
 	}
+	if _, _, err := DecodeDataURL("data:image/png;base64"); err == nil {
+		t.Fatal("DecodeDataURL should reject data URLs without a comma payload separator")
+	}
 	if _, _, err := DecodeDataURL("data:text/plain;base64," + base64.StdEncoding.EncodeToString(raw)); err == nil {
 		t.Fatal("DecodeDataURL should reject non-image data URLs")
 	}

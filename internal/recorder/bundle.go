@@ -577,9 +577,9 @@ func redactNetwork(v any) any {
 
 // DecodeDataURL returns media bytes and extension from a browser data URL.
 func DecodeDataURL(dataURL string) ([]byte, string, error) {
-	prefix, encoded, ok := strings.Cut(strings.TrimSpace(dataURL), ",")
+	prefix, encoded, hasPayload := strings.Cut(strings.TrimSpace(dataURL), ",")
 	ext, ok := dataURLImageExtension(prefix)
-	if !ok {
+	if !hasPayload || !ok {
 		return nil, "", errors.New("expected base64 data URL")
 	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
