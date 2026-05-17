@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -329,6 +330,86 @@ func TestIsProcessAlive_Bogus(t *testing.T) {
 	// 999999 is a commonly-unused high PID.
 	if IsProcessAlive(999999) {
 		t.Skip("PID 999999 happened to exist; can't verify")
+	}
+}
+
+// --- WaitForProcessExit ---
+
+func TestWaitForProcessExit_AlreadyDead(t *testing.T) {
+	if IsProcessAlive(999999) {
+		t.Skip("PID 999999 happened to exist")
+	}
+	if !WaitForProcessExit(999999, time.Second) {
+		t.Error("expected true for already-dead pid")
+	}
+}
+
+func TestWaitForProcessExit_AliveTimesOut(t *testing.T) {
+	start := time.Now()
+	if WaitForProcessExit(os.Getpid(), 150*time.Millisecond) {
+		t.Error("expected false for self pid")
+	}
+	if elapsed := time.Since(start); elapsed < 100*time.Millisecond {
+		t.Errorf("returned too quickly (%v); should poll until deadline", elapsed)
+	}
+}
+
+// --- KillDaemon ---
+
+func TestKillDaemon_KillsLiveProcessAndRemovesDaemonJSON(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relies on POSIX sleep(1)")
+	}
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("spawn sleep: %v", err)
+	}
+	pid := cmd.Process.Pid
+	reaped := make(chan struct{})
+	go func() {
+		_, _ = cmd.Process.Wait()
+		close(reaped)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		select {
+		case <-reaped:
+		case <-time.After(2 * time.Second):
+		}
+	})
+
+	// Plant a stale daemon.json so we can confirm KillDaemon cleans it up.
+	info := protocol.DaemonInfo{PID: pid, Host: "127.0.0.1", Port: 1}
+	raw, _ := json.Marshal(info)
+	dpath := filepath.Join(home, "daemon.json")
+	if err := os.WriteFile(dpath, raw, 0o600); err != nil {
+		t.Fatalf("write daemon.json: %v", err)
+	}
+	cachedInfo = &info
+	daemonReady = true
+
+	if err := KillDaemon(pid); err != nil {
+		t.Fatalf("KillDaemon: %v", err)
+	}
+
+	select {
+	case <-reaped:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("sleep pid %d not reaped after KillDaemon", pid)
+	}
+	if IsProcessAlive(pid) {
+		t.Errorf("pid %d still alive after KillDaemon", pid)
+	}
+	if _, err := os.Stat(dpath); err == nil {
+		t.Errorf("daemon.json not removed after KillDaemon")
+	}
+	if cachedInfo != nil || daemonReady {
+		t.Errorf("cachedInfo/daemonReady not reset after KillDaemon")
 	}
 }
 

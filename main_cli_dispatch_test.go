@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -833,6 +835,11 @@ func TestStopDaemonAfterUpdateBranches(t *testing.T) {
 
 	fd := newFakeDaemon(t)
 	host, port := splitTestServerAddr(t, fd.server)
+	// newFakeDaemon writes daemon.json with PID=os.Getpid(); the new
+	// force-kill fallback would target this process. Rewrite the file with
+	// a dead PID so WaitForProcessExit returns true and we hit the graceful
+	// "Stopped running daemon" branch instead of escalating.
+	rewriteDaemonJSONPID(t, 999999)
 	errOut := captureStderr(t, stopDaemonAfterUpdate)
 	if !strings.Contains(errOut, "Stopped running daemon") {
 		t.Fatalf("local stop stderr = %q (host=%s port=%d)", errOut, host, port)
@@ -850,6 +857,74 @@ func TestStopDaemonAfterUpdateBranches(t *testing.T) {
 	if !strings.Contains(errOut, "server running on 0.0.0.0:19824") {
 		t.Fatalf("remote note stderr = %q", errOut)
 	}
+}
+
+// rewriteDaemonJSONPID overwrites daemon.json under $BORZ_HOME with a new PID,
+// preserving host/port/token. Used to decouple a fakeDaemon's HTTP server
+// (which always runs in the test process) from the PID that stopDaemonAfterUpdate
+// would otherwise target with a SIGKILL fallback.
+func rewriteDaemonJSONPID(t *testing.T, pid int) {
+	t.Helper()
+	home := os.Getenv("BORZ_HOME")
+	path := filepath.Join(home, "daemon.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read daemon.json: %v", err)
+	}
+	var info protocol.DaemonInfo
+	if err := json.Unmarshal(raw, &info); err != nil {
+		t.Fatalf("unmarshal daemon.json: %v", err)
+	}
+	info.PID = pid
+	data, _ := json.Marshal(info)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write daemon.json: %v", err)
+	}
+	client.ResetForTests()
+}
+
+func TestStopDaemonAfterUpdate_ForceKillsStuckDaemon(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relies on POSIX sleep(1)")
+	}
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("spawn sleep: %v", err)
+	}
+	pid := cmd.Process.Pid
+	// Reap concurrently so a killed child doesn't linger as a zombie and
+	// fool IsProcessAlive (which uses signal(0) on the pid).
+	reaped := make(chan struct{})
+	go func() {
+		_, _ = cmd.Process.Wait()
+		close(reaped)
+	}()
+	t.Cleanup(func() {
+		// Belt-and-suspenders if the test exits early.
+		_ = cmd.Process.Kill()
+		select {
+		case <-reaped:
+		case <-time.After(2 * time.Second):
+		}
+	})
+
+	fd := newFakeDaemon(t)
+	rewriteDaemonJSONPID(t, pid)
+
+	errOut := captureStderr(t, stopDaemonAfterUpdate)
+
+	select {
+	case <-reaped:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("sleep child (pid %d) not reaped after stopDaemonAfterUpdate; stderr=%q", pid, errOut)
+	}
+	if !strings.Contains(errOut, "Killed stuck daemon") {
+		t.Fatalf("expected force-kill branch, stderr=%q", errOut)
+	}
+	if client.IsProcessAlive(pid) {
+		t.Errorf("pid %d still alive after force-kill", pid)
+	}
+	_ = fd
 }
 
 func TestHandleSiteRunWithLocalAdapter(t *testing.T) {

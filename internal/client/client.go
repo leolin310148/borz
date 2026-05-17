@@ -521,6 +521,40 @@ func StopDaemon() error {
 	return err
 }
 
+// WaitForProcessExit polls IsProcessAlive at 50ms intervals until the process
+// exits or the timeout elapses. Returns true if the process is gone.
+func WaitForProcessExit(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if !IsProcessAlive(pid) {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return !IsProcessAlive(pid)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// KillDaemon forcibly terminates the daemon process at pid (SIGKILL on Unix,
+// TerminateProcess on Windows) and removes a stale daemon.json. Used as a
+// fallback when /shutdown returns OK but the daemon does not actually exit —
+// e.g. when wedged on a long-running streaming response during `borz update`.
+func KillDaemon(pid int) error {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	if err := proc.Kill(); err != nil {
+		return err
+	}
+	WaitForProcessExit(pid, 2*time.Second)
+	os.Remove(config.DaemonJSONPath())
+	daemonReady = false
+	cachedInfo = nil
+	return nil
+}
+
 // GetJSON calls a GET endpoint on the daemon and returns the raw response body.
 // Used by REST endpoints that don't fit the /command protocol (e.g. /v1/cookies/all
 // served by the extension bridge).

@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/config"
@@ -903,6 +904,13 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 // no-op if no daemon is running, and shutdown errors are reported but do not
 // fail the update.
 //
+// Even when /shutdown returns OK, the daemon can stay alive — long-running
+// streaming requests (tab events, console tail, recordings) keep
+// httpSrv.Shutdown blocked, and an os.Exit happens only after that drain.
+// If the pid is still alive a couple of seconds after /shutdown, escalate to
+// SIGKILL so the next CLI command can respawn from the new binary on disk
+// instead of talking to a wedged old process.
+//
 // Server-mode (non-loopback bind) processes are deliberately *not* auto-stopped:
 // they are started by hand with config (CDP host/port, idle-tab timeout, token)
 // that we don't have a reliable way to replay, so silently respawning them
@@ -920,12 +928,25 @@ func stopDaemonAfterUpdate() {
 		fmt.Fprintln(os.Stderr, "          borz server --host <host> --port <port> --token <token> [other flags]")
 		return
 	}
-	if err := client.StopDaemon(); err != nil {
-		fmt.Fprintf(os.Stderr, "Note: could not stop running daemon (pid %d): %v\n", info.PID, err)
+	stopErr := client.StopDaemon()
+	if client.WaitForProcessExit(info.PID, 2*time.Second) {
+		if stopErr != nil {
+			fmt.Fprintf(os.Stderr, "Note: /shutdown errored (%v) but daemon (pid %d) exited.\n", stopErr, info.PID)
+		}
+		fmt.Fprintf(os.Stderr, "Stopped running daemon (pid %d); next command will relaunch it from the new binary.\n", info.PID)
+		return
+	}
+	if stopErr != nil {
+		fmt.Fprintf(os.Stderr, "Note: graceful shutdown of daemon (pid %d) failed: %v — forcing kill.\n", info.PID, stopErr)
+	} else {
+		fmt.Fprintf(os.Stderr, "Note: daemon (pid %d) did not exit after /shutdown — forcing kill.\n", info.PID)
+	}
+	if kerr := client.KillDaemon(info.PID); kerr != nil {
+		fmt.Fprintf(os.Stderr, "Note: could not kill stuck daemon (pid %d): %v\n", info.PID, kerr)
 		fmt.Fprintln(os.Stderr, "      Restart it manually so the new binary is in effect: borz daemon shutdown")
 		return
 	}
-	fmt.Fprintf(os.Stderr, "Stopped running daemon (pid %d); next command will relaunch it from the new binary.\n", info.PID)
+	fmt.Fprintf(os.Stderr, "Killed stuck daemon (pid %d); next command will relaunch it from the new binary.\n", info.PID)
 }
 
 func startDaemonForeground(rawArgs []string) {
