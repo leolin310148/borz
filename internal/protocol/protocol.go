@@ -59,6 +59,16 @@ type Request struct {
 	// TimeoutMs caps WaitFor (default 10000 when WaitFor is set).
 	TimeoutMs *int `json:"timeoutMs,omitempty"`
 
+	// PreDelayMs sleeps for this many milliseconds inside the daemon before
+	// the action runs. Mirrors the "sleep <ms> && borz <cmd>" shell pattern
+	// without spawning a second process. Capped by the daemon command
+	// timeout — set it well under that (default 30s).
+	PreDelayMs *int `json:"preDelayMs,omitempty"`
+	// PostDelayMs sleeps for this many milliseconds after a successful
+	// action, before returning. For SPA-driven DOM updates prefer WaitFor
+	// over PostDelayMs.
+	PostDelayMs *int `json:"postDelayMs,omitempty"`
+
 	// Interaction
 	Ref  string `json:"ref,omitempty"`
 	Text string `json:"text,omitempty"`

@@ -613,8 +613,30 @@ var (
 
 // --- Main dispatch ---
 
-// DispatchRequest handles all browser commands via CDP.
+// DispatchRequest handles all browser commands via CDP. It wraps
+// dispatchAction with PreDelayMs / PostDelayMs honoring so every action
+// can absorb the "sleep <ms> && borz <cmd>" / "borz <cmd> && sleep <ms>"
+// shell pattern without a second process round-trip.
 func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Response {
+	if req != nil {
+		if req.PreDelayMs != nil && *req.PreDelayMs > 0 {
+			delaySleep(time.Duration(*req.PreDelayMs) * time.Millisecond)
+		}
+	}
+	resp := dispatchAction(cdp, req)
+	if req != nil && resp != nil && resp.Success && req.PostDelayMs != nil && *req.PostDelayMs > 0 {
+		delaySleep(time.Duration(*req.PostDelayMs) * time.Millisecond)
+	}
+	return resp
+}
+
+// delaySleep is a package var so tests can stub the wall-clock pause without
+// adding seconds to the suite. Defaults to time.Sleep.
+var delaySleep = time.Sleep
+
+// dispatchAction is the real CDP dispatcher. Pre/post delay logic lives in
+// the public wrapper above so each action body stays focused on the action.
+func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Response {
 	tabRef := ""
 	if req.TabID != nil {
 		tabRef = fmt.Sprintf("%v", req.TabID)

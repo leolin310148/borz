@@ -1221,6 +1221,12 @@ components:
         page. Once the action runs the daemon polls
         `document.querySelector(waitFor)` on a 100 ms tick until it returns a
         non-null node or `timeoutMs` elapses (default 10000).
+
+        `preDelayMs` and `postDelayMs` are pure time-based sleeps applied
+        before the action starts / after a successful action returns. Use
+        these for the "sleep then act" pattern; prefer `waitFor` for
+        SPA-driven DOM updates. Both are capped by the daemon command
+        timeout (default 30s).
       properties:
         waitFor:
           type: string
@@ -1229,6 +1235,14 @@ components:
           type: integer
           minimum: 0
           description: Cap for waitFor in milliseconds (default 10000).
+        preDelayMs:
+          type: integer
+          minimum: 0
+          description: Sleep for this many milliseconds before the action runs.
+        postDelayMs:
+          type: integer
+          minimum: 0
+          description: Sleep for this many milliseconds after a successful action.
 
     ViewportBody:
       type: object

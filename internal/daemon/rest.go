@@ -323,6 +323,12 @@ type restBody struct {
 	WaitFor   string `json:"waitFor,omitempty"`
 	TimeoutMs *int   `json:"timeoutMs,omitempty"`
 
+	// Time-based delays. PreDelayMs sleeps before the action starts;
+	// PostDelayMs sleeps after a successful action, before the response
+	// returns. Both are capped by the daemon command timeout.
+	PreDelayMs  *int `json:"preDelayMs,omitempty"`
+	PostDelayMs *int `json:"postDelayMs,omitempty"`
+
 	// Bring the resolved tab to the foreground before running the action.
 	Activate bool `json:"activate,omitempty"`
 
@@ -380,6 +386,7 @@ func (b restBody) applyWait(req *protocol.Request) *protocol.Request {
 	if b.Activate {
 		req.Activate = true
 	}
+	b.applyDelays(req)
 	return req
 }
 
@@ -389,7 +396,20 @@ func (b restBody) withActivate(req *protocol.Request) *protocol.Request {
 	if b.Activate {
 		req.Activate = true
 	}
+	b.applyDelays(req)
 	return req
+}
+
+// applyDelays copies PreDelayMs / PostDelayMs onto req. Available on every
+// REST endpoint (not just page-changing ones) so an HTTP client can absorb
+// the "sleep && action" pattern just like the CLI.
+func (b restBody) applyDelays(req *protocol.Request) {
+	if b.PreDelayMs != nil {
+		req.PreDelayMs = b.PreDelayMs
+	}
+	if b.PostDelayMs != nil {
+		req.PostDelayMs = b.PostDelayMs
+	}
 }
 
 func (b restBody) viewportOptions() (*protocol.ViewportOptions, error) {

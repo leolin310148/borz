@@ -304,6 +304,78 @@ func TestApplyCLIWaitForTrimsSelector(t *testing.T) {
 	}
 }
 
+func TestParseGlobalDelayFlag(t *testing.T) {
+	if got := parseGlobalDelayFlag([]string{"snapshot"}, "--pre-delay"); got != nil {
+		t.Fatalf("absent flag should return nil, got %v", *got)
+	}
+	got := parseGlobalDelayFlag([]string{"snapshot", "--pre-delay", "250"}, "--pre-delay")
+	if got == nil || *got != 250 {
+		t.Fatalf("--pre-delay 250: got %v", got)
+	}
+	zero := parseGlobalDelayFlag([]string{"snapshot", "--post-delay", "0"}, "--post-delay")
+	if zero == nil || *zero != 0 {
+		t.Fatalf("--post-delay 0 should be preserved as explicit zero, got %v", zero)
+	}
+}
+
+func TestParseGlobalDelayFlagRejectsInvalid(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "negative", args: []string{"snapshot", "--pre-delay", "-5"}, want: "--pre-delay must be a non-negative integer"},
+		{name: "non-numeric", args: []string{"snapshot", "--pre-delay", "abc"}, want: "--pre-delay must be a non-negative integer"},
+		{name: "missing-value", args: []string{"snapshot", "--pre-delay", "--json"}, want: "--pre-delay must be a non-negative integer"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			errOut := captureStderr(t, func() {
+				expectExit(t, 1, func() {
+					parseGlobalDelayFlag(tc.args, "--pre-delay")
+				})
+			})
+			if !strings.Contains(errOut, tc.want) {
+				t.Fatalf("stderr = %q, want %q", errOut, tc.want)
+			}
+		})
+	}
+}
+
+func TestApplyGlobalDelays(t *testing.T) {
+	defer func() { globalPreDelayMs, globalPostDelayMs = nil, nil }()
+
+	// Nil req must be a no-op.
+	applyGlobalDelays(nil)
+
+	pre := 100
+	post := 200
+	globalPreDelayMs = &pre
+	globalPostDelayMs = &post
+
+	req := &protocol.Request{}
+	applyGlobalDelays(req)
+	if req.PreDelayMs == nil || *req.PreDelayMs != 100 {
+		t.Fatalf("preDelayMs = %v", req.PreDelayMs)
+	}
+	if req.PostDelayMs == nil || *req.PostDelayMs != 200 {
+		t.Fatalf("postDelayMs = %v", req.PostDelayMs)
+	}
+	// Mutating the stamped value must not bleed back into the global,
+	// otherwise concurrent requests would interfere.
+	*req.PreDelayMs = 999
+	if *globalPreDelayMs != 100 {
+		t.Fatalf("globalPreDelayMs leaked: %d", *globalPreDelayMs)
+	}
+
+	// A request that already has a delay set keeps its own value.
+	custom := 50
+	req2 := &protocol.Request{PreDelayMs: &custom}
+	applyGlobalDelays(req2)
+	if req2.PreDelayMs == nil || *req2.PreDelayMs != 50 {
+		t.Fatalf("explicit preDelay overwritten: %v", req2.PreDelayMs)
+	}
+}
+
 func TestMainWaitRejectsInvalidDuration(t *testing.T) {
 	for _, arg := range []string{"abc", "-1"} {
 		t.Run(arg, func(t *testing.T) {

@@ -21,6 +21,17 @@ func timeoutParam() mcp.ToolOption {
 	return mcp.WithNumber("timeout", mcp.Description("Cap for waitFor in milliseconds (default 10000). Ignored without waitFor."), mcp.Min(0))
 }
 
+// preDelayParam / postDelayParam are pure time-based sleeps applied inside
+// the daemon before / after the action. For SPA-driven DOM changes prefer
+// waitFor; reach for these only when there is no selector to anchor on.
+func preDelayParam() mcp.ToolOption {
+	return mcp.WithNumber("preDelay", mcp.Description("Sleep this many milliseconds inside the daemon before the action runs. Use sparingly — prefer waitFor for DOM-driven waits. Capped by the daemon command timeout."), mcp.Min(0))
+}
+
+func postDelayParam() mcp.ToolOption {
+	return mcp.WithNumber("postDelay", mcp.Description("After a successful action, sleep this many milliseconds before returning. Use sparingly — prefer waitFor for DOM-driven waits."), mcp.Min(0))
+}
+
 func viewportParams() []mcp.ToolOption {
 	return []mcp.ToolOption{
 		mcp.WithString("preset", mcp.Description("Named viewport preset to apply before navigation"), mcp.Enum(protocol.ViewportPresetNames()...)),
@@ -42,6 +53,8 @@ var navigateTool = mcp.NewTool("browser_navigate", append([]mcp.ToolOption{
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 }, viewportParams()...)...)
 
 var backTool = mcp.NewTool("browser_back",
@@ -49,6 +62,8 @@ var backTool = mcp.NewTool("browser_back",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var forwardTool = mcp.NewTool("browser_forward",
@@ -56,6 +71,8 @@ var forwardTool = mcp.NewTool("browser_forward",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var refreshTool = mcp.NewTool("browser_refresh",
@@ -63,6 +80,8 @@ var refreshTool = mcp.NewTool("browser_refresh",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var closeTool = mcp.NewTool("browser_close",
@@ -78,6 +97,8 @@ var clickTool = mcp.NewTool("browser_click",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var hoverTool = mcp.NewTool("browser_hover",
@@ -86,6 +107,8 @@ var hoverTool = mcp.NewTool("browser_hover",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var fillTool = mcp.NewTool("browser_fill",
@@ -95,6 +118,8 @@ var fillTool = mcp.NewTool("browser_fill",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var typeTool = mcp.NewTool("browser_type",
@@ -104,6 +129,8 @@ var typeTool = mcp.NewTool("browser_type",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var checkTool = mcp.NewTool("browser_check",
@@ -112,6 +139,8 @@ var checkTool = mcp.NewTool("browser_check",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var uncheckTool = mcp.NewTool("browser_uncheck",
@@ -120,6 +149,8 @@ var uncheckTool = mcp.NewTool("browser_uncheck",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var selectTool = mcp.NewTool("browser_select",
@@ -129,6 +160,8 @@ var selectTool = mcp.NewTool("browser_select",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var uploadTool = mcp.NewTool("browser_upload",
@@ -138,6 +171,8 @@ var uploadTool = mcp.NewTool("browser_upload",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var pressTool = mcp.NewTool("browser_press",
@@ -146,6 +181,8 @@ var pressTool = mcp.NewTool("browser_press",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var scrollTool = mcp.NewTool("browser_scroll",
@@ -158,6 +195,8 @@ var scrollTool = mcp.NewTool("browser_scroll",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 // --- Observation ---
@@ -208,6 +247,8 @@ var evalTool = mcp.NewTool("browser_eval",
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
+	preDelayParam(),
+	postDelayParam(),
 )
 
 var waitTool = mcp.NewTool("browser_wait",

@@ -34,11 +34,20 @@ var jqExpression string
 var exitFunc = os.Exit
 var randomRead = rand.Read
 
+// Pre/post delay are CLI-global: any command can carry them and the daemon
+// will sleep accordingly before / after the action. Resolved in main() from
+// --pre-delay / --post-delay and propagated by sendPrepareAndPrint.
+var (
+	globalPreDelayMs  *int
+	globalPostDelayMs *int
+)
+
 var cliValueFlags = []string{
 	"-d", "--depth", "-s", "--selector", "--filter", "--method", "--status", "--id",
 	"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url",
 	"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for",
-	"--timeout", "--json-arg", "--interval", "--limit", "--title", "--parent",
+	"--timeout", "--pre-delay", "--post-delay",
+	"--json-arg", "--interval", "--limit", "--title", "--parent",
 	"--filename", "--state", "--name", "--display-name", "--description", "--out",
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
 	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--role",
@@ -94,6 +103,8 @@ func main() {
 	jsonOutput := hasFlag(args, "--json") || jqExpression != ""
 	unwrap := hasFlag(args, "--unwrap")
 	globalSince := getArgValue(args, "--since")
+	globalPreDelayMs = parseGlobalDelayFlag(args, "--pre-delay")
+	globalPostDelayMs = parseGlobalDelayFlag(args, "--post-delay")
 
 	// Strip global flags from args for command parsing
 	cleanArgs := stripFlags(args, nil, nil)
@@ -1530,7 +1541,40 @@ func sendAndPrint(req *protocol.Request, jsonOutput bool, prettyPrint func(*prot
 	return sendPrepareAndPrint(req, jsonOutput, nil, prettyPrint)
 }
 
+// parseGlobalDelayFlag reads --pre-delay / --post-delay off the raw args.
+// Returns nil when the flag is absent; fatals on negative or non-integer.
+func parseGlobalDelayFlag(args []string, name string) *int {
+	v, ok := getArgValueOK(args, name)
+	if !ok {
+		return nil
+	}
+	v = strings.TrimSpace(v)
+	ms, err := strconv.Atoi(v)
+	if err != nil || ms < 0 {
+		fatal(name + " must be a non-negative integer (ms)")
+	}
+	out := ms
+	return &out
+}
+
+// applyGlobalDelays stamps the parsed --pre-delay/--post-delay onto req
+// unless a per-command setter already populated them.
+func applyGlobalDelays(req *protocol.Request) {
+	if req == nil {
+		return
+	}
+	if req.PreDelayMs == nil && globalPreDelayMs != nil {
+		v := *globalPreDelayMs
+		req.PreDelayMs = &v
+	}
+	if req.PostDelayMs == nil && globalPostDelayMs != nil {
+		v := *globalPostDelayMs
+		req.PostDelayMs = &v
+	}
+}
+
 func sendPrepareAndPrint(req *protocol.Request, jsonOutput bool, prepare func(*protocol.Response) error, prettyPrint func(*protocol.Response)) bool {
+	applyGlobalDelays(req)
 	resp, err := client.SendCommand(req)
 	if err != nil {
 		if jsonOutput {
@@ -1646,6 +1690,7 @@ func printEval(req *protocol.Request, jsonOutput, unwrap bool) bool {
 	if jqExpression != "" || jsonOutput {
 		return sendAndPrint(req, jsonOutput, nil)
 	}
+	applyGlobalDelays(req)
 	resp, err := client.SendCommand(req)
 	if err != nil {
 		fatal(err.Error())
@@ -1952,6 +1997,8 @@ Global Flags:
   --jq <expr>                   Filter with jq expression (implies --json)
   --unwrap                      For 'eval'/site adapters: print result raw
   --since <seq|last_action>     Incremental query (network/console/errors)
+  --pre-delay <ms>              Sleep before any action (replaces 'sleep N && borz ...')
+  --post-delay <ms>             Sleep after a successful action
 
 Refs & snapshots:
   Interaction commands (click, fill, ...) take a <ref> from a prior
@@ -1960,8 +2007,13 @@ Refs & snapshots:
   re-snapshot after navigation or DOM changes.
 
 Tips:
-  - Prefer '--wait-for <selector>' over 'wait <ms>' for any SPA-driven
-    DOM change. Works on open, click, fill, eval, and other actions.
+  - Prefer '--wait-for <selector>' over '--post-delay <ms>' (or 'wait <ms>')
+    for any SPA-driven DOM change. Works on open, click, fill, eval, and
+    other actions.
+  - Use '--pre-delay <ms>' / '--post-delay <ms>' to absorb the
+    'sleep N && borz ...' shell pattern into a single daemon call. Both
+    are global — they work on every command, and post-delay only fires
+    on success.
   - Use 'eval --unwrap' to skip the {success,data,result,...} envelope.
   - Use '--since last_action' on network/console/errors for incremental reads.
 

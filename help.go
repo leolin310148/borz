@@ -36,7 +36,14 @@ const globalFlagsNote = `Global flags (available on every command):
 Wait-for flags (open, back, forward, refresh, click, hover, fill, type,
 check, uncheck, select, press, scroll, eval):
   --wait-for <selector>   Block until document.querySelector(<selector>) is non-null
-  --timeout <ms>          Cap --wait-for (default 10000ms)`
+  --timeout <ms>          Cap --wait-for (default 10000ms)
+
+Delay flags (global — available on any command):
+  --pre-delay <ms>        Sleep this many ms inside the daemon before the action
+  --post-delay <ms>       Sleep this many ms after a successful action
+                          Both are capped by the 30s daemon command timeout.
+                          Prefer --wait-for over --post-delay when a DOM
+                          selector is available.`
 
 const waitForUsageSuffix = " [--wait-for <selector>] [--timeout <ms>]"
 

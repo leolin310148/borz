@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/leolin310148/borz/internal/protocol"
 )
@@ -185,5 +186,86 @@ func TestDispatchRequest_NotConnected(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(resp.Error), "cdp") {
 		t.Fatalf("expected CDP-related error, got %q", resp.Error)
+	}
+}
+
+// stubDelaySleep replaces the time.Sleep package var for the duration of a
+// test. The captured slice is appended to in order, so tests can assert
+// that pre-delay fires before the action and post-delay after.
+func stubDelaySleep(t *testing.T) *[]time.Duration {
+	t.Helper()
+	prev := delaySleep
+	captured := make([]time.Duration, 0, 2)
+	delaySleep = func(d time.Duration) { captured = append(captured, d) }
+	t.Cleanup(func() { delaySleep = prev })
+	return &captured
+}
+
+func TestDispatchRequest_PreDelay(t *testing.T) {
+	captured := stubDelaySleep(t)
+
+	tabs := NewTabStateManager()
+	cdp := NewCdpConnection("127.0.0.1", 9222, tabs)
+	pre := 250
+	resp := DispatchRequest(cdp, &protocol.Request{
+		ID: "x", Action: "does-not-exist", PreDelayMs: &pre,
+	})
+	if resp == nil || resp.Success {
+		t.Fatalf("expected failure (CDP not connected), got %+v", resp)
+	}
+	if len(*captured) != 1 || (*captured)[0] != 250*time.Millisecond {
+		t.Fatalf("expected one 250ms pre-delay sleep, got %v", *captured)
+	}
+}
+
+func TestDispatchRequest_PostDelayOnlyOnSuccess(t *testing.T) {
+	captured := stubDelaySleep(t)
+
+	tabs := NewTabStateManager()
+	cdp := NewCdpConnection("127.0.0.1", 9222, tabs)
+	post := 500
+	resp := DispatchRequest(cdp, &protocol.Request{
+		ID: "x", Action: "does-not-exist", PostDelayMs: &post,
+	})
+	if resp == nil || resp.Success {
+		t.Fatalf("expected failure (CDP not connected), got %+v", resp)
+	}
+	// Post-delay must not fire on failure.
+	if len(*captured) != 0 {
+		t.Fatalf("expected no sleeps on failed dispatch, got %v", *captured)
+	}
+}
+
+func TestDispatchRequest_NonPositiveDelaysSkipped(t *testing.T) {
+	captured := stubDelaySleep(t)
+
+	tabs := NewTabStateManager()
+	cdp := NewCdpConnection("127.0.0.1", 9222, tabs)
+	zero := 0
+	neg := -1
+	_ = DispatchRequest(cdp, &protocol.Request{
+		ID: "x", Action: "does-not-exist", PreDelayMs: &zero, PostDelayMs: &neg,
+	})
+	if len(*captured) != 0 {
+		t.Fatalf("expected no sleeps for zero/negative delays, got %v", *captured)
+	}
+}
+
+func TestDispatchRequest_NilRequest(t *testing.T) {
+	// Nil request must not panic; the wrapper just hands it to the inner
+	// dispatcher which fails fast.
+	captured := stubDelaySleep(t)
+
+	tabs := NewTabStateManager()
+	cdp := NewCdpConnection("127.0.0.1", 9222, tabs)
+	defer func() {
+		// inner dispatchAction may panic on a nil request — we only care
+		// that the wrapper itself doesn't add a panic of its own. A panic
+		// from the inner is unrelated to delay handling.
+		_ = recover()
+	}()
+	_ = DispatchRequest(cdp, nil)
+	if len(*captured) != 0 {
+		t.Fatalf("nil request should not trigger any delay sleeps, got %v", *captured)
 	}
 }

@@ -73,6 +73,40 @@ func TestRestBody_ApplyWait(t *testing.T) {
 	}
 }
 
+func TestRestBody_ApplyDelays(t *testing.T) {
+	pre, post := 100, 200
+	// Both helpers must forward pre/post delay onto the request.
+	req := (restBody{PreDelayMs: &pre, PostDelayMs: &post}).applyWait(&protocol.Request{Action: protocol.ActionClick})
+	if req.PreDelayMs == nil || *req.PreDelayMs != 100 {
+		t.Fatalf("applyWait: preDelayMs = %v", req.PreDelayMs)
+	}
+	if req.PostDelayMs == nil || *req.PostDelayMs != 200 {
+		t.Fatalf("applyWait: postDelayMs = %v", req.PostDelayMs)
+	}
+	req = (restBody{PreDelayMs: &pre, PostDelayMs: &post}).withActivate(&protocol.Request{Action: protocol.ActionGet})
+	if req.PreDelayMs == nil || *req.PreDelayMs != 100 {
+		t.Fatalf("withActivate: preDelayMs = %v", req.PreDelayMs)
+	}
+	if req.PostDelayMs == nil || *req.PostDelayMs != 200 {
+		t.Fatalf("withActivate: postDelayMs = %v", req.PostDelayMs)
+	}
+}
+
+func TestReadBody_ParsesDelays(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/x",
+		strings.NewReader(`{"preDelayMs":150,"postDelayMs":350}`))
+	body, err := readBody(req)
+	if err != nil {
+		t.Fatalf("readBody: %v", err)
+	}
+	if body.PreDelayMs == nil || *body.PreDelayMs != 150 {
+		t.Errorf("preDelayMs = %v", body.PreDelayMs)
+	}
+	if body.PostDelayMs == nil || *body.PostDelayMs != 350 {
+		t.Errorf("postDelayMs = %v", body.PostDelayMs)
+	}
+}
+
 func TestReadBody_ParsesNewFields(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/x",
 		strings.NewReader(`{"waitFor":".x","timeoutMs":250,"mode":"text","limit":12}`))

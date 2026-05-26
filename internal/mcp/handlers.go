@@ -74,6 +74,23 @@ func applyWaitFor(req *protocol.Request, r mcp.CallToolRequest) {
 			req.TimeoutMs = intPtr(ms)
 		}
 	}
+	applyDelays(req, r)
+}
+
+// applyDelays reads optional preDelay / postDelay (ms) off the tool call
+// and attaches them so the daemon sleeps before / after the action.
+func applyDelays(req *protocol.Request, r mcp.CallToolRequest) {
+	args := r.GetArguments()
+	if _, ok := args["preDelay"]; ok {
+		if ms := r.GetInt("preDelay", 0); ms >= 0 {
+			req.PreDelayMs = intPtr(ms)
+		}
+	}
+	if _, ok := args["postDelay"]; ok {
+		if ms := r.GetInt("postDelay", 0); ms >= 0 {
+			req.PostDelayMs = intPtr(ms)
+		}
+	}
 }
 
 // intPtr returns a pointer to an int.

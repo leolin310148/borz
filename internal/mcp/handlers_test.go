@@ -832,6 +832,32 @@ func TestHandleClick_PassesWaitFor(t *testing.T) {
 	}
 }
 
+func TestHandleClick_PassesPreAndPostDelay(t *testing.T) {
+	cap := capturingSend(t, ok())
+	_, _ = handleClick(context.Background(), mkReq(map[string]any{
+		"ref":       "@7",
+		"preDelay":  float64(100),
+		"postDelay": float64(250),
+	}))
+	if cap.req.PreDelayMs == nil || *cap.req.PreDelayMs != 100 {
+		t.Errorf("preDelayMs = %v", cap.req.PreDelayMs)
+	}
+	if cap.req.PostDelayMs == nil || *cap.req.PostDelayMs != 250 {
+		t.Errorf("postDelayMs = %v", cap.req.PostDelayMs)
+	}
+}
+
+func TestHandleNavigate_PreservesExplicitZeroPreDelay(t *testing.T) {
+	cap := capturingSend(t, ok())
+	_, _ = handleNavigate(context.Background(), mkReq(map[string]any{
+		"url":      "https://example.com",
+		"preDelay": float64(0),
+	}))
+	if cap.req.PreDelayMs == nil || *cap.req.PreDelayMs != 0 {
+		t.Fatalf("preDelayMs = %v, want explicit zero", cap.req.PreDelayMs)
+	}
+}
+
 func TestHandleSnapshot_TextOnlySetsMode(t *testing.T) {
 	cap := capturingSend(t, ok())
 	_, _ = handleSnapshot(context.Background(), mkReq(map[string]any{"textOnly": true}))
