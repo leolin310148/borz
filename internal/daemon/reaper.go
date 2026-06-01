@@ -58,6 +58,16 @@ func reapOnce(
 ) []string {
 	var closed []string
 	tabs := tm.AllTabs()
+	activeTargetIsStale := false
+	if activeTargetID != "" {
+		activeTargetIsStale = true
+		for _, tab := range tabs {
+			if tab.TargetID == activeTargetID {
+				activeTargetIsStale = false
+				break
+			}
+		}
+	}
 	if activeTargetID == "" && len(tabs) > 0 {
 		// If Chrome has not told us which page is foregrounded, keep the most
 		// recently touched tab as a fallback so an idle scan cannot close every
@@ -70,6 +80,8 @@ func reapOnce(
 		}
 		activeTargetID = keep.TargetID
 	}
+
+	var candidates []*TabState
 	for _, tab := range tabs {
 		if tab.TargetID == activeTargetID {
 			continue
@@ -77,6 +89,26 @@ func reapOnce(
 		if now.Sub(tab.IdleSince()) < threshold {
 			continue
 		}
+		candidates = append(candidates, tab)
+	}
+
+	if len(candidates) == 0 {
+		return closed
+	}
+
+	if activeTargetIsStale && len(candidates) == len(tabs) {
+		// Chrome may close the browser window when its last page target is
+		// closed. If our active pointer is stale and every known tab is idle,
+		// create a blank page first so the old tabs can still be reaped.
+		if _, err := closer.BrowserCommand("Target.createTarget", map[string]interface{}{
+			"url": "about:blank",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "idle-tab reaper: create about:blank failed: %v\n", err)
+			return closed
+		}
+	}
+
+	for _, tab := range candidates {
 		_, err := closer.BrowserCommand("Target.closeTarget", map[string]interface{}{
 			"targetId": tab.TargetID,
 		})

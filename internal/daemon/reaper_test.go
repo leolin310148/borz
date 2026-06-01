@@ -10,24 +10,41 @@ import (
 )
 
 type fakeCloser struct {
-	mu     sync.Mutex
-	closed []string
-	fail   map[string]error
+	mu         sync.Mutex
+	closed     []string
+	created    []string
+	calls      []string
+	fail       map[string]error
+	failCreate error
 }
 
 func (f *fakeCloser) BrowserCommand(method string, params interface{}) (json.RawMessage, error) {
-	if method != "Target.closeTarget" {
+	switch method {
+	case "Target.closeTarget":
+		p, _ := params.(map[string]interface{})
+		id, _ := p["targetId"].(string)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if err, ok := f.fail[id]; ok {
+			return nil, err
+		}
+		f.calls = append(f.calls, method)
+		f.closed = append(f.closed, id)
+		return json.RawMessage("{}"), nil
+	case "Target.createTarget":
+		p, _ := params.(map[string]interface{})
+		url, _ := p["url"].(string)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if f.failCreate != nil {
+			return nil, f.failCreate
+		}
+		f.calls = append(f.calls, method)
+		f.created = append(f.created, url)
+		return json.RawMessage(`{"targetId":"blank-tab"}`), nil
+	default:
 		return nil, errors.New("unexpected method: " + method)
 	}
-	p, _ := params.(map[string]interface{})
-	id, _ := p["targetId"].(string)
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err, ok := f.fail[id]; ok {
-		return nil, err
-	}
-	f.closed = append(f.closed, id)
-	return json.RawMessage("{}"), nil
 }
 
 func (f *fakeCloser) closedSnapshot() []string {
@@ -35,6 +52,22 @@ func (f *fakeCloser) closedSnapshot() []string {
 	defer f.mu.Unlock()
 	out := make([]string, len(f.closed))
 	copy(out, f.closed)
+	return out
+}
+
+func (f *fakeCloser) createdSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.created))
+	copy(out, f.created)
+	return out
+}
+
+func (f *fakeCloser) callsSnapshot() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.calls))
+	copy(out, f.calls)
 	return out
 }
 
@@ -125,12 +158,52 @@ func TestReapOnce_UnknownActiveKeepsMostRecentTab(t *testing.T) {
 	}
 }
 
+func TestReapOnce_StaleActiveCreatesBlankBeforeClosingLastTab(t *testing.T) {
+	tm := NewTabStateManager()
+	tab := tm.AddTab("last-tab")
+	now := time.Now()
+	tab.CreatedAt = now.Add(-2 * time.Hour)
+	tab.lastActionUnixNano.Store(now.Add(-90 * time.Minute).UnixNano())
+
+	closer := &fakeCloser{}
+	closed := reapOnce(tm, closer, 30*time.Minute, "stale-active-tab", now)
+
+	if len(closed) != 1 || closed[0] != "last-tab" {
+		t.Fatalf("closed=%v want [last-tab]", closed)
+	}
+	if got := closer.createdSnapshot(); len(got) != 1 || got[0] != "about:blank" {
+		t.Fatalf("created=%v want [about:blank]", got)
+	}
+	if got := closer.callsSnapshot(); len(got) != 2 || got[0] != "Target.createTarget" || got[1] != "Target.closeTarget" {
+		t.Fatalf("calls=%v want create before close", got)
+	}
+}
+
+func TestReapOnce_CreateBlankFailureSkipsLastClose(t *testing.T) {
+	tm := NewTabStateManager()
+	tab := tm.AddTab("last-tab")
+	now := time.Now()
+	tab.CreatedAt = now.Add(-2 * time.Hour)
+	tab.lastActionUnixNano.Store(now.Add(-90 * time.Minute).UnixNano())
+
+	closer := &fakeCloser{failCreate: errors.New("boom")}
+	closed := reapOnce(tm, closer, 30*time.Minute, "stale-active-tab", now)
+
+	if len(closed) != 0 {
+		t.Fatalf("closed=%v want none", closed)
+	}
+	if got := closer.closedSnapshot(); len(got) != 0 {
+		t.Fatalf("BrowserCommand close calls=%v want none", got)
+	}
+}
+
 func TestReapOnce_CloserErrorDoesNotPanic(t *testing.T) {
 	tm := NewTabStateManager()
+	tm.AddTab("active")
 	tm.AddTab("t1").CreatedAt = time.Now().Add(-1 * time.Hour)
 
 	closer := &fakeCloser{fail: map[string]error{"t1": errors.New("boom")}}
-	closed := reapOnce(tm, closer, 30*time.Minute, "", time.Now())
+	closed := reapOnce(tm, closer, 30*time.Minute, "active", time.Now())
 
 	if len(closed) != 0 {
 		t.Fatalf("expected empty closed slice on error, got %v", closed)
