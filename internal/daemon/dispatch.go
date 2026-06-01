@@ -90,7 +90,7 @@ func siteDomainMatchesURL(domain, rawURL string) bool {
 
 func normalizeSiteDomain(domain string) string {
 	domain = strings.TrimSpace(strings.ToLower(domain))
-	if domain == "" {
+	if domain == "" || domain == "*" {
 		return ""
 	}
 	if strings.Contains(domain, "://") {
@@ -107,6 +107,90 @@ func normalizeSiteDomain(domain string) string {
 		domain = domain[:slash]
 	}
 	return strings.TrimSpace(domain)
+}
+
+func siteAdapterStartURL(req *protocol.Request) string {
+	if req == nil {
+		return ""
+	}
+	if strings.TrimSpace(req.SiteStartURL) != "" {
+		return strings.TrimSpace(req.SiteStartURL)
+	}
+	domain := normalizeSiteDomain(req.SiteDomain)
+	if domain == "" {
+		return ""
+	}
+	return "https://" + domain + "/"
+}
+
+func selectSiteAdapterTarget(cdp *CdpConnection, targetID string) {
+	cdp.SetCurrentTargetID(targetID)
+	cdp.AttachAndEnable(targetID)
+	cdp.BrowserCommand("Target.activateTarget", map[string]interface{}{"targetId": targetID})
+	cdp.SessionCommand(targetID, "Page.bringToFront", nil)
+}
+
+func ensureSiteAdapterTarget(cdp *CdpConnection, req *protocol.Request) (*CdpTargetInfo, error) {
+	domain := normalizeSiteDomain(req.SiteDomain)
+	if domain == "" {
+		return nil, nil
+	}
+
+	targets, err := cdp.GetTargets()
+	if err != nil {
+		return nil, err
+	}
+
+	var pages []CdpTargetInfo
+	for _, t := range targets {
+		if t.Type == "page" {
+			pages = append(pages, t)
+		}
+	}
+
+	var current *CdpTargetInfo
+	if currentID := cdp.GetCurrentTargetID(); currentID != "" {
+		for i := range pages {
+			if pages[i].ID == currentID {
+				current = &pages[i]
+				break
+			}
+		}
+	}
+	if current == nil && len(pages) > 0 {
+		current = &pages[0]
+	}
+	if current != nil && siteDomainMatchesURL(domain, current.URL) {
+		return nil, nil
+	}
+
+	for i := range pages {
+		if siteDomainMatchesURL(domain, pages[i].URL) {
+			selectSiteAdapterTarget(cdp, pages[i].ID)
+			return &pages[i], nil
+		}
+	}
+
+	startURL := siteAdapterStartURL(req)
+	if startURL == "" {
+		return nil, nil
+	}
+	result, err := cdp.BrowserCommand("Target.createTarget", map[string]interface{}{
+		"url": startURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var created struct {
+		TargetID string `json:"targetId"`
+	}
+	json.Unmarshal(result, &created)
+	if created.TargetID == "" {
+		return nil, fmt.Errorf("Target.createTarget returned empty targetId")
+	}
+	selectSiteAdapterTarget(cdp, created.TargetID)
+	waitForTabNavigated(cdp, created.TargetID, startURL, newTabReadyTimeout)
+	return &CdpTargetInfo{ID: created.TargetID, Type: "page", URL: startURL}, nil
 }
 
 func intPtr(v int) *int { return &v }
@@ -810,6 +894,14 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		return withWaitFor(req, cdp, created.TargetID, okResp(req.ID, &protocol.ResponseData{
 			TabID: created.TargetID, URL: req.URL, Tab: shortID, Seq: seq, Viewport: viewport,
 		}))
+	}
+
+	if req.Action == protocol.ActionEval && req.Script != "" && req.SiteDomain != "" && req.TabID == nil {
+		if siteTarget, err := ensureSiteAdapterTarget(cdp, req); err != nil {
+			return failResp(req.ID, err)
+		} else if siteTarget != nil {
+			tabRef = siteTarget.ID
+		}
 	}
 
 	target, err := cdp.EnsurePageTarget(tabRef)

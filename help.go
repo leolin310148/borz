@@ -862,7 +862,8 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Examples: []string{"  borz site run hackernews/top 10", "  borz hackernews/top 10"},
 		Notes: "Use 'borz site info <name>' to discover the args an adapter expects " +
-			"before running it. The daemon blocks domain mismatches by default; --force bypasses that guard and one-off community trust checks.",
+			"before running it. Without --tab, the daemon reuses or opens the adapter's site before running it. " +
+			"Explicit tabs still enforce the domain guard; --force bypasses that guard and one-off community trust checks.",
 	},
 
 	// --- Subcommand pages: daemon.* ---

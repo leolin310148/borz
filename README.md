@@ -911,7 +911,9 @@ borz site trust twitter/search
 ```
 
 Adapter metadata supports ordered args with `default` and `required`, `readOnly`,
-`domain` origin guards, optional `entry`, `timeoutMs`, and `output` schema fields.
+`domain` origin guards, optional `startUrl`, `entry`, `timeoutMs`, and `output` schema fields.
+When no tab is specified, `site run` reuses an existing tab matching the adapter domain
+or opens `startUrl` (default `https://<domain>/`) before evaluating the adapter.
 `site info` shows the adapter SHA256 and source repo. Community adapters are
 arbitrary JavaScript running in your real Chrome session; changed hashes must be
 trusted again or run once with `--force`.

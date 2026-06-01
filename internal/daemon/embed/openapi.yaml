@@ -1526,6 +1526,7 @@ components:
         name: { type: string }
         description: { type: string }
         domain: { type: string }
+        startUrl: { type: string }
         readOnly: { type: boolean }
         example: { type: string }
         argOrder:

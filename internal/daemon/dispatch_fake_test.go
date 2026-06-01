@@ -269,6 +269,22 @@ func activatedTargetIDs(t *testing.T, f *fakeCDP) []string {
 	return ids
 }
 
+func createTargetURLs(t *testing.T, f *fakeCDP) []string {
+	t.Helper()
+	var urls []string
+	for _, c := range f.Calls() {
+		if c.Method != "Target.createTarget" {
+			continue
+		}
+		var p struct {
+			URL string `json:"url"`
+		}
+		_ = json.Unmarshal(c.Params, &p)
+		urls = append(urls, p.URL)
+	}
+	return urls
+}
+
 func contains(xs []string, s string) bool {
 	for _, x := range xs {
 		if x == s {
@@ -533,6 +549,147 @@ func TestDispatch_Eval_MissingScript(t *testing.T) {
 	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionEval})
 	if resp.Success || !strings.Contains(resp.Error, "script") {
 		t.Fatalf("expected missing-script error: %+v", resp)
+	}
+}
+
+func TestDispatch_EvalSiteAutoOpen_ActiveTabMatches(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://shop.example.com/search", "Example")
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionEval, Script: "1+1", SiteDomain: "example.com", SiteStartURL: "https://example.com/",
+	})
+	if !resp.Success {
+		t.Fatalf("eval site active match: %+v", resp)
+	}
+	if urls := createTargetURLs(t, f); len(urls) != 0 {
+		t.Fatalf("active matching tab should not create a tab, got %v", urls)
+	}
+}
+
+func TestDispatch_EvalSiteAutoOpen_ReusesMatchingTab(t *testing.T) {
+	f := newFakeCDP(t)
+	f.On("Target.getTargets", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{
+			"targetInfos": []interface{}{
+				map[string]interface{}{"targetId": "T1", "type": "page", "url": "https://unrelated.test/", "title": "Other"},
+				map[string]interface{}{"targetId": "T2", "type": "page", "url": "https://www.example.com/item", "title": "Example"},
+			},
+		}, nil
+	})
+	c := connectCdp(t, f)
+	c.SetCurrentTargetID("T1")
+
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionEval, Script: "1+1", SiteDomain: "example.com", SiteStartURL: "https://example.com/",
+	})
+	if !resp.Success {
+		t.Fatalf("eval site reuse: %+v", resp)
+	}
+	if got := c.GetCurrentTargetID(); got != "T2" {
+		t.Fatalf("current target = %q, want T2", got)
+	}
+	if !contains(activatedTargetIDs(t, f), "T2") {
+		t.Fatalf("expected Target.activateTarget for T2, got %v", activatedTargetIDs(t, f))
+	}
+	if urls := createTargetURLs(t, f); len(urls) != 0 {
+		t.Fatalf("matching tab should be reused, created %v", urls)
+	}
+}
+
+func TestDispatch_EvalSiteAutoOpen_CreatesStartURL(t *testing.T) {
+	f := newFakeCDP(t)
+	created := false
+	f.On("Target.getTargets", func(json.RawMessage) (interface{}, error) {
+		targets := []interface{}{
+			map[string]interface{}{"targetId": "T1", "type": "page", "url": "https://unrelated.test/", "title": "Other"},
+		}
+		if created {
+			targets = append(targets, map[string]interface{}{"targetId": "T-NEW", "type": "page", "url": "https://example.com/start", "title": "Example"})
+		}
+		return map[string]interface{}{"targetInfos": targets}, nil
+	})
+	f.On("Target.createTarget", func(params json.RawMessage) (interface{}, error) {
+		created = true
+		return map[string]interface{}{"targetId": "T-NEW"}, nil
+	})
+	c := connectCdp(t, f)
+	c.SetCurrentTargetID("T1")
+
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionEval, Script: "1+1", SiteDomain: "example.com", SiteStartURL: "https://example.com/start",
+	})
+	if !resp.Success {
+		t.Fatalf("eval site create: %+v", resp)
+	}
+	if urls := createTargetURLs(t, f); len(urls) != 1 || urls[0] != "https://example.com/start" {
+		t.Fatalf("created URLs = %v", urls)
+	}
+	if got := c.GetCurrentTargetID(); got != "T-NEW" {
+		t.Fatalf("current target = %q, want T-NEW", got)
+	}
+}
+
+func TestDispatch_EvalSiteAutoOpen_ForceStillAutoOpensImplicitTab(t *testing.T) {
+	f := newFakeCDP(t)
+	created := false
+	f.On("Target.getTargets", func(json.RawMessage) (interface{}, error) {
+		targets := []interface{}{
+			map[string]interface{}{"targetId": "T1", "type": "page", "url": "https://unrelated.test/", "title": "Other"},
+		}
+		if created {
+			targets = append(targets, map[string]interface{}{"targetId": "T-NEW", "type": "page", "url": "https://example.com/", "title": "Example"})
+		}
+		return map[string]interface{}{"targetInfos": targets}, nil
+	})
+	f.On("Target.createTarget", func(params json.RawMessage) (interface{}, error) {
+		created = true
+		return map[string]interface{}{"targetId": "T-NEW"}, nil
+	})
+	c := connectCdp(t, f)
+	c.SetCurrentTargetID("T1")
+
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionEval, Script: "1+1", SiteDomain: "example.com", SiteStartURL: "https://example.com/", Force: true,
+	})
+	if !resp.Success {
+		t.Fatalf("eval site force create: %+v", resp)
+	}
+	if urls := createTargetURLs(t, f); len(urls) != 1 || urls[0] != "https://example.com/" {
+		t.Fatalf("created URLs = %v", urls)
+	}
+}
+
+func TestDispatch_EvalSiteAutoOpen_ExplicitTabMismatchKeepsGuard(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://unrelated.test/", "Other")
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionEval, Script: "1+1", TabID: "T1", SiteDomain: "example.com", SiteStartURL: "https://example.com/",
+	})
+	if resp.Success || !strings.Contains(resp.Error, "domain guard blocked") {
+		t.Fatalf("expected domain guard error, got %+v", resp)
+	}
+	if urls := createTargetURLs(t, f); len(urls) != 0 {
+		t.Fatalf("explicit tab mismatch should not create a tab, got %v", urls)
+	}
+}
+
+func TestDispatch_EvalSiteAutoOpen_WildcardDomainDoesNotOpen(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://unrelated.test/", "Other")
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionEval, Script: "1+1", SiteDomain: "*", SiteStartURL: "https://example.com/",
+	})
+	if !resp.Success {
+		t.Fatalf("wildcard domain should run without auto-open: %+v", resp)
+	}
+	if urls := createTargetURLs(t, f); len(urls) != 0 {
+		t.Fatalf("wildcard domain should not create a tab, got %v", urls)
 	}
 }
 

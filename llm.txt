@@ -167,7 +167,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 - **`eval` auto-wraps top-level `await`** in `(async () => { return (<script>) })()` so `await fetch(...).then(...)` works without manual IIFE boilerplate. Disable with `--no-auto-await`. Already-async-IIFE scripts are not double-wrapped.
 - **`eval --unwrap`** prints `resp.data.result` raw — strings without surrounding quotes, everything else JSON-pretty. `--jq` and `--json` still take precedence when set.
 - **Non-loopback bind requires a token.** The server refuses to start otherwise.
-- **Site adapters run on the daemon's filesystem**, not the client's. A remote client invoking `/v1/sites/*` or `browser_site_run` gets whatever adapters the server has in `~/.borz/sites` or `~/.borz/bb-sites` (community, pulled via `borz site update`).
+- **Site adapters run on the daemon's filesystem**, not the client's. A remote client invoking `/v1/sites/*` or `browser_site_run` gets whatever adapters the server has in `~/.borz/sites` or `~/.borz/bb-sites` (community, pulled via `borz site update`). When no tab is specified, adapters reuse or open their domain first; explicit tabs still enforce the domain guard unless `force` is set.
 - **Network/console/error buffers are per-tab rings.** Use `--since last_action` for incremental queries.
 - **The optional Chrome extension unlocks browser-level APIs CDP cannot see.** Use it for all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser-level event streams. Commands and MCP tools report a clear "no extension connected" error when it is missing.
 

@@ -74,6 +74,13 @@ func TestOpenAPIRoutes(t *testing.T) {
 		}
 	})
 
+	t.Run("spec documents site adapter startUrl", func(t *testing.T) {
+		body := string(openAPISpec)
+		if !strings.Contains(body, "startUrl:") {
+			t.Fatal("SiteMeta schema must include startUrl")
+		}
+	})
+
 	t.Run("non-GET rejected", func(t *testing.T) {
 		for _, path := range []string{"/openapi.yaml", "/docs"} {
 			rec := httptest.NewRecorder()

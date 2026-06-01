@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,7 @@ type SiteMeta struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
 	Domain      string            `json:"domain"`
+	StartURL    string            `json:"startUrl,omitempty"`
 	Args        map[string]ArgDef `json:"args"`
 	ArgOrder    []string          `json:"argOrder,omitempty"` // declaration order of Args keys
 	ReadOnly    bool              `json:"readOnly"`
@@ -450,11 +452,12 @@ func BuildEvalRequestWithOptions(meta *SiteMeta, args map[string]interface{}, ta
 		timeout = meta.TimeoutMs
 	}
 	req := &protocol.Request{
-		ID:         generateID(),
-		Action:     protocol.ActionEval,
-		Script:     script,
-		SiteDomain: meta.Domain,
-		Force:      opts.Force,
+		ID:           generateID(),
+		Action:       protocol.ActionEval,
+		Script:       script,
+		SiteDomain:   meta.Domain,
+		SiteStartURL: adapterStartURL(meta),
+		Force:        opts.Force,
 	}
 	if timeout > 0 {
 		req.EvalTimeoutMs = &timeout
@@ -463,6 +466,41 @@ func BuildEvalRequestWithOptions(meta *SiteMeta, args map[string]interface{}, ta
 		req.TabID = tabID
 	}
 	return req, nil
+}
+
+func adapterStartURL(meta *SiteMeta) string {
+	if meta == nil {
+		return ""
+	}
+	if strings.TrimSpace(meta.StartURL) != "" {
+		return strings.TrimSpace(meta.StartURL)
+	}
+	domain := normalizeAdapterDomain(meta.Domain)
+	if domain == "" {
+		return ""
+	}
+	return "https://" + domain + "/"
+}
+
+func normalizeAdapterDomain(domain string) string {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	if domain == "" || domain == "*" {
+		return ""
+	}
+	if strings.Contains(domain, "://") {
+		if u, err := url.Parse(domain); err == nil {
+			domain = u.Hostname()
+		}
+	}
+	domain = strings.TrimPrefix(domain, "*.")
+	domain = strings.TrimPrefix(domain, ".")
+	if h, _, ok := strings.Cut(domain, ":"); ok {
+		domain = h
+	}
+	if slash := strings.IndexByte(domain, '/'); slash >= 0 {
+		domain = domain[:slash]
+	}
+	return strings.TrimSpace(domain)
 }
 
 func generateID() string {

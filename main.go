@@ -1328,6 +1328,9 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 			fmt.Printf("Name:        %s\n", s.Name)
 			fmt.Printf("Description: %s\n", s.Description)
 			fmt.Printf("Domain:      %s\n", s.Domain)
+			if s.StartURL != "" {
+				fmt.Printf("Start URL:   %s\n", s.StartURL)
+			}
 			fmt.Printf("Source:       %s\n", s.Source)
 			fmt.Printf("Source repo:  %s\n", s.SourceRepo)
 			fmt.Printf("SHA256:      %s\n", s.SHA256)

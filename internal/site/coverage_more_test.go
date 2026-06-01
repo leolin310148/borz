@@ -148,7 +148,7 @@ func TestEvalRequestOptionsAndScaffoldValidation(t *testing.T) {
 	t.Setenv("BORZ_HOME", home)
 	ResetCacheForTests()
 
-	path := writeSite(t, home, "sites/timeout.js", strings.Replace(sampleJS, `"example": "bb example foo"`, `"timeoutMs": 1234, "example": "bb example foo"`, 1))
+	path := writeSite(t, home, "sites/timeout.js", strings.Replace(sampleJS, `"example": "bb example foo"`, `"startUrl": "https://example.com/start", "timeoutMs": 1234, "example": "bb example foo"`, 1))
 	meta, err := ParseSiteMeta(path, "local")
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +157,7 @@ func TestEvalRequestOptionsAndScaffoldValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if req.EvalTimeoutMs == nil || *req.EvalTimeoutMs != 1234 || req.TabID != "tab-1" {
+	if req.EvalTimeoutMs == nil || *req.EvalTimeoutMs != 1234 || req.TabID != "tab-1" || req.SiteStartURL != "https://example.com/start" {
 		t.Fatalf("timeout/tab request = %+v", req)
 	}
 	req, err = BuildEvalRequestWithOptions(meta, map[string]interface{}{"query": "cats"}, "", EvalOptions{TimeoutMs: 44, Force: true})

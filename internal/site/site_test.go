@@ -61,6 +61,19 @@ func TestParseSiteMeta_Valid(t *testing.T) {
 	}
 }
 
+func TestParseSiteMeta_StartURL(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.Replace(sampleJS, `"domain": "example.com",`, `"domain": "example.com",`+"\n"+`  "startUrl": "https://example.com/search",`, 1)
+	path := writeSite(t, dir, "sites/example.js", body)
+	meta, err := ParseSiteMeta(path, "local")
+	if err != nil {
+		t.Fatalf("ParseSiteMeta: %v", err)
+	}
+	if meta.StartURL != "https://example.com/search" {
+		t.Fatalf("StartURL = %q", meta.StartURL)
+	}
+}
+
 func stringsEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -365,6 +378,9 @@ func TestBuildEvalRequest(t *testing.T) {
 	}
 	if req.ID == "" {
 		t.Errorf("ID empty")
+	}
+	if req.SiteDomain != "example.com" || req.SiteStartURL != "https://example.com/" {
+		t.Errorf("site guard fields = domain %q start %q", req.SiteDomain, req.SiteStartURL)
 	}
 }
 

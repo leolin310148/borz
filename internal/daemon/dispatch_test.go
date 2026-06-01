@@ -55,6 +55,7 @@ func TestSiteDomainMatchesURL(t *testing.T) {
 		{"example.com", "https://app.example.com/path", true},
 		{"https://example.com/docs", "https://example.com/path", true},
 		{"*.example.com", "https://cdn.example.com", true},
+		{"*", "https://anything.test", true},
 		{"example.com", "https://evil-example.com", false},
 		{"example.com", "about:blank", false},
 	}

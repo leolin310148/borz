@@ -126,6 +126,7 @@ type Request struct {
 	// Eval
 	Script        string `json:"script,omitempty"`
 	SiteDomain    string `json:"siteDomain,omitempty"`
+	SiteStartURL  string `json:"siteStartUrl,omitempty"`
 	Force         bool   `json:"force,omitempty"`
 	EvalTimeoutMs *int   `json:"evalTimeoutMs,omitempty"`
 

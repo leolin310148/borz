@@ -159,6 +159,7 @@ func TestMainHelpAndSiteBranches(t *testing.T) {
   "name": "demo/extra",
   "description": "Extra adapter",
   "domain": "example.test",
+  "startUrl": "https://example.test/start",
   "timeoutMs": 99,
   "args": {"q": {"required": true, "description": "query", "default": "cats"}},
   "output": {"type":"object"},
@@ -188,7 +189,7 @@ return {ok:true, q: args.q};`
 	}
 
 	out = captureStdout(t, func() { handleSite([]string{"info", "demo/extra"}, true, "") })
-	if !strings.Contains(out, `"name": "demo/extra"`) {
+	if !strings.Contains(out, `"name": "demo/extra"`) || !strings.Contains(out, `"startUrl": "https://example.test/start"`) {
 		t.Fatalf("site info JSON = %q", out)
 	}
 	out = captureStdout(t, func() { handleSite([]string{"search", "extra"}, false, "") })

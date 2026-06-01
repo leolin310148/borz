@@ -938,6 +938,7 @@ func TestHandleSiteRunWithLocalAdapter(t *testing.T) {
   "name": "demo/search",
   "description": "Demo search",
   "domain": "example.test",
+  "startUrl": "https://example.test/",
   "args": {
     "q": {"required": true, "description": "query"}
   },
@@ -952,7 +953,7 @@ async function(args) { return args.q; }`
 	out := captureStdout(t, func() {
 		handleSite([]string{"info", "demo/search"}, false, "")
 	})
-	if !strings.Contains(out, "Demo search") || !strings.Contains(out, "Args:") {
+	if !strings.Contains(out, "Demo search") || !strings.Contains(out, "Start URL:") || !strings.Contains(out, "Args:") {
 		t.Fatalf("site info output = %q", out)
 	}
 
