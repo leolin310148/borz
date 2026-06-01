@@ -286,6 +286,8 @@ borz service uninstall [--name borz]
 
 Service installation writes the server flags into the Windows Service Control Manager registration. If you pass `--token`, administrators on the machine can inspect it in the service configuration; rotate the token if you later change exposure.
 
+Re-running `borz service install` updates the existing Windows Service registration, including the stored `--host`/`--port`/`--token` arguments. Restart an already-running service for those changes to take effect.
+
 Stop the server:
 
 ```bash

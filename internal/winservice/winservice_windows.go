@@ -4,11 +4,14 @@ package winservice
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 )
@@ -24,8 +27,13 @@ func Install(cfg Config) error {
 	defer m.Disconnect()
 
 	if existing, err := m.OpenService(cfg.Name); err == nil {
-		existing.Close()
-		return fmt.Errorf("service %q already exists", cfg.Name)
+		defer existing.Close()
+		if err := updateExistingService(existing, cfg); err != nil {
+			return fmt.Errorf("update service %q: %w", cfg.Name, err)
+		}
+		return nil
+	} else if !errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
+		return fmt.Errorf("open service %q: %w", cfg.Name, err)
 	}
 
 	s, err := m.CreateService(cfg.Name, cfg.ExecutablePath, mgr.Config{
@@ -38,6 +46,26 @@ func Install(cfg Config) error {
 	}
 	defer s.Close()
 	return nil
+}
+
+func updateExistingService(s *mgr.Service, cfg Config) error {
+	current, err := s.Config()
+	if err != nil {
+		return err
+	}
+	current.BinaryPathName = serviceBinaryPathName(cfg.ExecutablePath, cfg.Args)
+	current.DisplayName = cfg.DisplayName
+	current.Description = cfg.Description
+	current.StartType = mgr.StartAutomatic
+	return s.UpdateConfig(current)
+}
+
+func serviceBinaryPathName(executablePath string, args []string) string {
+	path := syscall.EscapeArg(executablePath)
+	for _, arg := range args {
+		path += " " + syscall.EscapeArg(arg)
+	}
+	return path
 }
 
 func Uninstall(name string) error {

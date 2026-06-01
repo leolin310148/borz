@@ -585,7 +585,7 @@ var commandHelp = map[string]cmdHelp{
 		Summary: "Install or control borz as a Windows service.",
 		Usage:   "borz service [install|uninstall|start|stop|status] [--name N] [server flags]",
 		Flags: []string{
-			"  install                Register a Windows service that runs 'borz server'",
+			"  install                Register or update a Windows service that runs 'borz server'",
 			"  uninstall|remove       Delete the registered service",
 			"  start|stop|status      Control or inspect the service",
 			"  --name <n>             Service name (default borz)",
@@ -605,8 +605,9 @@ var commandHelp = map[string]cmdHelp{
 			"  borz service status",
 			"  borz service uninstall",
 		},
-		Notes: "Windows service management requires an elevated shell. The service entry " +
-			"runs the REST server in the foreground under the Windows Service Control Manager. " +
+		Notes: "Windows service management requires an elevated shell. Re-running install " +
+			"updates the service command line; restart a running service for new flags to take effect. " +
+			"The service entry runs the REST server in the foreground under the Windows Service Control Manager. " +
 			"Non-Windows platforms should use launchd, systemd, or a process manager instead.",
 	},
 	"client": {
@@ -897,7 +898,7 @@ var commandHelp = map[string]cmdHelp{
 		Examples: []string{"  borz server stop"},
 	},
 	"service.install": {
-		Summary: "Register borz as a Windows service that runs the REST server.",
+		Summary: "Register or update borz as a Windows service that runs the REST server.",
 		Usage:   "borz service install [--name N] [--host H --port P --token T]",
 		Notes:   "Defaults to a loopback-only service on 127.0.0.1:19824. Use an elevated PowerShell or Command Prompt.",
 	},

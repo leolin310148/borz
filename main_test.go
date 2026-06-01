@@ -165,6 +165,24 @@ func TestServiceRunArgs(t *testing.T) {
 	if !strings.Contains(got, "--profile work") {
 		t.Fatalf("service args %q missing profile", got)
 	}
+
+	if err := config.SetProfile(""); err != nil {
+		t.Fatal(err)
+	}
+	opts, err = serverOptionsFromArgs([]string{"service", "install", "--host", "0.0.0.0", "--port", "19824", "--token", "secret"}, "127.0.0.1")
+	if err != nil {
+		t.Fatalf("remote service options returned error: %v", err)
+	}
+	got = strings.Join(serviceRunArgs("borz-test", opts), " ")
+	for _, want := range []string{
+		"--host 0.0.0.0",
+		"--port 19824",
+		"--token secret",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("remote service args %q missing %q", got, want)
+		}
+	}
 }
 
 func TestNormalizeRef(t *testing.T) {

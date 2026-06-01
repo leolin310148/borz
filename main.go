@@ -1169,8 +1169,8 @@ func handleService(cmdArgs []string, rawArgs []string) {
 		if err := winservice.Install(cfg); err != nil {
 			fatal(err.Error())
 		}
-		fmt.Printf("Windows service %q installed\n", name)
-		fmt.Printf("Run 'borz service start --name %s' to start it.\n", name)
+		fmt.Printf("Windows service %q installed or updated\n", name)
+		fmt.Printf("Run 'borz service start --name %s' to start it, or restart it if it is already running.\n", name)
 	case "uninstall", "remove":
 		if err := winservice.Uninstall(name); err != nil {
 			fatal(err.Error())
