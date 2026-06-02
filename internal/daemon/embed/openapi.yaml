@@ -369,6 +369,63 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
+  /v1/clipboard-write:
+    post:
+      tags: [input]
+      summary: Write text to the clipboard, optionally pasting it into the focused terminal
+      description: |
+        Sets the tab's clipboard to `text` via `navigator.clipboard.writeText`
+        (the tab is brought to the foreground first, which clipboard writes
+        require). When `paste` is true the daemon then fires Ctrl+Shift+V so the
+        browser performs a native paste into the focused element — the atomic
+        "set clipboard → paste once" path for driving an xterm.js / SSH terminal
+        without per-character key streaming or Enter races. For the paste to
+        land the terminal must have focus; the daemon best-effort focuses the
+        xterm textarea (including inside same-origin iframes) first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [text]
+                  properties:
+                    text:
+                      type: string
+                      description: Text to place on the clipboard (e.g. a base64-encoded script).
+                    paste:
+                      type: boolean
+                      default: false
+                      description: After writing, fire Ctrl+Shift+V to paste into the focused terminal.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/term-text:
+    post:
+      tags: [observation]
+      summary: Read an xterm.js terminal buffer as plain text (incl. scrollback)
+      description: |
+        Returns the text contents of an xterm.js terminal — including
+        scrollback — as a replacement for screenshot/OCR of canvas-rendered
+        terminals (e.g. JumpServer Luna SSH). The daemon walks the page and
+        every same-origin iframe (via `contentDocument`) looking for a live
+        `Terminal` instance and reads `buffer.active` line by line.
+
+        The flat text is returned in `data.value`; `data.result` carries
+        metadata `{ found, source, text, lines, cols, rows, note }`. `source`
+        is one of:
+          - `xterm-buffer`: full buffer incl. scrollback (best case)
+          - `xterm-accessibility`: screen-reader layer (visible region only)
+          - `xterm-rows`: DOM-renderer rows (visible viewport, no scrollback)
+          - `none`: no terminal reachable (canvas/WebGL with no reachable
+            instance, or a cross-origin iframe) — still a 200 with a `note`
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
   /v1/scroll:
     post:
       tags: [interaction]

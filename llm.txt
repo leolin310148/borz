@@ -131,6 +131,8 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 | POST | `/v1/key` | raw OS-level key input |
 | POST | `/v1/mouse` | raw OS-level mouse input |
 | POST | `/v1/clipboard-read` | `{tab?}` |
+| POST | `/v1/clipboard-write` | `{text, paste?, tab?}` — set clipboard; `paste:true` fires Ctrl+Shift+V (atomic terminal paste) |
+| POST | `/v1/term-text` | `{tab?}` — xterm.js buffer text incl. scrollback (`data.value`); replaces screenshot OCR |
 | POST | `/v1/scroll` | `{direction, pixels?, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/eval` | `{script, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/wait` | `{ms?, tab?}` |

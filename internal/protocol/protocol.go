@@ -38,10 +38,12 @@ const (
 	ActionTrace      ActionType = "trace"
 	ActionHistory    ActionType = "history"
 
-	ActionKey           ActionType = "key"
-	ActionMouse         ActionType = "mouse"
-	ActionClipboardRead ActionType = "clipboard_read"
-	ActionUpload        ActionType = "upload"
+	ActionKey            ActionType = "key"
+	ActionMouse          ActionType = "mouse"
+	ActionClipboardRead  ActionType = "clipboard_read"
+	ActionClipboardWrite ActionType = "clipboard_write"
+	ActionTermText       ActionType = "term_text"
+	ActionUpload         ActionType = "upload"
 )
 
 // Request is sent from CLI to daemon.
@@ -73,6 +75,12 @@ type Request struct {
 	Ref  string `json:"ref,omitempty"`
 	Text string `json:"text,omitempty"`
 	Key  string `json:"key,omitempty"`
+
+	// Paste, when set on ActionClipboardWrite, fires the terminal paste
+	// shortcut (Ctrl+Shift+V) after the clipboard is written so the text lands
+	// in the focused xterm/SSH session in one atomic event — no per-character
+	// streaming, no Enter race.
+	Paste bool `json:"paste,omitempty"`
 
 	// Scroll
 	Direction string `json:"direction,omitempty"`

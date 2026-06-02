@@ -1358,6 +1358,43 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		json.Unmarshal(raw, &val)
 		return okResp(req.ID, &protocol.ResponseData{Value: val, Tab: shortID})
 
+	case protocol.ActionClipboardWrite:
+		if req.Text == "" {
+			return failResp(req.ID, "missing text parameter")
+		}
+		// Best-effort permission grant; ignore errors (already granted or unsupported).
+		cdp.BrowserCommand("Browser.grantPermissions", map[string]interface{}{
+			"permissions": []string{"clipboardReadWrite", "clipboardSanitizedWrite"},
+		})
+		// navigator.clipboard.writeText requires the page to be focused.
+		cdp.SessionCommand(target.ID, "Page.bringToFront", nil)
+		seq := tab.RecordAction()
+		// JSON-encode the text so arbitrary content (quotes, newlines, base64)
+		// survives embedding in the expression.
+		textJSON, _ := json.Marshal(req.Text)
+		writeScript := fmt.Sprintf(
+			`navigator.clipboard.writeText(%s).then(() => "ok").catch(e => { throw new Error((e && e.message) || String(e)); })`,
+			string(textJSON))
+		if _, err := cdp.Evaluate(target.ID, writeScript, true); err != nil {
+			return failResp(req.ID, err)
+		}
+		pasted := false
+		if req.Paste {
+			// Best-effort: focus the xterm textarea (incl. same-origin iframes)
+			// so the native paste lands in the terminal, then fire Ctrl+Shift+V.
+			cdp.Evaluate(target.ID, termFocusScript, true)
+			if err := dispatchPasteShortcut(cdp, target.ID); err != nil {
+				return failResp(req.ID, err)
+			}
+			pasted = true
+		}
+		return okResp(req.ID, &protocol.ResponseData{
+			Value:  req.Text,
+			Result: map[string]interface{}{"written": true, "pasted": pasted},
+			Tab:    shortID,
+			Seq:    intPtr(seq),
+		})
+
 	case protocol.ActionPress:
 		if req.Key == "" {
 			return failResp(req.ID, "missing key parameter")
@@ -1430,6 +1467,26 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{
 			Result: result, Tab: shortID, Seq: intPtr(seq),
 		}))
+
+	case protocol.ActionTermText:
+		seq := tab.RecordAction()
+		raw, err := cdp.Evaluate(target.ID, termTextScript, true)
+		if err != nil {
+			return failResp(req.ID, err)
+		}
+		// Flat text goes in Value for OCR-free reading; the full structured
+		// metadata ({found, source, lines, cols, rows, note}) goes in Result.
+		// A terminal that isn't found is still a successful response — the note
+		// explains why — so callers get a clear signal instead of an error.
+		var meta struct {
+			Text string `json:"text"`
+		}
+		json.Unmarshal(raw, &meta)
+		var result interface{}
+		json.Unmarshal(raw, &result)
+		return okResp(req.ID, &protocol.ResponseData{
+			Value: meta.Text, Result: result, Tab: shortID, Seq: intPtr(seq),
+		})
 
 	// --- Tab management ---
 	case protocol.ActionTabList:

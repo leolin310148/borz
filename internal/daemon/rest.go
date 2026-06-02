@@ -103,6 +103,20 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/clipboard-read", s.restJSON(func(body restBody) *protocol.Request {
 		return body.withActivate(&protocol.Request{Action: protocol.ActionClipboardRead, TabID: body.tabID()})
 	}))
+	mux.HandleFunc("/v1/clipboard-write", s.restJSONE(func(body restBody) (*protocol.Request, error) {
+		if body.Text == "" {
+			return nil, fmt.Errorf("text is required")
+		}
+		return body.withActivate(&protocol.Request{
+			Action: protocol.ActionClipboardWrite,
+			Text:   body.Text,
+			Paste:  body.Paste,
+			TabID:  body.tabID(),
+		}), nil
+	}))
+	mux.HandleFunc("/v1/term-text", s.restJSON(func(body restBody) *protocol.Request {
+		return body.withActivate(&protocol.Request{Action: protocol.ActionTermText, TabID: body.tabID()})
+	}))
 	mux.HandleFunc("/v1/scroll", s.restJSON(func(body restBody) *protocol.Request {
 		req := &protocol.Request{Action: protocol.ActionScroll, Direction: body.Direction, TabID: body.tabID()}
 		if body.Pixels != nil {
@@ -283,6 +297,7 @@ type restBody struct {
 	New         bool                      `json:"new,omitempty"`
 	Ref         string                    `json:"ref,omitempty"`
 	Text        string                    `json:"text,omitempty"`
+	Paste       bool                      `json:"paste,omitempty"`
 	Key         string                    `json:"key,omitempty"`
 	Modifiers   []string                  `json:"modifiers,omitempty"`
 	Direction   string                    `json:"direction,omitempty"`

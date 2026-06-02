@@ -394,6 +394,8 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/key` | `{keyType?, key?, code?, text?, modifiers?, tab?}` — raw OS-level key input (reaches canvas apps / SSH) |
 | POST | `/v1/mouse` | `{mouseType?, x?, y?, button?, deltaX?, deltaY?, clickCount?, modifiers?, tab?}` — raw OS-level mouse input |
 | POST | `/v1/clipboard-read` | `{tab?}` — returns `data.value` from `navigator.clipboard.readText()` |
+| POST | `/v1/clipboard-write` | `{text, paste?, tab?}` — set clipboard via `navigator.clipboard.writeText`; `paste:true` then fires Ctrl+Shift+V to paste atomically into a focused xterm/SSH terminal (no per-char streaming, no Enter race) |
+| POST | `/v1/term-text` | `{tab?}` — xterm.js terminal buffer as plain text incl. scrollback in `data.value` (`data.result` has `{found, source, lines, cols, rows, note}`); reads same-origin iframes (JumpServer Luna) and replaces screenshot OCR |
 | POST | `/v1/scroll` | `{direction, pixels?, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/eval` | `{script, tab?, waitFor?, timeoutMs?}` — clients are responsible for any `await` wrapping; the CLI's auto-await is not applied here |
 | POST | `/v1/wait` | `{ms?, tab?}` |
