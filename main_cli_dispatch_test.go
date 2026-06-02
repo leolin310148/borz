@@ -344,6 +344,30 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 				t.Fatalf("press output = %q", out)
 			}
 		}},
+		{name: "clipboard-write", args: []string{"clipboard-write", "echo", "hi"}, action: protocol.ActionClipboardWrite, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.Text != "echo hi" || req.Paste {
+				t.Fatalf("clipboard-write request = %+v", req)
+			}
+			if !strings.Contains(out, "Clipboard written") || strings.Contains(out, "pasted") {
+				t.Fatalf("clipboard-write output = %q", out)
+			}
+		}},
+		{name: "clipboard-write paste", args: []string{"clipboard-write", "ls -la", "--paste", "--tab", "T1"}, action: protocol.ActionClipboardWrite, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.Text != "ls -la" || !req.Paste || req.TabID != "T1" {
+				t.Fatalf("clipboard-write paste request = %+v", req)
+			}
+			if !strings.Contains(out, "pasted") {
+				t.Fatalf("clipboard-write paste output = %q", out)
+			}
+		}},
+		{name: "term-text", args: []string{"term-text", "--tab", "T1"}, action: protocol.ActionTermText, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.TabID != "T1" {
+				t.Fatalf("term-text request = %+v", req)
+			}
+			if !strings.Contains(out, "value text") {
+				t.Fatalf("term-text output = %q", out)
+			}
+		}},
 		{name: "scroll", args: []string{"scroll", "up", "42"}, action: protocol.ActionScroll, check: func(t *testing.T, req protocol.Request, out string) {
 			if req.Direction != "up" || req.Pixels == nil || *req.Pixels != 42 {
 				t.Fatalf("scroll request = %+v", req)

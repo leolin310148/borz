@@ -41,6 +41,8 @@ borz fill <ref> <text>                       # clear + fill
 borz type <ref> <text>                       # append
 borz upload <ref> <file...>                  # attach files to <input type=file> (paths on daemon host)
 borz press <key>                             # Enter, Tab, ArrowDown, Escape, ...
+borz clipboard-write <text> [--paste]        # set clipboard; --paste fires Ctrl+Shift+V (atomic terminal paste)
+borz term-text                               # xterm.js buffer text incl. scrollback (replaces screenshot OCR)
 borz eval <script>                           # JS in page context, returns JSON
 borz eval --unwrap <script>                  # print result raw (strings unquoted)
 borz eval --file <path>                      # read script from disk
@@ -89,8 +91,8 @@ MCP client config (e.g. Claude Code `.claude/settings.json`):
 Tools (38 total):
 
 - **Navigation:** `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close`
-- **Interaction:** `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_press`, `browser_scroll`
-- **Observation:** `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_wait`
+- **Interaction:** `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_press`, `browser_clipboard_write`, `browser_scroll`
+- **Observation:** `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_term_text`, `browser_wait`
 - **Tabs:** `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close`
 - **Diagnostics:** `browser_network`, `browser_console`, `browser_errors`, `browser_doctor`
 - **Extension-backed Chrome APIs:** `browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`

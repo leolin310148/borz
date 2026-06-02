@@ -185,6 +185,20 @@ var pressTool = mcp.NewTool("browser_press",
 	postDelayParam(),
 )
 
+var clipboardWriteTool = mcp.NewTool("browser_clipboard_write",
+	mcp.WithDescription("Write text to the tab's clipboard, optionally pasting it into a focused terminal. With paste=true the daemon fires Ctrl+Shift+V after writing, so an xterm.js / SSH terminal (e.g. JumpServer Luna) receives the whole string in one atomic paste — no per-character key streaming, no Enter race. Ideal for sending long commands or base64-encoded scripts to a canvas-rendered terminal. The terminal must have focus; the daemon best-effort focuses the xterm textarea (incl. same-origin iframes) first."),
+	mcp.WithString("text", mcp.Required(), mcp.Description("Text to place on the clipboard (e.g. a command or base64-encoded script)")),
+	mcp.WithBoolean("paste", mcp.Description("After writing, fire Ctrl+Shift+V to paste into the focused terminal. Default false.")),
+	tabParam(),
+	preDelayParam(),
+	postDelayParam(),
+)
+
+var termTextTool = mcp.NewTool("browser_term_text",
+	mcp.WithDescription("Read an xterm.js terminal's buffer as plain text, including scrollback. Replaces screenshot/OCR for canvas-rendered terminals (e.g. JumpServer Luna SSH). Walks the page and same-origin iframes for a live Terminal instance and reads buffer.active. Returns the flat text; source is one of xterm-buffer (full incl. scrollback), xterm-accessibility / xterm-rows (visible region only), or none (canvas/WebGL with no reachable instance, or a cross-origin iframe)."),
+	tabParam(),
+)
+
 var scrollTool = mcp.NewTool("browser_scroll",
 	mcp.WithDescription("Scroll the page in a given direction"),
 	mcp.WithString("direction",

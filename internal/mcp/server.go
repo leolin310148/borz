@@ -56,6 +56,7 @@ func newMCPServer(version string) *server.MCPServer {
 	s.AddTool(selectTool, handleSelect)
 	s.AddTool(uploadTool, handleUpload)
 	s.AddTool(pressTool, handlePress)
+	s.AddTool(clipboardWriteTool, handleClipboardWrite)
 	s.AddTool(scrollTool, handleScroll)
 
 	// Observation
@@ -64,6 +65,7 @@ func newMCPServer(version string) *server.MCPServer {
 	s.AddTool(viewportTool, handleViewport)
 	s.AddTool(getTool, handleGet)
 	s.AddTool(evalTool, handleEval)
+	s.AddTool(termTextTool, handleTermText)
 	s.AddTool(waitTool, handleWait)
 
 	// Tab Management

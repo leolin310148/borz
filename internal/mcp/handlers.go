@@ -334,6 +334,34 @@ func handlePress(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResul
 	return textResult(resp, fmt.Sprintf("Pressed key %q", key)), nil
 }
 
+func handleClipboardWrite(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	text, err := r.RequireString("text")
+	if err != nil {
+		return mcp.NewToolResultError("text is required"), nil
+	}
+	paste := r.GetBool("paste", false)
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionClipboardWrite, Text: text, Paste: paste}
+	setTab(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	if paste {
+		return textResult(resp, "Clipboard written and pasted (Ctrl+Shift+V)"), nil
+	}
+	return textResult(resp, "Clipboard written"), nil
+}
+
+func handleTermText(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionTermText}
+	setTab(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	return formatGet(resp), nil
+}
+
 func handleScroll(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	direction := r.GetString("direction", "down")
 	pixels := r.GetInt("pixels", 300)

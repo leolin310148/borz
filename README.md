@@ -208,8 +208,8 @@ The MCP server exposes 38 tools:
 | Category | Tools |
 |----------|-------|
 | **Navigation** | `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close` |
-| **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_press`, `browser_scroll` |
-| **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_wait` |
+| **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_press`, `browser_clipboard_write`, `browser_scroll` |
+| **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_term_text`, `browser_wait` |
 | **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close` |
 | **Diagnostics** | `browser_network`, `browser_console`, `browser_errors`, `browser_doctor` |
 | **Extension-backed** | `browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows` |
@@ -746,6 +746,35 @@ borz press Tab
 borz press ArrowDown
 borz press Escape
 ```
+
+#### `clipboard-write` - Set clipboard / atomic terminal paste
+
+```bash
+# Set the tab clipboard
+borz clipboard-write "ls -la"
+
+# Set clipboard then paste atomically into a focused xterm/SSH terminal
+# (Ctrl+Shift+V) — no per-character streaming, no Enter race
+borz clipboard-write "long command or base64 script" --paste --tab 2
+
+# Read the text from a file (handy for large payloads)
+borz clipboard-write --file ./payload.b64 --paste
+```
+
+#### `term-text` - Read an xterm.js terminal buffer
+
+```bash
+# Plain text of the terminal incl. scrollback (replaces screenshot OCR)
+borz term-text
+
+# Target a specific tab; --json adds {found, source, lines, cols, rows} metadata
+borz term-text --tab 2 --json
+```
+
+Walks the page and same-origin iframes (e.g. JumpServer Luna) for a live
+xterm.js `Terminal` and reads `buffer.active`. Falls back to the accessibility
+layer / DOM rows (visible region only), or reports nothing reachable for
+canvas/WebGL terminals with no instance or cross-origin iframes.
 
 #### `scroll`
 

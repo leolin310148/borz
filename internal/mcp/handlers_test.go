@@ -512,6 +512,49 @@ func TestHandleGet(t *testing.T) {
 	}
 }
 
+func TestHandleClipboardWrite(t *testing.T) {
+	// missing text
+	res, _ := handleClipboardWrite(context.Background(), mkReq(nil))
+	if !res.IsError {
+		t.Error("missing text should error")
+	}
+	// success without paste
+	cap := capturingSend(t, ok())
+	res, _ = handleClipboardWrite(context.Background(), mkReq(map[string]any{"text": "ls -la", "tab": "T1"}))
+	if cap.req.Action != protocol.ActionClipboardWrite || cap.req.Text != "ls -la" || cap.req.Paste {
+		t.Errorf("req = %+v", cap.req)
+	}
+	if cap.req.TabID != "T1" {
+		t.Errorf("tab = %v", cap.req.TabID)
+	}
+	if strings.Contains(firstText(t, res), "pasted") {
+		t.Errorf("no-paste message should not mention pasting; got %q", firstText(t, res))
+	}
+	// success with paste
+	cap = capturingSend(t, ok())
+	res, _ = handleClipboardWrite(context.Background(), mkReq(map[string]any{"text": "x", "paste": true}))
+	if !cap.req.Paste {
+		t.Errorf("paste flag not propagated: %+v", cap.req)
+	}
+	if !strings.Contains(firstText(t, res), "pasted") {
+		t.Errorf("paste message missing; got %q", firstText(t, res))
+	}
+}
+
+func TestHandleTermText(t *testing.T) {
+	cap := capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{Value: "$ ls\nfile.txt"}})
+	res, _ := handleTermText(context.Background(), mkReq(map[string]any{"tab": "T1"}))
+	if cap.req.Action != protocol.ActionTermText {
+		t.Errorf("action = %v", cap.req.Action)
+	}
+	if cap.req.TabID != "T1" {
+		t.Errorf("tab = %v", cap.req.TabID)
+	}
+	if firstText(t, res) != "$ ls\nfile.txt" {
+		t.Errorf("term text = %q", firstText(t, res))
+	}
+}
+
 func TestHandleEval(t *testing.T) {
 	res, _ := handleEval(context.Background(), mkReq(nil))
 	if !res.IsError {

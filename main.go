@@ -61,7 +61,7 @@ var cliBoolFlags = []string{
 	"--all", "--baked", "--check", "--clear", "--compact", "--diff", "--focused",
 	"--force", "--help", "--interactive", "--json", "--lossless",
 	"--mask-by-default", "--mobile", "--new", "--no-auto-await", "--no-check",
-	"--no-touch", "--recover", "--recursive", "--remote", "--reset", "--save-as",
+	"--no-touch", "--paste", "--recover", "--recursive", "--remote", "--reset", "--save-as",
 	"--smooth", "--tail", "--text", "--text-only", "--touch", "--unwrap",
 	"--version", "--with-body",
 }
@@ -439,6 +439,44 @@ func main() {
 		applyCLIWaitFor(req, args)
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
 			fmt.Printf("Pressed: %s\n", cmdArgs[0])
+		})
+
+	case "clipboard-write":
+		filePath := getArgValue(args, "--file")
+		var text string
+		if filePath != "" {
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				fatal(fmt.Sprintf("--file: %v", err))
+			}
+			text = string(data)
+			if len(cmdArgs) > 0 {
+				fatal("clipboard-write: --file and inline text are mutually exclusive")
+			}
+		} else {
+			if len(cmdArgs) == 0 {
+				fatal("Usage: borz clipboard-write <text> | --file <path> [--paste]")
+			}
+			text = strings.Join(cmdArgs, " ")
+		}
+		paste := hasFlag(args, "--paste")
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionClipboardWrite, Text: text, Paste: paste}
+		setTab(req, globalTabID)
+		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+			if paste {
+				fmt.Println("Clipboard written and pasted (Ctrl+Shift+V)")
+			} else {
+				fmt.Println("Clipboard written")
+			}
+		})
+
+	case "term-text":
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionTermText}
+		setTab(req, globalTabID)
+		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+			if resp.Data != nil {
+				fmt.Println(resp.Data.Value)
+			}
 		})
 
 	case "scroll":
@@ -1930,6 +1968,9 @@ Interaction:
   check <ref> / uncheck <ref>   (Un)check checkbox
   select <ref> <value>          Select option
   press <key>                   Press key (Enter, Tab, ArrowDown, ...)
+  clipboard-write <text> [--paste]
+                                Set clipboard; --paste fires Ctrl+Shift+V to
+                                paste atomically into a focused terminal
   scroll <direction> [pixels]   Scroll page
   eval <script> [--unwrap] [--file <path>] [--no-auto-await] [--json-arg name=value]...
                                 Execute JavaScript (top-level await
@@ -1947,6 +1988,9 @@ Observation:
   viewport [status|current|mobile|tablet|desktop|WxH|reset]
                                 Inspect or emulate viewport for responsive UI
   get <attribute> [ref]         Get element attribute
+  term-text                     Read xterm.js terminal text incl. scrollback
+                                (replaces screenshot OCR; reads same-origin
+                                iframes like JumpServer Luna)
   network [requests|clear] [--tail]
                                 Network traffic; --tail streams new
                                 requests live (Ctrl+C to stop)

@@ -144,6 +144,39 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Notes: "Key names follow KeyboardEvent.key (e.g. 'Enter', 'Tab', 'ArrowLeft', 'a').",
 	},
+	"clipboard-write": {
+		Summary: "Write text to the browser clipboard, optionally pasting it into a terminal.",
+		Usage:   "borz clipboard-write <text> | --file <path> [--paste] [--tab <id>]",
+		Flags: []string{
+			"  --file <path>   Read the clipboard text from a file instead of args",
+			"  --paste         After writing, fire Ctrl+Shift+V to paste into the focused terminal",
+			"  --tab <id>      Target a specific tab",
+		},
+		Examples: []string{
+			"  borz clipboard-write 'ls -la'",
+			"  borz clipboard-write --file ./payload.b64 --paste --tab 2",
+		},
+		Notes: "Sets the clipboard via navigator.clipboard.writeText (the tab is brought\n" +
+			"to the foreground first). With --paste it then sends Ctrl+Shift+V so an\n" +
+			"xterm.js / SSH terminal receives the whole string in one atomic paste —\n" +
+			"no per-character streaming, no Enter race. The terminal must have focus;\n" +
+			"the daemon best-effort focuses the xterm textarea (incl. same-origin\n" +
+			"iframes) first.",
+	},
+	"term-text": {
+		Summary: "Read an xterm.js terminal buffer as plain text (incl. scrollback).",
+		Usage:   "borz term-text [--tab <id>]",
+		Examples: []string{
+			"  borz term-text",
+			"  borz term-text --tab 2 --json",
+		},
+		Notes: "Replaces screenshot/OCR of canvas-rendered terminals (e.g. JumpServer\n" +
+			"Luna SSH). Walks the page and same-origin iframes for a live Terminal\n" +
+			"instance and reads buffer.active. The flat text prints to stdout; with\n" +
+			"--json, data.result also carries {found, source, lines, cols, rows, note}.\n" +
+			"source is xterm-buffer (full, incl. scrollback), xterm-accessibility or\n" +
+			"xterm-rows (visible only), or none (canvas/WebGL or cross-origin iframe).",
+	},
 	"scroll": {
 		Summary: "Scroll the page by pixels in a direction.",
 		Usage:   "borz scroll [direction] [pixels] [--tab <id>]" + waitForUsageSuffix,
