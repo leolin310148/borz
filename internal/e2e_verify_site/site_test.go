@@ -124,6 +124,30 @@ func TestHandlerServesDelayedRenderPage(t *testing.T) {
 	}
 }
 
+func TestHandlerServesAsyncActionPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/async-action", nil)
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("async action status=%d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("async action content-type=%q", ct)
+	}
+	for _, marker := range []string{
+		`id="async-action-ready"`,
+		`aria-label="Start async action"`,
+		`id = 'async-action-result'`,
+		`window.setTimeout`,
+		`}, 750)`,
+	} {
+		if !strings.Contains(rec.Body.String(), marker) {
+			t.Errorf("async action page missing %q", marker)
+		}
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {

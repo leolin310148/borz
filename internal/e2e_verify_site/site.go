@@ -56,6 +56,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/spa", spa)
 	mux.HandleFunc("/spa/", spa)
 	mux.HandleFunc("/delayed-render", delayedRender)
+	mux.HandleFunc("/async-action", asyncAction)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -250,6 +251,36 @@ func delayedRender(w http.ResponseWriter, r *http.Request) {
       marker.textContent = 'Delayed marker ready';
       document.getElementById('delayed-content').appendChild(marker);
     }, 750);
+  </script>
+</body>
+</html>`)
+}
+
+func asyncAction(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>E2E Async Action</title>
+</head>
+<body>
+  <h1 id="async-action-ready">Async action fixture</h1>
+  <button id="async-action-button" type="button" aria-label="Start async action">Start async action</button>
+  <main id="async-action-content" aria-live="polite"></main>
+  <script>
+    let asyncActionCount = 0;
+    document.getElementById('async-action-button').addEventListener('click', () => {
+      asyncActionCount += 1;
+      document.getElementById('async-action-content').replaceChildren();
+      window.setTimeout(() => {
+        const result = document.createElement('p');
+        result.id = 'async-action-result';
+        result.dataset.count = String(asyncActionCount);
+        result.textContent = 'Async action ' + asyncActionCount + ' complete';
+        document.getElementById('async-action-content').appendChild(result);
+      }, 750);
+    });
   </script>
 </body>
 </html>`)

@@ -317,6 +317,51 @@ func TestE2ECLIWaitForDelayedRenderAndTimeout(t *testing.T) {
 	requireContains(t, timeoutResp.Error, "timeout after 600ms", "wait-for timeout error")
 }
 
+func TestE2ECLIActionWaitForAndTimeout(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/async-action", "--new", "--wait-for", "#async-action-ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("async action open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+	if snapshot.Data.SnapshotData == nil {
+		t.Fatalf("async action snapshot returned no snapshot data: %+v", snapshot.Data)
+	}
+	actionRef := refByName(t, snapshot.Data.SnapshotData, "Start async action")
+	runE2EJSON(t, env, "click", actionRef, "--wait-for", "#async-action-result", "--timeout", "5000", "--json")
+	requireEvalString(t, env, `document.querySelector("#async-action-result").textContent`, "Async action 1 complete")
+
+	timeoutResp := runE2EJSONResponse(t, env, "click", actionRef, "--wait-for", "#never-rendered-after-action", "--timeout", "600", "--json")
+	if timeoutResp.Success {
+		t.Fatalf("post-action wait-for unexpectedly succeeded: %+v", timeoutResp)
+	}
+	requireContains(t, timeoutResp.Error, `wait-for selector "#never-rendered-after-action"`, "post-action wait-for timeout error")
+	requireContains(t, timeoutResp.Error, "timeout after 600ms", "post-action wait-for timeout error")
+	requireEvalBool(t, env, `document.querySelector("#async-action-result") === null`, true)
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
