@@ -978,6 +978,19 @@ borz doctor --json   # structured {ok, checks[]} for scripts
 
 Exit code is `1` on any fail; warnings (e.g. daemon not started yet) do not fail. The same diagnostic is exposed to AI agents as the `browser_doctor` MCP tool and to remote integrations as `GET /v1/doctor` (returns 503 on a failing check).
 
+### Local operational logs
+
+borz keeps bounded, structured JSONL logs for client autostart, daemon commands, and MCP tool calls:
+
+```bash
+borz logs path                 # active profile's log directory
+borz logs tail --lines 100     # recent events
+borz logs stats --since 7d     # actions, tools, failures, error codes, p95 latency
+borz logs stats --since 24h --json
+```
+
+Logs live under `~/.borz/logs/<profile>`, rotate at 10 MiB with five backups per component, and use file mode `0600`. They record metadata such as action/tool name, request/session correlation, duration, outcome, and stable error code. Raw field text, eval scripts, clipboard data, cookies/headers/tokens, URL paths and queries, snapshots, response bodies, and upload paths are never persisted. Set `BORZ_SESSION_ID` when an agent host can provide a stable session or turn correlation id; MCP generates a process session id when it is absent.
+
 ## Global Flags
 
 | Flag | Description |
@@ -1061,6 +1074,7 @@ CDP mode records the controlled Chromium tab. Client mode uses the borz extensio
 | `BORZ_CDP_URL` | Override CDP endpoint (e.g., `http://127.0.0.1:9222`) |
 | `BORZ_PROFILE` | Default local daemon/browser profile name |
 | `BORZ_HOME` | Override config directory (default: `~/.borz`) |
+| `BORZ_SESSION_ID` | Optional agent/session correlation id for operational logs |
 
 Legacy `BB_BROWSER_*` environment variables are still accepted during the rename transition.
 

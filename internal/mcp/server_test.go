@@ -1,8 +1,14 @@
 package mcp
 
 import (
+	"context"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/observability"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -36,5 +42,37 @@ func TestMCPDurationSchemasRejectNegativeValues(t *testing.T) {
 				t.Fatalf("%s minimum = %#v, want 0", tc.prop, got)
 			}
 		})
+	}
+}
+
+func TestMCPLoggingMiddlewareRecordsOutcomeWithoutArguments(t *testing.T) {
+	t.Setenv(config.HomeEnv, t.TempDir())
+	logger, err := observability.Open("mcp", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped := mcpLoggingMiddleware(logger, "session-1")(func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		return mcpgo.NewToolResultError("ref 9 not found for super-secret input"), nil
+	})
+	_, err = wrapped(context.Background(), mcpgo.CallToolRequest{Params: mcpgo.CallToolParams{
+		Name: "browser_fill", Arguments: map[string]any{"text": "super-secret"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = logger.Close()
+	entries, err := observability.ReadEntries(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Tool != "browser_fill" || entries[0].ErrorCode != "stale_ref" {
+		t.Fatalf("entries = %+v", entries)
+	}
+	raw, err := os.ReadFile(logger.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "super-secret") {
+		t.Fatalf("argument leaked: %s", raw)
 	}
 }

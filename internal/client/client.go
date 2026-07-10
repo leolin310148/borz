@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/observability"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -27,6 +28,8 @@ var (
 	daemonReady         bool
 	useRemote           bool
 	localVersion        string
+	clientSurface       = "cli"
+	clientSessionID     string
 	versionWarningShown bool
 	cachedProfile       string
 
@@ -43,6 +46,17 @@ var (
 // without changing daemon/browser lifecycle.
 func SetLocalVersion(v string) { localVersion = v }
 
+// SetRequestContext identifies the calling surface and agent session on
+// daemon requests. These values are correlation metadata only.
+func SetRequestContext(surface, sessionID string) {
+	surface = strings.TrimSpace(surface)
+	if surface == "" {
+		surface = "cli"
+	}
+	clientSurface = surface
+	clientSessionID = strings.TrimSpace(sessionID)
+}
+
 // RemoteConfig is persisted by `borz client setup` and stores the server
 // used when a CLI invocation opts into remote routing with --remote.
 type RemoteConfig struct {
@@ -58,6 +72,8 @@ func ResetForTests() {
 	daemonReady = false
 	useRemote = false
 	localVersion = ""
+	clientSurface = "cli"
+	clientSessionID = ""
 	versionWarningShown = false
 	cachedProfile = ""
 	_ = config.SetProfile("")
@@ -295,6 +311,10 @@ func httpJSONEndpoint(method, baseURL, token, urlPath string, body interface{}, 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	req.Header.Set("X-Borz-Surface", clientSurface)
+	if clientSessionID != "" {
+		req.Header.Set("X-Borz-Session-ID", clientSessionID)
+	}
 
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
@@ -402,8 +422,13 @@ func EnsureDaemon() error {
 	}
 
 	// Discover CDP port
+	autostartStarted := time.Now()
+	logClientEvent("info", "daemon_autostart_started", observability.Fields{})
 	cdpInfo, err := discoverCDPPort()
 	if err != nil {
+		logClientEvent("warn", "browser_discovery_failed", observability.Fields{
+			DurationMS: time.Since(autostartStarted).Milliseconds(), ErrorCode: "browser_not_found",
+		})
 		return fmt.Errorf("borz: Cannot find a Chromium-based browser.\n\n" +
 			"Please do one of the following:\n" +
 			"  1. Install Google Chrome, Edge, or Brave\n" +
@@ -433,6 +458,9 @@ func EnsureDaemon() error {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	if err := cmd.Start(); err != nil {
+		logClientEvent("warn", "daemon_autostart_failed", observability.Fields{
+			DurationMS: time.Since(autostartStarted).Milliseconds(), ErrorCode: "daemon_start_failed",
+		})
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 	cmd.Process.Release()
@@ -457,14 +485,33 @@ func EnsureDaemon() error {
 			cachedInfo = info
 			cachedProfile = config.Profile()
 			daemonReady = true
+			logClientEvent("info", "daemon_autostarted", observability.Fields{
+				DurationMS: time.Since(autostartStarted).Milliseconds(), Success: clientBoolPtr(true),
+			})
 			return nil
 		}
 	}
 
+	logClientEvent("warn", "daemon_autostart_failed", observability.Fields{
+		DurationMS: time.Since(autostartStarted).Milliseconds(), Success: clientBoolPtr(false), ErrorCode: "daemon_start_failed",
+	})
 	return fmt.Errorf("borz: Daemon did not start in time.\n\n" +
 		"Chrome CDP is reachable, but the daemon process failed to initialize.\n" +
 		"Try: borz daemon status")
 }
+
+func logClientEvent(level, event string, fields observability.Fields) {
+	logger, err := observability.Open("client", localVersion)
+	if err != nil {
+		return
+	}
+	fields.Surface = clientSurface
+	fields.SessionID = clientSessionID
+	_ = logger.Log(level, event, fields)
+	_ = logger.Close()
+}
+
+func clientBoolPtr(v bool) *bool { return &v }
 
 // SendCommand sends a command to the daemon.
 func SendCommand(req *protocol.Request) (*protocol.Response, error) {

@@ -229,6 +229,7 @@ func TestDerivedPaths(t *testing.T) {
 		want string
 	}{
 		{"DaemonJSONPath", DaemonJSONPath, "/tmp/borz/daemon.json"},
+		{"LogsDir", LogsDir, "/tmp/borz/logs/default"},
 		{"ClientJSONPath", ClientJSONPath, "/tmp/borz/client.json"},
 		{"SitesDir", SitesDir, "/tmp/borz/sites"},
 		{"CommunitySitesDir", CommunitySitesDir, "/tmp/borz/bb-sites"},
@@ -265,6 +266,7 @@ func TestProfileRuntimePaths(t *testing.T) {
 		want string
 	}{
 		{"DaemonJSONPath", DaemonJSONPath(), "/tmp/borz/profiles/work/daemon.json"},
+		{"LogsDir", LogsDir(), "/tmp/borz/logs/work"},
 		{"ClientJSONPath", ClientJSONPath(), "/tmp/borz/client.json"},
 		{"ManagedBrowserDir", ManagedBrowserDir(), "/tmp/borz/profiles/work/browser"},
 		{"ManagedPortFile", ManagedPortFile(), "/tmp/borz/profiles/work/browser/cdp-port"},

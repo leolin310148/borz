@@ -26,6 +26,8 @@ func resetState() {
 	daemonReady = false
 	useRemote = false
 	localVersion = ""
+	clientSurface = "cli"
+	clientSessionID = ""
 	versionWarningShown = false
 	cachedProfile = ""
 	_ = config.SetProfile("")

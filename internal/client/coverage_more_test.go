@@ -59,6 +59,25 @@ func TestRemoteConfigAndHTTPErrorBranches(t *testing.T) {
 	}
 }
 
+func TestHTTPJSONEndpointAddsOperationalCorrelationHeaders(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	SetRequestContext("mcp", "session-123")
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Borz-Surface"); got != "mcp" {
+			t.Errorf("surface header = %q", got)
+		}
+		if got := r.Header.Get("X-Borz-Session-ID"); got != "session-123" {
+			t.Errorf("session header = %q", got)
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+	if _, err := httpJSONEndpoint("GET", ts.URL, "", "/", nil, time.Second); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEnsureDaemonCacheDaemonJSONAndSpawnBranches(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)

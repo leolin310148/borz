@@ -181,6 +181,17 @@ func DaemonJSONPath() string {
 	return filepath.Join(runtimeDir(), "daemon.json")
 }
 
+// LogsDir returns the profile-specific directory for persistent operational
+// logs. Logs live outside the runtime directory so their location stays
+// predictable while keeping named profiles isolated.
+func LogsDir() string {
+	profile := Profile()
+	if profile == "" {
+		profile = "default"
+	}
+	return filepath.Join(HomeDir(), "logs", profile)
+}
+
 // ClientJSONPath returns the path to the remote client configuration.
 func ClientJSONPath() string {
 	return filepath.Join(HomeDir(), "client.json")

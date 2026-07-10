@@ -708,6 +708,7 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 		}
 	}
 	resp := dispatchAction(cdp, req)
+	recordTraceEvent(req, resp)
 	if req != nil && resp != nil && resp.Success && req.PostDelayMs != nil && *req.PostDelayMs > 0 {
 		delaySleep(time.Duration(*req.PostDelayMs) * time.Millisecond)
 	}
@@ -717,6 +718,51 @@ func DispatchRequest(cdp *CdpConnection, req *protocol.Request) *protocol.Respon
 // delaySleep is a package var so tests can stub the wall-clock pause without
 // adding seconds to the suite. Defaults to time.Sleep.
 var delaySleep = time.Sleep
+
+func recordTraceEvent(req *protocol.Request, resp *protocol.Response) {
+	if req == nil || resp == nil || !resp.Success || req.Action == protocol.ActionTrace {
+		return
+	}
+	switch req.Action {
+	case protocol.ActionOpen, protocol.ActionBack, protocol.ActionForward, protocol.ActionRefresh,
+		protocol.ActionClick, protocol.ActionHover, protocol.ActionFill, protocol.ActionType_,
+		protocol.ActionCheck, protocol.ActionUncheck, protocol.ActionSelect, protocol.ActionUpload,
+		protocol.ActionPress, protocol.ActionScroll, protocol.ActionClose, protocol.ActionTabNew,
+		protocol.ActionTabSelect, protocol.ActionTabClose, protocol.ActionFrame, protocol.ActionFrameMain,
+		protocol.ActionDialog, protocol.ActionKey, protocol.ActionMouse, protocol.ActionClipboardWrite:
+	default:
+		return
+	}
+
+	traceMu.Lock()
+	defer traceMu.Unlock()
+	if !traceRecording {
+		return
+	}
+	event := protocol.TraceEvent{
+		Type: string(req.Action), Timestamp: time.Now().UnixMilli(), URL: req.URL,
+		Key: req.Key, Direction: req.Direction, Pixels: req.Pixels,
+	}
+	if resp.Data != nil && resp.Data.URL != "" {
+		event.URL = resp.Data.URL
+	}
+	if ref, err := strconv.Atoi(strings.TrimPrefix(strings.TrimSpace(req.Ref), "@")); err == nil {
+		event.Ref = &ref
+	}
+	switch req.Action {
+	case protocol.ActionFill, protocol.ActionType_, protocol.ActionClipboardWrite:
+		event.Value = req.Text
+	case protocol.ActionSelect:
+		event.Value = req.Value
+	case protocol.ActionCheck:
+		checked := true
+		event.Checked = &checked
+	case protocol.ActionUncheck:
+		checked := false
+		event.Checked = &checked
+	}
+	traceEvents = append(traceEvents, event)
+}
 
 // dispatchAction is the real CDP dispatcher. Pre/post delay logic lives in
 // the public wrapper above so each action body stays focused on the action.

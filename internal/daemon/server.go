@@ -17,6 +17,7 @@ import (
 
 	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/daemon/extbridge"
+	"github.com/leolin310148/borz/internal/observability"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -49,6 +50,7 @@ type Server struct {
 	cancelReaper context.CancelFunc
 	shutdownOnce sync.Once
 	shutdownErr  error
+	logger       *observability.Logger
 }
 
 // NewServer creates a daemon server.
@@ -107,6 +109,8 @@ func (s *Server) RunContext(ctx context.Context) error {
 		Addr:    addr,
 		Handler: corsMiddleware(root),
 	}
+	fmt.Fprintf(os.Stderr, "borz daemon starting on %s (cdp=%s:%d, idleTabCloseMinutes=%d)\n",
+		addr, s.opts.CDPHost, s.opts.CDPPort, s.opts.IdleTabCloseMinutes)
 
 	// Bind the listener BEFORE writing daemon.json, so a bind failure
 	// doesn't clobber a live daemon's state.
@@ -123,6 +127,15 @@ func (s *Server) RunContext(ctx context.Context) error {
 			_ = ln.Close()
 		}
 	}()
+
+	if logger, logErr := observability.Open("daemon", s.opts.Version); logErr != nil {
+		fmt.Fprintf(os.Stderr, "borz operational log unavailable: %v\n", logErr)
+	} else {
+		s.logger = logger
+		s.cdp.logger = logger
+		defer logger.Close()
+		s.log("info", "daemon_started", observability.Fields{})
+	}
 
 	s.startTime = time.Now()
 
@@ -164,6 +177,8 @@ func (s *Server) RunContext(ctx context.Context) error {
 	if err := os.WriteFile(config.DaemonJSONPath(), infoJSON, 0600); err != nil {
 		return err
 	}
+	fmt.Fprintf(os.Stderr, "borz daemon state written to %s (pid=%d, host=%s, port=%d)\n",
+		config.DaemonJSONPath(), info.PID, info.Host, info.Port)
 
 	fmt.Fprintf(os.Stderr, "borz daemon listening on %s\n", addr)
 	errCh := make(chan error, 1)
@@ -177,14 +192,18 @@ func (s *Server) RunContext(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 	case err := <-errCh:
+		s.log("error", "daemon_serve_failed", observability.Fields{ErrorCode: observability.ErrorCode(err.Error())})
 		return err
 	}
 
+	fmt.Fprintf(os.Stderr, "borz daemon shutdown requested\n")
 	return s.shutdown()
 }
 
 func (s *Server) shutdown() error {
 	s.shutdownOnce.Do(func() {
+		fmt.Fprintf(os.Stderr, "borz daemon shutting down\n")
+		s.log("info", "daemon_stopping", observability.Fields{})
 		// Clean up daemon.json
 		os.Remove(config.DaemonJSONPath())
 		if s.cancelReaper != nil {
@@ -206,6 +225,15 @@ func (s *Server) uptime() int {
 		return 0
 	}
 	return int(time.Since(s.startTime).Seconds())
+}
+
+func (s *Server) log(level, event string, fields observability.Fields) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	if err := s.logger.Log(level, event, fields); err != nil {
+		fmt.Fprintf(os.Stderr, "borz operational log write failed: %v\n", err)
+	}
 }
 
 // --- Middleware ---
@@ -252,19 +280,25 @@ func validBearerToken(auth, token string) bool {
 // --- Handlers ---
 
 func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
+	surface := requestSurface(r)
+	sessionID := requestSessionID(r)
 	if r.Method != "POST" {
+		s.log("warn", "request_rejected", observability.Fields{Surface: surface, SessionID: sessionID, DurationMS: time.Since(started).Milliseconds(), ErrorCode: "validation"})
 		sendMethodNotAllowed(w, http.MethodPost)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		s.log("warn", "request_rejected", observability.Fields{Surface: surface, SessionID: sessionID, DurationMS: time.Since(started).Milliseconds(), ErrorCode: "validation"})
 		sendJSON(w, 400, map[string]string{"error": "Failed to read body"})
 		return
 	}
 
 	var req protocol.Request
 	if err := json.Unmarshal(body, &req); err != nil {
+		s.log("warn", "request_rejected", observability.Fields{Surface: surface, SessionID: sessionID, DurationMS: time.Since(started).Milliseconds(), ErrorCode: "validation"})
 		sendJSON(w, 400, map[string]string{"error": "Invalid JSON"})
 		return
 	}
@@ -272,6 +306,7 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 	// Wait for CDP to be ready
 	if !s.cdp.Connected() {
 		if err := s.cdp.WaitUntilReady(time.Duration(config.CommandTimeout) * time.Second); err != nil {
+			s.logCommand(&req, surface, sessionID, started, false, observability.ErrorCode(err.Error()))
 			cdpTarget := fmt.Sprintf("%s:%d", s.cdp.Host, s.cdp.Port)
 			sendJSON(w, 503, map[string]interface{}{
 				"id":      req.ID,
@@ -292,12 +327,82 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case resp := <-done:
+		errorCode := ""
+		if !resp.Success {
+			errorCode = observability.ErrorCode(resp.Error)
+		}
+		s.logCommand(&req, surface, sessionID, started, resp.Success, errorCode)
 		sendJSON(w, 200, resp)
 	case <-time.After(time.Duration(config.CommandTimeout) * time.Second):
+		s.logCommand(&req, surface, sessionID, started, false, "command_timeout")
 		sendJSON(w, 200, &protocol.Response{
 			ID: req.ID, Success: false, Error: "Command timeout",
 		})
 	}
+}
+
+func (s *Server) logCommand(req *protocol.Request, surface, sessionID string, started time.Time, success bool, errorCode string) {
+	if req == nil {
+		return
+	}
+	level := "info"
+	if !success {
+		level = "warn"
+	}
+	s.log(level, "command_completed", observability.Fields{
+		SessionID: sessionID, RequestID: req.ID, Surface: surface,
+		Action: string(req.Action), Tab: safeTab(req.TabID), URLHost: observability.URLHost(req.URL),
+		DurationMS: time.Since(started).Milliseconds(), Success: boolPtr(success), ErrorCode: errorCode,
+		TextBytes: len(req.Text), ScriptBytes: len(req.Script), FileCount: len(req.Files),
+		HasRef: strings.TrimSpace(req.Ref) != "", WaitFor: strings.TrimSpace(req.WaitFor) != "",
+	})
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func requestSurface(r *http.Request) string {
+	if r == nil {
+		return "raw"
+	}
+	v := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Borz-Surface")))
+	switch v {
+	case "cli", "mcp", "rest", "n8n":
+		return v
+	default:
+		return "raw"
+	}
+}
+
+func requestSessionID(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	v := strings.TrimSpace(r.Header.Get("X-Borz-Session-ID"))
+	if len(v) == 0 || len(v) > 64 {
+		return ""
+	}
+	for _, ch := range v {
+		if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '-' && ch != '_' {
+			return ""
+		}
+	}
+	return v
+}
+
+func safeTab(tab any) string {
+	if tab == nil {
+		return ""
+	}
+	v := strings.TrimSpace(fmt.Sprint(tab))
+	if len(v) > 12 {
+		v = v[len(v)-4:]
+	}
+	for _, ch := range v {
+		if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '-' && ch != '_' {
+			return ""
+		}
+	}
+	return v
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {

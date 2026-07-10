@@ -573,6 +573,28 @@ var commandHelp = map[string]cmdHelp{
 			"open tabs, and direct CDP discovery. Exits non-zero if any check fails;\n" +
 			"warnings (e.g. daemon not started) do not fail. Use --json for machine output.",
 	},
+	"logs": {
+		Summary: "Inspect privacy-safe local operational logs and failure statistics.",
+		Usage:   "borz logs [path|tail|stats] [--lines N] [--since 7d] [--json]",
+		Notes: "Logs are JSONL files under ~/.borz/logs/<profile>. They contain tool/action\n" +
+			"metadata, latency, outcome, and error codes, but never field text, eval scripts,\n" +
+			"clipboard data, cookies, headers, URL queries, snapshots, or response bodies.\n" +
+			"Files rotate at 10 MiB with five backups per component.",
+	},
+	"logs.path": {
+		Summary: "Print the active profile's operational log directory.",
+		Usage:   "borz logs path [--json]",
+	},
+	"logs.tail": {
+		Summary: "Show the newest operational log events.",
+		Usage:   "borz logs tail [--lines N] [--json]",
+		Flags:   []string{"  --lines <n>   Number of events to show (default 50)"},
+	},
+	"logs.stats": {
+		Summary: "Aggregate command/tool failures, latency, and error codes.",
+		Usage:   "borz logs stats [--since 7d] [--json]",
+		Flags:   []string{"  --since <duration|time>   Lookback such as 24h/7d, or RFC3339 (default 7d)"},
+	},
 	"daemon": {
 		Summary: "Start or control the local daemon (loopback only).",
 		Usage:   "borz daemon [status|shutdown|stop] [--profile N] [--host H --port P --cdp-host H --cdp-port P]",

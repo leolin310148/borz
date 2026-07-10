@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/leolin310148/borz/internal/daemon/extbridge"
+	"github.com/leolin310148/borz/internal/observability"
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 func newTestServer(t *testing.T, token string) *Server {
@@ -324,6 +326,36 @@ func TestServerExtHub(t *testing.T) {
 	s := NewServer(ServerOptions{})
 	if s.ExtHub() == nil {
 		t.Fatal("ExtHub returned nil")
+	}
+}
+
+func TestLogCommandPersistsSafeMetadata(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	logger, err := observability.Open("daemon", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newTestServer(t, "")
+	s.logger = logger
+	s.logCommand(&protocol.Request{
+		ID: "r1", Action: protocol.ActionFill, URL: "https://example.test/private?token=secret",
+		Ref: "9", Text: "super-secret", Script: "secret-script",
+	}, "mcp", "session-1", time.Now().Add(-20*time.Millisecond), false, "stale_ref")
+	_ = logger.Close()
+	entries, err := observability.ReadEntries(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Action != "fill" || entries[0].URLHost != "example.test" || entries[0].TextBytes == 0 {
+		t.Fatalf("entries = %+v", entries)
+	}
+	raw, err := os.ReadFile(logger.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "super-secret") || strings.Contains(string(raw), "secret-script") || strings.Contains(string(raw), "token=") {
+		t.Fatalf("sensitive command data leaked: %s", raw)
 	}
 }
 

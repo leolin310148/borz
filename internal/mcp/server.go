@@ -1,9 +1,15 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
+	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/observability"
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -22,22 +28,51 @@ Typical flow: call browser_tab_list to see what's already open → browser_navig
 
 // Run starts the MCP server over stdio.
 func Run(version string) {
+	sessionID := strings.TrimSpace(os.Getenv("BORZ_SESSION_ID"))
+	if sessionID == "" {
+		sessionID = newID()
+	}
+	client.SetRequestContext("mcp", sessionID)
+	logger, logErr := observability.Open("mcp", version)
+	if logErr != nil {
+		fmt.Fprintf(os.Stderr, "borz MCP operational log unavailable: %v\n", logErr)
+	} else {
+		mcpLogger = logger
+		mcpSessionID = sessionID
+		_ = logger.Log("info", "mcp_started", observability.Fields{SessionID: sessionID, Surface: "mcp"})
+		defer func() {
+			_ = logger.Log("info", "mcp_stopped", observability.Fields{SessionID: sessionID, Surface: "mcp"})
+			_ = logger.Close()
+			mcpLogger = nil
+			mcpSessionID = ""
+		}()
+	}
 	s := newMCPServer(version)
 	if err := server.ServeStdio(s); err != nil {
+		if mcpLogger != nil {
+			_ = mcpLogger.Log("error", "mcp_failed", observability.Fields{SessionID: sessionID, Surface: "mcp", ErrorCode: observability.ErrorCode(err.Error())})
+		}
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
+var (
+	mcpLogger    *observability.Logger
+	mcpSessionID string
+)
+
 func newMCPServer(version string) *server.MCPServer {
 	mcpVersion = version
-	s := server.NewMCPServer(
-		"borz",
-		version,
+	options := []server.ServerOption{
 		server.WithToolCapabilities(false),
-		server.WithRecovery(),
 		server.WithInstructions(serverInstructions),
-	)
+	}
+	if mcpLogger != nil {
+		options = append(options, server.WithToolHandlerMiddleware(mcpLoggingMiddleware(mcpLogger, mcpSessionID)))
+	}
+	options = append(options, server.WithRecovery())
+	s := server.NewMCPServer("borz", version, options...)
 
 	// Navigation
 	s.AddTool(navigateTool, handleNavigate)
@@ -94,3 +129,46 @@ func newMCPServer(version string) *server.MCPServer {
 	s.AddTool(siteRunTool, handleSiteRun)
 	return s
 }
+
+func mcpLoggingMiddleware(logger *observability.Logger, sessionID string) server.ToolHandlerMiddleware {
+	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+		return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			started := time.Now()
+			result, err := next(ctx, request)
+			success := err == nil && (result == nil || !result.IsError)
+			errorText := ""
+			if err != nil {
+				errorText = err.Error()
+			} else if result != nil && result.IsError {
+				errorText = firstToolResultText(result)
+			}
+			level := "info"
+			if !success {
+				level = "warn"
+			}
+			fields := observability.Fields{
+				SessionID: sessionID, Surface: "mcp", Tool: request.Params.Name,
+				DurationMS: time.Since(started).Milliseconds(), Success: mcpBoolPtr(success),
+			}
+			if !success {
+				fields.ErrorCode = observability.ErrorCode(errorText)
+			}
+			_ = logger.Log(level, "tool_completed", fields)
+			return result, err
+		}
+	}
+}
+
+func firstToolResultText(result *mcp.CallToolResult) string {
+	if result == nil {
+		return ""
+	}
+	for _, content := range result.Content {
+		if text, ok := content.(mcp.TextContent); ok {
+			return text.Text
+		}
+	}
+	return ""
+}
+
+func mcpBoolPtr(v bool) *bool { return &v }

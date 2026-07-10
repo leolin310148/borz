@@ -230,7 +230,7 @@ func TestCommandHelpCoversDispatch(t *testing.T) {
 		"click", "hover", "fill", "type", "check", "uncheck", "select",
 		"eval", "get", "screenshot", "viewport", "press", "clipboard-write", "term-text", "scroll", "wait",
 		"snapshot", "tab", "frame", "dialog", "network", "console", "errors", "trace",
-		"fetch", "mcp", "daemon", "server", "service", "client", "status", "doctor", "site", "update", "record", "history",
+		"fetch", "mcp", "daemon", "server", "service", "client", "status", "doctor", "logs", "site", "update", "record", "history",
 		"cookies", "bookmarks", "browser-history", "downloads", "window", "windows", "extension",
 		"help", "version",
 	}
@@ -261,6 +261,8 @@ func TestCommandHelpCoversSubcommands(t *testing.T) {
 		"client.setup", "client.enable", "client.disable", "client.status",
 		// trace
 		"trace.start", "trace.stop", "trace.status",
+		// operational logs
+		"logs.path", "logs.tail", "logs.stats",
 		// record
 		"record.start", "record.stop", "record.pause", "record.resume", "record.list", "record.info",
 		"record.verify", "record.render", "record.redact", "record.export", "record.edit", "record.play",

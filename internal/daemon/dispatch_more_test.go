@@ -86,6 +86,35 @@ func TestDispatchTabSelectionCloseAndTraceBranches(t *testing.T) {
 	}
 }
 
+func TestRecordTraceEventCapturesSuccessfulActions(t *testing.T) {
+	traceMu.Lock()
+	traceRecording = true
+	traceEvents = nil
+	traceMu.Unlock()
+	t.Cleanup(func() {
+		traceMu.Lock()
+		traceRecording = false
+		traceEvents = nil
+		traceMu.Unlock()
+	})
+
+	recordTraceEvent(&protocol.Request{Action: protocol.ActionFill, Ref: "@9", Text: "hello"}, &protocol.Response{
+		Success: true, Data: &protocol.ResponseData{URL: "https://example.test/form"},
+	})
+	recordTraceEvent(&protocol.Request{Action: protocol.ActionSnapshot}, &protocol.Response{Success: true})
+	recordTraceEvent(&protocol.Request{Action: protocol.ActionClick, Ref: "2"}, &protocol.Response{Success: false})
+
+	traceMu.Lock()
+	defer traceMu.Unlock()
+	if len(traceEvents) != 1 {
+		t.Fatalf("trace events = %+v", traceEvents)
+	}
+	event := traceEvents[0]
+	if event.Type != "fill" || event.Ref == nil || *event.Ref != 9 || event.Value != "hello" || event.URL != "https://example.test/form" {
+		t.Fatalf("trace event = %+v", event)
+	}
+}
+
 func TestDispatchFrameDialogAndEventQueryBranches(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a.test", "A")

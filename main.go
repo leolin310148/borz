@@ -47,6 +47,7 @@ var cliValueFlags = []string{
 	"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url",
 	"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for",
 	"--timeout", "--pre-delay", "--post-delay",
+	"--lines",
 	"--json-arg", "--interval", "--limit", "--title", "--parent",
 	"--filename", "--state", "--name", "--display-name", "--description", "--out",
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
@@ -96,6 +97,7 @@ func main() {
 	if err := config.SetProfile(profileName); err != nil {
 		fatal(err.Error())
 	}
+	client.SetRequestContext("cli", os.Getenv("BORZ_SESSION_ID"))
 	remoteRouting := hasFlag(args, "--remote")
 	client.SetRemoteRouting(remoteRouting)
 	globalTabID := getArgValue(args, "--tab")
@@ -632,6 +634,10 @@ func main() {
 	// --- Doctor ---
 	case "doctor":
 		runDoctor(jsonOutput)
+
+	// --- Local operational logs ---
+	case "logs":
+		handleLogs(cmdArgs, args, globalSince, jsonOutput)
 
 	// --- Site ---
 	case "site":
@@ -2027,6 +2033,7 @@ Utility:
   fetch <url>                   Authenticated fetch via page session
   status                        Daemon status
   doctor [--json]               Run diagnostic checks on the full stack
+  logs path|tail|stats          Inspect local operational logs and failures
   daemon [shutdown]             Start/stop the local daemon
   server --host H --port P --token T [shutdown]
                                 Start remote-accessible HTTP server

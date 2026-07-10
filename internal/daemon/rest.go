@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/observability"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -538,8 +539,10 @@ func (s *Server) restJSONE(build func(restBody) (*protocol.Request, error)) http
 // dispatchAndWrite waits for CDP readiness then runs DispatchRequest with the
 // same timeout semantics as handleCommand.
 func (s *Server) dispatchAndWrite(w http.ResponseWriter, req *protocol.Request) {
+	started := time.Now()
 	if !s.cdp.Connected() {
 		if err := s.cdp.WaitUntilReady(time.Duration(config.CommandTimeout) * time.Second); err != nil {
+			s.logCommand(req, "rest", "", started, false, observability.ErrorCode(err.Error()))
 			cdpTarget := fmt.Sprintf("%s:%d", s.cdp.Host, s.cdp.Port)
 			sendJSON(w, 503, map[string]interface{}{
 				"id":      req.ID,
@@ -560,8 +563,14 @@ func (s *Server) dispatchAndWrite(w http.ResponseWriter, req *protocol.Request) 
 		if !resp.Success {
 			status = 400
 		}
+		errorCode := ""
+		if !resp.Success {
+			errorCode = observability.ErrorCode(resp.Error)
+		}
+		s.logCommand(req, "rest", "", started, resp.Success, errorCode)
 		sendJSON(w, status, resp)
 	case <-time.After(time.Duration(config.CommandTimeout) * time.Second):
+		s.logCommand(req, "rest", "", started, false, "command_timeout")
 		sendJSON(w, 504, &protocol.Response{ID: req.ID, Success: false, Error: "Command timeout"})
 	}
 }

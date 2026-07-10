@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/leolin310148/borz/internal/observability"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -46,6 +48,7 @@ type CdpConnection struct {
 	sessions  sync.Map // targetId -> sessionId
 	attached  sync.Map // sessionId -> targetId
 	connected atomic.Bool
+	logger    *observability.Logger
 
 	LastError string
 	lastErrMu sync.RWMutex
@@ -142,11 +145,15 @@ func (c *CdpConnection) Connect() error {
 
 	// Fetch the WebSocket debugger URL
 	versionURL := fmt.Sprintf("http://%s:%d/json/version", c.Host, c.Port)
+	fmt.Fprintf(os.Stderr, "CDP connect attempt: %s\n", versionURL)
+	c.log("info", "cdp_connect_started", observability.Fields{})
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	resp, err := httpClient.Get(versionURL)
 	if err != nil {
 		c.setLastError(err.Error())
 		err = fmt.Errorf("cannot reach Chrome CDP at %s:%d: %w", c.Host, c.Port, err)
+		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
+		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
 		c.completeReady(err)
 		return err
 	}
@@ -154,6 +161,8 @@ func (c *CdpConnection) Connect() error {
 	if resp.StatusCode != http.StatusOK {
 		err := fmt.Errorf("cannot reach Chrome CDP at %s:%d: /json/version returned HTTP %d", c.Host, c.Port, resp.StatusCode)
 		c.setLastError(err.Error())
+		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
+		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
 		c.completeReady(err)
 		return err
 	}
@@ -165,12 +174,16 @@ func (c *CdpConnection) Connect() error {
 	if err := json.Unmarshal(body, &version); err != nil {
 		c.setLastError("invalid JSON from /json/version")
 		err = fmt.Errorf("invalid CDP version response: %w", err)
+		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
+		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
 		c.completeReady(err)
 		return err
 	}
 	if version.WebSocketDebuggerURL == "" {
 		c.setLastError("missing webSocketDebuggerUrl")
 		err := fmt.Errorf("CDP endpoint missing webSocketDebuggerUrl")
+		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
+		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
 		c.completeReady(err)
 		return err
 	}
@@ -180,6 +193,8 @@ func (c *CdpConnection) Connect() error {
 	if err != nil {
 		c.setLastError(err.Error())
 		err = fmt.Errorf("WebSocket dial failed: %w", err)
+		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
+		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
 		c.completeReady(err)
 		return err
 	}
@@ -194,6 +209,8 @@ func (c *CdpConnection) Connect() error {
 	if _, err := c.BrowserCommand("Target.setDiscoverTargets", map[string]interface{}{"discover": true}); err != nil {
 		c.setLastError(err.Error())
 		c.Disconnect()
+		fmt.Fprintf(os.Stderr, "CDP setup failed: %v\n", err)
+		c.log("warn", "cdp_setup_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
 		c.completeReady(err)
 		return err
 	}
@@ -202,10 +219,13 @@ func (c *CdpConnection) Connect() error {
 	if err != nil {
 		c.setLastError(err.Error())
 		c.Disconnect()
+		fmt.Fprintf(os.Stderr, "CDP target discovery failed: %v\n", err)
+		c.log("warn", "cdp_target_discovery_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
 		c.completeReady(err)
 		return err
 	}
 
+	pageTargets := 0
 	var targets struct {
 		TargetInfos []struct {
 			TargetID string `json:"targetId"`
@@ -217,11 +237,15 @@ func (c *CdpConnection) Connect() error {
 	if err := json.Unmarshal(result, &targets); err == nil {
 		for _, t := range targets.TargetInfos {
 			if t.Type == "page" {
+				pageTargets++
 				// Best-effort attach — some targets may not be attachable
 				c.AttachAndEnable(t.TargetID) // ignore error
 			}
 		}
 	}
+	fmt.Fprintf(os.Stderr, "CDP connected: %s:%d (targets=%d, pages=%d)\n",
+		c.Host, c.Port, len(targets.TargetInfos), pageTargets)
+	c.log("info", "cdp_connected", observability.Fields{TargetCount: len(targets.TargetInfos), PageCount: pageTargets})
 
 	// Signal ready
 	c.completeReady(nil)
@@ -309,6 +333,8 @@ func (c *CdpConnection) readLoop() {
 			}
 			c.connected.Store(false)
 			c.setLastError("CDP WebSocket closed unexpectedly")
+			fmt.Fprintf(os.Stderr, "CDP WebSocket closed unexpectedly: %v\n", err)
+			c.log("warn", "cdp_disconnected", observability.Fields{ErrorCode: "cdp_disconnected"})
 			c.rejectInflight(fmt.Errorf("CDP connection closed"))
 			return
 		}
@@ -369,6 +395,13 @@ func (c *CdpConnection) readLoop() {
 			}
 		}
 	}
+}
+
+func (c *CdpConnection) log(level, event string, fields observability.Fields) {
+	if c == nil || c.logger == nil {
+		return
+	}
+	_ = c.logger.Log(level, event, fields)
 }
 
 func (c *CdpConnection) handleSessionResponse(raw []byte, msg map[string]json.RawMessage) {

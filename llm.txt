@@ -69,6 +69,7 @@ borz site list|search|info|run|update       # site adapters
 borz <platform>/<adapter> [args]            # shorthand for "site run"
 borz status | daemon [shutdown]
 borz doctor [--json]                         # diagnose CLI/daemon/CDP/tabs end-to-end
+borz logs path|tail|stats [--since 7d]       # inspect privacy-safe local operational logs
 borz server --host 0.0.0.0 --token ... [shutdown]
 borz help [command [sub]]                    # per-command help
 borz <command> --help                        # same, inline form
@@ -159,6 +160,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 - `BORZ_CDP_URL` — override CDP endpoint
 - `BORZ_PROFILE` — default local daemon/browser profile for this process
 - `BORZ_HOME` — config dir (default `~/.borz`)
+- `BORZ_SESSION_ID` — optional agent/session correlation id written to operational logs
 - `BORZ_TOKEN`, `BORZ_SERVER_HOST`, `BORZ_SERVER_PORT` — server mode
 - Legacy `BB_BROWSER_*` env vars are still accepted during the rename transition.
 
@@ -173,6 +175,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 - **Non-loopback bind requires a token.** The server refuses to start otherwise.
 - **Site adapters run on the daemon's filesystem**, not the client's. A remote client invoking `/v1/sites/*` or `browser_site_run` gets whatever adapters the server has in `~/.borz/sites` or `~/.borz/bb-sites` (community, pulled via `borz site update`). When no tab is specified, adapters reuse or open their domain first; explicit tabs still enforce the domain guard unless `force` is set.
 - **Network/console/error buffers are per-tab rings.** Use `--since last_action` for incremental queries.
+- **Operational logs are persistent and privacy-safe by default.** `borz logs tail` shows recent tool/action outcomes; `borz logs stats --since 7d` aggregates failures and latency. Raw field text, scripts, clipboard data, headers, URL queries, snapshots, and response bodies are never logged.
 - **The optional Chrome extension unlocks browser-level APIs CDP cannot see.** Use it for all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser-level event streams. Commands and MCP tools report a clear "no extension connected" error when it is missing.
 
 ## Minimal end-to-end example
