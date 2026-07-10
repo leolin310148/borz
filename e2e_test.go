@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image/png"
 	"net"
 	"net/http"
 	"os"
@@ -366,6 +368,83 @@ func TestE2ECLISnapshotDiff(t *testing.T) {
 		t.Fatalf("SPA navigation returned no regenerated snapshot: %+v", navigated.Data)
 	}
 	requireContains(t, navigated.Data.SnapshotData.Snapshot, "Details route content", "SPA navigation snapshot")
+}
+
+func TestE2ECLIViewportEmulation(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("viewport open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	baseline := runE2EJSON(t, env, "viewport", "status", "--tab", tab, "--json").Data.Viewport
+	if baseline == nil || baseline.Width <= 0 || baseline.Height <= 0 || baseline.DPR <= 0 {
+		t.Fatalf("normal viewport status = %+v", baseline)
+	}
+
+	mobile := runE2EJSON(t, env, "viewport", "mobile", "--tab", tab, "--json").Data.Viewport
+	if mobile == nil || mobile.Width != 390 || mobile.Height != 844 || mobile.DPR != 3 || !mobile.Mobile || !mobile.Touch {
+		t.Fatalf("mobile viewport = %+v", mobile)
+	}
+	mobileMetrics := runE2EJSON(t, env, "eval", `devicePixelRatio === 3 && navigator.maxTouchPoints > 0`, "--tab", tab, "--json")
+	if mobileMetrics.Data.Result != true {
+		t.Fatalf("mobile page metrics = %#v, want true", mobileMetrics.Data.Result)
+	}
+
+	custom := runE2EJSON(t, env, "viewport", "--width", "640", "--height", "480", "--dpr", "1.5", "--touch", "--tab", tab, "--json").Data.Viewport
+	if custom == nil || custom.Width != 640 || custom.Height != 480 || custom.DPR != 1.5 || custom.Mobile || !custom.Touch {
+		t.Fatalf("custom viewport = %+v", custom)
+	}
+	customMetrics := runE2EJSON(t, env, "eval", `innerWidth === 640 && innerHeight === 480 && devicePixelRatio === 1.5 && navigator.maxTouchPoints > 0`, "--tab", tab, "--json")
+	if customMetrics.Data.Result != true {
+		t.Fatalf("custom page metrics = %#v, want true", customMetrics.Data.Result)
+	}
+
+	screenshot := runE2EJSON(t, env, "screenshot", "--tab", tab, "--json")
+	const pngDataURLPrefix = "data:image/png;base64,"
+	if !strings.HasPrefix(screenshot.Data.DataURL, pngDataURLPrefix) {
+		t.Fatalf("emulated screenshot data URL prefix mismatch: %.40q", screenshot.Data.DataURL)
+	}
+	pngData, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(screenshot.Data.DataURL, pngDataURLPrefix))
+	if err != nil {
+		t.Fatalf("decode emulated screenshot: %v", err)
+	}
+	config, err := png.DecodeConfig(bytes.NewReader(pngData))
+	if err != nil {
+		t.Fatalf("decode emulated screenshot PNG: %v", err)
+	}
+	if config.Width != 960 || config.Height != 720 {
+		t.Fatalf("emulated screenshot dimensions = %dx%d, want 960x720", config.Width, config.Height)
+	}
+
+	reset := runE2EJSON(t, env, "viewport", "reset", "--tab", tab, "--json").Data.Viewport
+	if reset == nil || !reset.Reset || reset.Width <= 0 || reset.Height <= 0 || reset.DPR <= 0 {
+		t.Fatalf("reset viewport = %+v", reset)
+	}
+	if reset.Width != baseline.Width || reset.Height != baseline.Height || reset.DPR != baseline.DPR || reset.Mobile != baseline.Mobile || reset.Touch != baseline.Touch {
+		t.Fatalf("reset viewport = %+v, want dynamically observed normal metrics %+v", reset, baseline)
+	}
 }
 
 func TestE2ECLIWaitForDelayedRenderAndTimeout(t *testing.T) {
