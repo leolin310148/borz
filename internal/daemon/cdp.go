@@ -536,12 +536,12 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 
 	switch method {
 	case "Page.javascriptDialogOpening":
-		if tab.DialogHandler != nil {
+		if handler := tab.ConsumeDialogHandler(); handler != nil {
 			params := map[string]interface{}{
-				"accept": tab.DialogHandler.Accept,
+				"accept": handler.Accept,
 			}
-			if tab.DialogHandler.PromptText != "" {
-				params["promptText"] = tab.DialogHandler.PromptText
+			if handler.PromptText != "" {
+				params["promptText"] = handler.PromptText
 			}
 			go c.SessionCommand(targetID, "Page.handleJavaScriptDialog", params)
 		}

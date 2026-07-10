@@ -477,6 +477,60 @@ func TestE2ECLIFrameInteraction(t *testing.T) {
 	requireEvalBool(t, env, `document.querySelector("#frame-text-input") === null`, true)
 }
 
+func TestE2ECLIDialogHandling(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/dialogs", "--new", "--wait-for", "#dialogs-ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("dialogs open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+	if snapshot.Data.SnapshotData == nil {
+		t.Fatalf("dialogs snapshot returned no snapshot data: %+v", snapshot.Data)
+	}
+	alertRef := refByName(t, snapshot.Data.SnapshotData, "Open alert dialog")
+	confirmRef := refByName(t, snapshot.Data.SnapshotData, "Open confirm dialog")
+	promptRef := refByName(t, snapshot.Data.SnapshotData, "Open prompt dialog")
+
+	runE2EJSON(t, env, "dialog", "accept", "--json")
+	runE2EJSON(t, env, "click", alertRef, "--json")
+	requireEvalString(t, env, `document.querySelector("#alert-result").textContent`, "alert accepted")
+
+	runE2EJSON(t, env, "dialog", "dismiss", "--json")
+	runE2EJSON(t, env, "click", confirmRef, "--json")
+	requireEvalString(t, env, `document.querySelector("#confirm-result").textContent`, "confirm: false")
+
+	runE2EJSON(t, env, "dialog", "accept", "typed prompt text", "--json")
+	runE2EJSON(t, env, "click", promptRef, "--json")
+	requireEvalString(t, env, `document.querySelector("#prompt-result").textContent`, "prompt: typed prompt text")
+
+	// A freshly armed handler without text must not reuse the prior prompt value.
+	runE2EJSON(t, env, "dialog", "accept", "--json")
+	runE2EJSON(t, env, "click", promptRef, "--json")
+	requireEvalString(t, env, `document.querySelector("#prompt-result").textContent`, "prompt: ")
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 

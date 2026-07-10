@@ -58,6 +58,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/delayed-render", delayedRender)
 	mux.HandleFunc("/async-action", asyncAction)
 	mux.HandleFunc("/file-upload", fileUpload)
+	mux.HandleFunc("/dialogs", dialogs)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -324,6 +325,46 @@ func fileUpload(w http.ResponseWriter, r *http.Request) {
     const multiple = document.getElementById('multiple-files');
     multiple.addEventListener('change', () => {
       showFiles(multiple, document.getElementById('multiple-upload-state'));
+    });
+  </script>
+</body>
+</html>`)
+}
+
+func dialogs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>E2E Dialogs</title>
+</head>
+<body>
+  <h1 id="dialogs-ready">Dialog fixture</h1>
+
+  <button id="alert-button" type="button" aria-label="Open alert dialog">Open alert</button>
+  <output id="alert-result">alert pending</output>
+
+  <button id="confirm-button" type="button" aria-label="Open confirm dialog">Open confirm</button>
+  <output id="confirm-result">confirm pending</output>
+
+  <button id="prompt-button" type="button" aria-label="Open prompt dialog">Open prompt</button>
+  <output id="prompt-result">prompt pending</output>
+
+  <script>
+    document.getElementById('alert-button').addEventListener('click', () => {
+      alert('E2E alert');
+      document.getElementById('alert-result').textContent = 'alert accepted';
+    });
+
+    document.getElementById('confirm-button').addEventListener('click', () => {
+      const result = confirm('E2E confirm');
+      document.getElementById('confirm-result').textContent = 'confirm: ' + result;
+    });
+
+    document.getElementById('prompt-button').addEventListener('click', () => {
+      const result = prompt('E2E prompt', 'default prompt');
+      document.getElementById('prompt-result').textContent = 'prompt: ' + result;
     });
   </script>
 </body>

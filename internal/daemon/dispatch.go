@@ -1694,7 +1694,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 	case protocol.ActionDialog:
 		seq := tab.RecordAction()
 		accept := req.DialogResponse != "dismiss"
-		tab.DialogHandler = &DialogHandler{Accept: accept, PromptText: req.PromptText}
+		tab.SetDialogHandler(&DialogHandler{Accept: accept, PromptText: req.PromptText})
 		cdp.SessionCommand(target.ID, "Page.enable", nil)
 		resp := "accept"
 		if !accept {

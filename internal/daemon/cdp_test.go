@@ -466,11 +466,14 @@ func TestHandleSessionEvent_ConsoleAndExceptions(t *testing.T) {
 func TestHandleSessionEvent_DialogHandler(t *testing.T) {
 	c := NewCdpConnection("h", 1, NewTabStateManager())
 	tab := c.TabManager.AddTab("T1")
-	tab.DialogHandler = &DialogHandler{Accept: true, PromptText: "hello"}
+	tab.SetDialogHandler(&DialogHandler{Accept: true, PromptText: "hello"})
 
 	// Without a live socket, SessionCommand will fail, but it's called in a
 	// goroutine so the handler itself returns immediately. No panic is the win.
 	c.handleSessionEvent("T1", "Page.javascriptDialogOpening", rawMsg(t, map[string]interface{}{"params": map[string]interface{}{}}))
+	if handler := tab.ConsumeDialogHandler(); handler != nil {
+		t.Fatalf("dialog handler was not consumed: %+v", handler)
+	}
 }
 
 func TestHandleSessionEvent_UnknownTab(t *testing.T) {

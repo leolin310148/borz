@@ -62,6 +62,20 @@ type DialogHandler struct {
 	PromptText string
 }
 
+func (ts *TabState) SetDialogHandler(handler *DialogHandler) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.DialogHandler = handler
+}
+
+func (ts *TabState) ConsumeDialogHandler() *DialogHandler {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	handler := ts.DialogHandler
+	ts.DialogHandler = nil
+	return handler
+}
+
 func newTabState(targetID, shortID string, nextSeq func() int) *TabState {
 	return &TabState{
 		TargetID:        targetID,

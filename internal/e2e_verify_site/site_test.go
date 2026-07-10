@@ -182,6 +182,32 @@ func TestHandlerServesFileUploadPage(t *testing.T) {
 	}
 }
 
+func TestHandlerServesDialogsPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/dialogs", nil)
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dialogs status=%d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("dialogs content-type=%q", ct)
+	}
+	for _, marker := range []string{
+		`id="dialogs-ready"`,
+		`aria-label="Open alert dialog"`,
+		`aria-label="Open confirm dialog"`,
+		`aria-label="Open prompt dialog"`,
+		`alert('E2E alert')`,
+		`confirm('E2E confirm')`,
+		`prompt('E2E prompt', 'default prompt')`,
+	} {
+		if !strings.Contains(rec.Body.String(), marker) {
+			t.Errorf("dialogs page missing %q", marker)
+		}
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {
