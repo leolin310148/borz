@@ -55,6 +55,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/page2", pageTwo)
 	mux.HandleFunc("/spa", spa)
 	mux.HandleFunc("/spa/", spa)
+	mux.HandleFunc("/delayed-render", delayedRender)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -226,6 +227,29 @@ func spa(w http.ResponseWriter, r *http.Request) {
     });
     window.addEventListener('popstate', renderSPARoute);
     renderSPARoute();
+  </script>
+</body>
+</html>`)
+}
+
+func delayedRender(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>E2E Delayed Render</title>
+</head>
+<body>
+  <h1 id="delayed-page-ready">Delayed render fixture</h1>
+  <main id="delayed-content" aria-live="polite"></main>
+  <script>
+    window.setTimeout(() => {
+      const marker = document.createElement('p');
+      marker.id = 'delayed-marker';
+      marker.textContent = 'Delayed marker ready';
+      document.getElementById('delayed-content').appendChild(marker);
+    }, 750);
   </script>
 </body>
 </html>`)

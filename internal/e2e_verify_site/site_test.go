@@ -101,6 +101,29 @@ func TestHandlerServesSPARoutes(t *testing.T) {
 	}
 }
 
+func TestHandlerServesDelayedRenderPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/delayed-render", nil)
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delayed render status=%d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("delayed render content-type=%q", ct)
+	}
+	for _, marker := range []string{
+		`id="delayed-page-ready"`,
+		`id = 'delayed-marker'`,
+		`window.setTimeout`,
+		`}, 750)`,
+	} {
+		if !strings.Contains(rec.Body.String(), marker) {
+			t.Errorf("delayed render page missing %q", marker)
+		}
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {

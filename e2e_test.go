@@ -280,6 +280,43 @@ func TestE2ECLISPAHistoryNavigation(t *testing.T) {
 	}
 }
 
+func TestE2ECLIWaitForDelayedRenderAndTimeout(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/delayed-render", "--new", "--wait-for", "#delayed-marker", "--timeout", "5000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("delayed render open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+	requireEvalString(t, env, `document.querySelector("#delayed-marker").textContent`, "Delayed marker ready")
+
+	timeoutResp := runE2EJSONResponse(t, env, "open", site.URL()+"/delayed-render", "--tab", tab, "--wait-for", "#never-rendered", "--timeout", "600", "--json")
+	if timeoutResp.Success {
+		t.Fatalf("wait-for missing selector unexpectedly succeeded: %+v", timeoutResp)
+	}
+	requireContains(t, timeoutResp.Error, `wait-for selector "#never-rendered"`, "wait-for timeout error")
+	requireContains(t, timeoutResp.Error, "timeout after 600ms", "wait-for timeout error")
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
@@ -515,6 +552,16 @@ func runE2EJSON(t *testing.T, env e2eDaemonEnv, args ...string) protocol.Respons
 	}
 	if resp.Data == nil {
 		t.Fatalf("borz %s returned empty data: %s", strings.Join(args, " "), out)
+	}
+	return resp
+}
+
+func runE2EJSONResponse(t *testing.T, env e2eDaemonEnv, args ...string) protocol.Response {
+	t.Helper()
+	out := runE2ECLI(t, env, args...)
+	var resp protocol.Response
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("borz %s returned non-JSON response: %v\n%s", strings.Join(args, " "), err, out)
 	}
 	return resp
 }
