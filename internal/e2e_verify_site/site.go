@@ -57,6 +57,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/spa/", spa)
 	mux.HandleFunc("/delayed-render", delayedRender)
 	mux.HandleFunc("/async-action", asyncAction)
+	mux.HandleFunc("/file-upload", fileUpload)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -280,6 +281,49 @@ func asyncAction(w http.ResponseWriter, r *http.Request) {
         result.textContent = 'Async action ' + asyncActionCount + ' complete';
         document.getElementById('async-action-content').appendChild(result);
       }, 750);
+    });
+  </script>
+</body>
+</html>`)
+}
+
+func fileUpload(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>E2E File Upload</title>
+</head>
+<body>
+  <h1 id="file-upload-ready">File upload fixture</h1>
+
+  <label for="single-file">Single file</label>
+  <input id="single-file" type="file" aria-label="Single file upload">
+  <output id="single-upload-state" data-file-count="0">No single file selected</output>
+
+  <label for="multiple-files">Multiple files</label>
+  <input id="multiple-files" type="file" multiple aria-label="Multiple file upload">
+  <output id="multiple-upload-state" data-file-count="0">No multiple files selected</output>
+
+  <script>
+    async function showFiles(input, output) {
+      const files = Array.from(input.files);
+      const descriptions = await Promise.all(files.map(async (file) => {
+        return file.name + ': ' + await file.text();
+      }));
+      output.textContent = descriptions.join(' | ');
+      output.dataset.fileCount = String(files.length);
+    }
+
+    const single = document.getElementById('single-file');
+    single.addEventListener('change', () => {
+      showFiles(single, document.getElementById('single-upload-state'));
+    });
+
+    const multiple = document.getElementById('multiple-files');
+    multiple.addEventListener('change', () => {
+      showFiles(multiple, document.getElementById('multiple-upload-state'));
     });
   </script>
 </body>

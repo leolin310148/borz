@@ -148,6 +148,31 @@ func TestHandlerServesAsyncActionPage(t *testing.T) {
 	}
 }
 
+func TestHandlerServesFileUploadPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/file-upload", nil)
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("file upload status=%d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Fatalf("file upload content-type=%q", ct)
+	}
+	for _, marker := range []string{
+		`id="file-upload-ready"`,
+		`type="file" aria-label="Single file upload"`,
+		`type="file" multiple aria-label="Multiple file upload"`,
+		`id="single-upload-state" data-file-count="0"`,
+		`id="multiple-upload-state" data-file-count="0"`,
+		`file.name + ': ' + await file.text()`,
+	} {
+		if !strings.Contains(rec.Body.String(), marker) {
+			t.Errorf("file upload page missing %q", marker)
+		}
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -360,6 +361,62 @@ func TestE2ECLIActionWaitForAndTimeout(t *testing.T) {
 	requireContains(t, timeoutResp.Error, `wait-for selector "#never-rendered-after-action"`, "post-action wait-for timeout error")
 	requireContains(t, timeoutResp.Error, "timeout after 600ms", "post-action wait-for timeout error")
 	requireEvalBool(t, env, `document.querySelector("#async-action-result") === null`, true)
+}
+
+func TestE2ECLIFileUpload(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/file-upload", "--new", "--wait-for", "#file-upload-ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("file upload open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+	if snapshot.Data.SnapshotData == nil {
+		t.Fatalf("file upload snapshot returned no snapshot data: %+v", snapshot.Data)
+	}
+	singleRef := refByName(t, snapshot.Data.SnapshotData, "Single file upload")
+	multipleRef := refByName(t, snapshot.Data.SnapshotData, "Multiple file upload")
+
+	filesDir := t.TempDir()
+	singlePath := filepath.Join(filesDir, "single-note.txt")
+	firstPath := filepath.Join(filesDir, "first-note.txt")
+	secondPath := filepath.Join(filesDir, "second-note.txt")
+	for path, content := range map[string]string{
+		singlePath: "single file body",
+		firstPath:  "first file body",
+		secondPath: "second file body",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write upload fixture %s: %v", filepath.Base(path), err)
+		}
+	}
+
+	runE2EJSON(t, env, "upload", singleRef, singlePath, "--wait-for", `#single-upload-state[data-file-count="1"]`, "--timeout", "5000", "--json")
+	requireEvalString(t, env, `document.querySelector("#single-upload-state").textContent`, "single-note.txt: single file body")
+
+	runE2EJSON(t, env, "upload", multipleRef, firstPath, secondPath, "--wait-for", `#multiple-upload-state[data-file-count="2"]`, "--timeout", "5000", "--json")
+	requireEvalString(t, env, `document.querySelector("#multiple-upload-state").textContent`, "first-note.txt: first file body | second-note.txt: second file body")
 }
 
 func TestE2EClientModeAgainstServer(t *testing.T) {
