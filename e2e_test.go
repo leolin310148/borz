@@ -209,6 +209,77 @@ func TestE2ECLICommandsAgainstVerifySite(t *testing.T) {
 	runE2EJSON(t, env, "close", "--tab", tab, "--json")
 }
 
+func TestE2ECLISPAHistoryNavigation(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	baseURL := site.URL()
+	openResp := runE2EJSON(t, env, "open", baseURL+"/spa", "--new", "--wait-for", `#spa-ready[data-route="home"]`, "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("open SPA response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	homeSnapshot := runE2EJSON(t, env, "snapshot", "--json")
+	if homeSnapshot.Data.SnapshotData == nil {
+		t.Fatalf("SPA home snapshot returned no snapshot data: %+v", homeSnapshot.Data)
+	}
+	requireContains(t, homeSnapshot.Data.SnapshotData.Snapshot, "SPA home", "SPA home snapshot")
+	detailsRef := refByName(t, homeSnapshot.Data.SnapshotData, "Go to SPA details")
+
+	runE2EJSON(t, env, "eval", `window.__borzSPALoadSentinel = "same-document"`, "--json")
+	runE2EJSON(t, env, "click", detailsRef, "--wait-for", `#spa-ready[data-route="details"]`, "--timeout", "5000", "--json")
+	requireEvalBool(t, env, `window.__borzSPALoadSentinel === "same-document"`, true)
+	requireEvalString(t, env, `document.querySelector("#spa-route-heading").textContent`, "SPA details")
+	requireEvalString(t, env, "document.title", "E2E SPA Details")
+	detailsURL := runE2EJSON(t, env, "get", "url", "--json")
+	if detailsURL.Data.Value != baseURL+"/spa/details" {
+		t.Fatalf("SPA details URL = %q, want %q", detailsURL.Data.Value, baseURL+"/spa/details")
+	}
+
+	detailsSnapshot := runE2EJSON(t, env, "snapshot", "--json")
+	if detailsSnapshot.Data.SnapshotData == nil {
+		t.Fatalf("SPA details snapshot returned no snapshot data: %+v", detailsSnapshot.Data)
+	}
+	requireContains(t, detailsSnapshot.Data.SnapshotData.Snapshot, "Details route content", "SPA details snapshot")
+
+	runE2EJSON(t, env, "back", "--wait-for", `#spa-ready[data-route="home"]`, "--timeout", "5000", "--json")
+	requireEvalBool(t, env, `window.__borzSPALoadSentinel === "same-document"`, true)
+	requireEvalString(t, env, `document.querySelector("#spa-route-heading").textContent`, "SPA home")
+	requireEvalString(t, env, "document.title", "E2E SPA Home")
+	homeURL := runE2EJSON(t, env, "get", "url", "--json")
+	if homeURL.Data.Value != baseURL+"/spa" {
+		t.Fatalf("SPA home URL after back = %q, want %q", homeURL.Data.Value, baseURL+"/spa")
+	}
+
+	runE2EJSON(t, env, "forward", "--wait-for", `#spa-ready[data-route="details"]`, "--timeout", "5000", "--json")
+	requireEvalBool(t, env, `window.__borzSPALoadSentinel === "same-document"`, true)
+	requireEvalString(t, env, `document.querySelector("#spa-route-heading").textContent`, "SPA details")
+	requireEvalString(t, env, "document.title", "E2E SPA Details")
+	forwardURL := runE2EJSON(t, env, "get", "url", "--json")
+	if forwardURL.Data.Value != baseURL+"/spa/details" {
+		t.Fatalf("SPA details URL after forward = %q, want %q", forwardURL.Data.Value, baseURL+"/spa/details")
+	}
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
