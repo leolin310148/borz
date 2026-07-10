@@ -531,6 +531,86 @@ func TestE2ECLIDialogHandling(t *testing.T) {
 	requireEvalString(t, env, `document.querySelector("#prompt-result").textContent`, "prompt: ")
 }
 
+func TestE2ECLISnapshotModes(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("snapshot modes open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	textOnly := runE2EJSON(t, env, "snapshot", "--text-only", "--json").Data.SnapshotData
+	if textOnly == nil {
+		t.Fatal("text-only snapshot returned no snapshot data")
+	}
+	requireContains(t, textOnly.Snapshot, "# E2E Verify Home", "text-only snapshot")
+	requireContains(t, textOnly.Snapshot, site.URL()+"/", "text-only snapshot")
+	requireContains(t, textOnly.Snapshot, "E2E Verify Site", "text-only snapshot")
+	requireNotContains(t, textOnly.Snapshot, "[ref=", "text-only snapshot")
+	if len(textOnly.Elements) != 0 || len(textOnly.Refs) != 0 {
+		t.Fatalf("text-only snapshot unexpectedly returned refs: %+v", textOnly)
+	}
+
+	interactive := runE2EJSON(t, env, "snapshot", "--interactive", "--json").Data.SnapshotData
+	if interactive == nil {
+		t.Fatal("interactive snapshot returned no snapshot data")
+	}
+	requireContains(t, interactive.Snapshot, "Click counter", "interactive snapshot")
+	requireContains(t, interactive.Snapshot, "E2E text input", "interactive snapshot")
+	requireNotContains(t, interactive.Snapshot, "not clicked", "interactive snapshot")
+
+	compactDepth := runE2EJSON(t, env, "snapshot", "--compact", "--depth", "1", "--json").Data.SnapshotData
+	if compactDepth == nil {
+		t.Fatal("compact/depth snapshot returned no snapshot data")
+	}
+	requireContains(t, compactDepth.Snapshot, "Click counter", "compact/depth snapshot")
+	requireNotContains(t, compactDepth.Snapshot, "<button>", "compact/depth snapshot")
+	requireNotContains(t, compactDepth.Snapshot, `text "Click me"`, "compact/depth snapshot")
+
+	selected := runE2EJSON(t, env, "snapshot", "--selector", "click-button", "--json").Data.SnapshotData
+	if selected == nil {
+		t.Fatal("selector-filtered snapshot returned no snapshot data")
+	}
+	requireContains(t, selected.Snapshot, "Click counter", "selector-filtered snapshot")
+	requireNotContains(t, selected.Snapshot, "Hover target", "selector-filtered snapshot")
+	if len(selected.Elements) != 1 || selected.Elements[0].Name != "Click counter" {
+		t.Fatalf("selector-filtered elements = %+v", selected.Elements)
+	}
+
+	buttons := runE2EJSON(t, env, "snapshot", "--role", "button", "--json").Data.SnapshotData
+	if buttons == nil {
+		t.Fatal("role-filtered snapshot returned no snapshot data")
+	}
+	requireContains(t, buttons.Snapshot, "Click counter", "role-filtered snapshot")
+	requireContains(t, buttons.Snapshot, "Hover target", "role-filtered snapshot")
+	requireNotContains(t, buttons.Snapshot, "E2E text input", "role-filtered snapshot")
+	for _, el := range buttons.Elements {
+		if el.Role != "button" {
+			t.Fatalf("role-filtered snapshot returned non-button element: %+v", el)
+		}
+	}
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
@@ -823,5 +903,12 @@ func requireContains(t *testing.T, got, want, label string) {
 	t.Helper()
 	if !strings.Contains(got, want) {
 		t.Fatalf("%s missing %q in:\n%s", label, want, got)
+	}
+}
+
+func requireNotContains(t *testing.T, got, unwanted, label string) {
+	t.Helper()
+	if strings.Contains(got, unwanted) {
+		t.Fatalf("%s unexpectedly contains %q in:\n%s", label, unwanted, got)
 	}
 }
