@@ -53,6 +53,8 @@ func Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", root)
 	mux.HandleFunc("/page2", pageTwo)
+	mux.HandleFunc("/spa", spa)
+	mux.HandleFunc("/spa/", spa)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -150,6 +152,83 @@ func root(w http.ResponseWriter, r *http.Request) {
 func pageTwo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, `<!doctype html><html><head><title>E2E Verify Page Two</title></head><body><h1 id="page-two-ready">Page Two</h1><a href="/">Back home</a></body></html>`)
+}
+
+func spa(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/spa" && r.URL.Path != "/spa/" && r.URL.Path != "/spa/details" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>E2E SPA Home</title>
+</head>
+<body>
+  <h1>E2E Verify SPA</h1>
+  <nav aria-label="SPA routes">
+    <a href="/spa" data-spa-route="home" aria-label="Go to SPA home">Home</a>
+    <a href="/spa/details" data-spa-route="details" aria-label="Go to SPA details">Details</a>
+  </nav>
+  <main id="spa-view">
+    <h2 id="spa-route-heading"></h2>
+    <p id="spa-route-content"></p>
+    <div id="spa-ready" role="status" aria-live="polite"></div>
+  </main>
+  <script>
+    const spaRoutes = {
+      home: {
+        path: '/spa',
+        title: 'E2E SPA Home',
+        heading: 'SPA home',
+        content: 'Home route content'
+      },
+      details: {
+        path: '/spa/details',
+        title: 'E2E SPA Details',
+        heading: 'SPA details',
+        content: 'Details route content'
+      }
+    };
+
+    function spaRouteForPath(path) {
+      return path === spaRoutes.details.path ? 'details' : 'home';
+    }
+
+    function renderSPARoute() {
+      const routeName = spaRouteForPath(window.location.pathname);
+      const route = spaRoutes[routeName];
+      document.title = route.title;
+      document.getElementById('spa-route-heading').textContent = route.heading;
+      document.getElementById('spa-route-content').textContent = route.content;
+
+      const ready = document.getElementById('spa-ready');
+      ready.dataset.route = routeName;
+      ready.textContent = routeName + ' route ready';
+
+      document.querySelectorAll('[data-spa-route]').forEach((link) => {
+        if (link.dataset.spaRoute === routeName) {
+          link.setAttribute('aria-current', 'page');
+        } else {
+          link.removeAttribute('aria-current');
+        }
+      });
+    }
+
+    document.querySelector('nav').addEventListener('click', (event) => {
+      const link = event.target.closest('[data-spa-route]');
+      if (!link) return;
+      event.preventDefault();
+      history.pushState({ route: link.dataset.spaRoute }, '', link.href);
+      renderSPARoute();
+    });
+    window.addEventListener('popstate', renderSPARoute);
+    renderSPARoute();
+  </script>
+</body>
+</html>`)
 }
 
 func tabPage(w http.ResponseWriter, r *http.Request) {

@@ -64,6 +64,43 @@ func TestHandlerAdditionalPagesAndNotFound(t *testing.T) {
 	}
 }
 
+func TestHandlerServesSPARoutes(t *testing.T) {
+	h := Handler()
+	for _, path := range []string{"/spa", "/spa/details"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s status=%d", path, rec.Code)
+			}
+			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+				t.Fatalf("%s content-type=%q", path, ct)
+			}
+
+			body := rec.Body.String()
+			for _, marker := range []string{
+				`id="spa-ready"`,
+				`aria-label="Go to SPA home"`,
+				`aria-label="Go to SPA details"`,
+				`history.pushState`,
+				`addEventListener('popstate'`,
+			} {
+				if !strings.Contains(body, marker) {
+					t.Errorf("%s missing %q", path, marker)
+				}
+			}
+		})
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/spa/missing", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown SPA route status=%d", rec.Code)
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {
