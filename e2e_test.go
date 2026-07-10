@@ -281,6 +281,93 @@ func TestE2ECLISPAHistoryNavigation(t *testing.T) {
 	}
 }
 
+func TestE2ECLISnapshotDiff(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	baseURL := site.URL()
+	openResp := runE2EJSON(t, env, "open", baseURL+"/spa", "--new", "--wait-for", `#spa-ready[data-route="home"]`, "--timeout", "10000", "--json")
+	firstTab := openResp.Data.Tab
+	if firstTab == "" {
+		t.Fatalf("open first SPA response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", firstTab, "--json")
+	})
+
+	baseline := runE2EJSON(t, env, "snapshot", "--tab", firstTab, "--json")
+	if baseline.Data.SnapshotData == nil {
+		t.Fatalf("first SPA baseline returned no snapshot data: %+v", baseline.Data)
+	}
+
+	runE2EJSON(t, env, "eval", `document.querySelector('[data-spa-route="details"]').setAttribute("aria-disabled", "true")`, "--tab", firstTab, "--json")
+	mutation := runE2EJSON(t, env, "snapshot", "--diff", "--tab", firstTab, "--json")
+	mutationDiff := mutation.Data.SnapshotDiffData
+	if mutationDiff == nil {
+		t.Fatalf("mutated SPA snapshot returned no diff data: %+v", mutation.Data)
+	}
+	if mutationDiff.BaselineReset {
+		t.Fatalf("same-document DOM mutation unexpectedly reset baseline: %+v", mutationDiff)
+	}
+	if len(mutationDiff.Added) != 0 || len(mutationDiff.Removed) != 0 || len(mutationDiff.Changed) != 1 {
+		t.Fatalf("SPA mutation diff = %+v, want exactly one changed node", mutationDiff)
+	}
+	change := mutationDiff.Changed[0]
+	disabledDelta, ok := change.AttrChanges["aria-disabled"]
+	if change.Name != "Go to SPA details" || change.Role != "link" || change.NameChanged != nil || !ok || disabledDelta.Old != "" || disabledDelta.New != "true" || len(change.AttrChanges) != 1 {
+		t.Fatalf("SPA mutation change = %+v", change)
+	}
+
+	secondOpen := runE2EJSON(t, env, "open", baseURL+"/spa", "--new", "--wait-for", `#spa-ready[data-route="home"]`, "--timeout", "10000", "--json")
+	secondTab := secondOpen.Data.Tab
+	if secondTab == "" || secondTab == firstTab {
+		t.Fatalf("open second SPA returned invalid tab id %q (first %q)", secondTab, firstTab)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", secondTab, "--json")
+	})
+
+	secondDiff := runE2EJSON(t, env, "snapshot", "--diff", "--tab", secondTab, "--json").Data.SnapshotDiffData
+	if secondDiff == nil || !secondDiff.BaselineReset || len(secondDiff.Added) == 0 {
+		t.Fatalf("second tab did not receive an isolated baseline reset: %+v", secondDiff)
+	}
+	firstUnchanged := runE2EJSON(t, env, "snapshot", "--diff", "--tab", firstTab, "--json").Data.SnapshotDiffData
+	if firstUnchanged == nil || firstUnchanged.BaselineReset || firstUnchanged.Stats.Added != 0 || firstUnchanged.Stats.Removed != 0 || firstUnchanged.Stats.Changed != 0 {
+		t.Fatalf("second tab disturbed first tab baseline: %+v", firstUnchanged)
+	}
+
+	firstSnapshot := runE2EJSON(t, env, "snapshot", "--tab", firstTab, "--json").Data.SnapshotData
+	if firstSnapshot == nil {
+		t.Fatal("first SPA returned no snapshot before navigation")
+	}
+	detailsRef := refByName(t, firstSnapshot, "Go to SPA details")
+	runE2EJSON(t, env, "click", detailsRef, "--tab", firstTab, "--wait-for", `#spa-ready[data-route="details"]`, "--timeout", "5000", "--json")
+	navigated := runE2EJSON(t, env, "snapshot", "--diff", "--tab", firstTab, "--json")
+	navigationDiff := navigated.Data.SnapshotDiffData
+	if navigationDiff == nil || !navigationDiff.BaselineReset || len(navigationDiff.Added) == 0 || len(navigationDiff.Removed) != 0 || len(navigationDiff.Changed) != 0 {
+		t.Fatalf("SPA navigation did not reset the regenerated snapshot baseline: %+v", navigationDiff)
+	}
+	if navigated.Data.SnapshotData == nil {
+		t.Fatalf("SPA navigation returned no regenerated snapshot: %+v", navigated.Data)
+	}
+	requireContains(t, navigated.Data.SnapshotData.Snapshot, "Details route content", "SPA navigation snapshot")
+}
+
 func TestE2ECLIWaitForDelayedRenderAndTimeout(t *testing.T) {
 	skipUnlessE2E(t)
 
