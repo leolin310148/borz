@@ -426,8 +426,8 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 				t.Fatalf("dialog output = %q", out)
 			}
 		}},
-		{name: "network requests", args: []string{"network", "requests", "--filter", "api", "--method", "GET", "--status", "200", "--with-body", "--since", "last_action"}, action: protocol.ActionNetwork, check: func(t *testing.T, req protocol.Request, out string) {
-			if req.NetworkCommand != "requests" || req.Filter != "api" || req.Method != "GET" || req.Status != "200" || !req.WithBody || req.Since != "last_action" {
+		{name: "network requests", args: []string{"network", "requests", "--filter", "api", "--method", "GET", "--status", "200", "--with-body", "--since", "last_action", "--limit", "5"}, action: protocol.ActionNetwork, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.NetworkCommand != "requests" || req.Filter != "api" || req.Method != "GET" || req.Status != "200" || !req.WithBody || req.Since != "last_action" || req.Limit == nil || *req.Limit != 5 {
 				t.Fatalf("network request = %+v", req)
 			}
 			if !strings.Contains(out, "[200] GET https://example.test/api fetch") {

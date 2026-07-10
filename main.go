@@ -786,6 +786,13 @@ func handleNetwork(cmdArgs []string, jsonOutput bool, globalTabID, globalSince s
 		req.WithBody = hasFlag(rawArgs, "--with-body")
 		req.Method = getArgValue(rawArgs, "--method")
 		req.Status = getArgValue(rawArgs, "--status")
+		if rawLimit, ok := getArgValueOK(rawArgs, "--limit"); ok {
+			limit, err := strconv.Atoi(strings.TrimSpace(rawLimit))
+			if err != nil || limit <= 0 {
+				fatal("--limit must be a positive integer")
+			}
+			req.Limit = &limit
+		}
 		setSince(req, globalSince)
 	case "clear":
 		req.NetworkCommand = "clear"

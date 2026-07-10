@@ -43,6 +43,32 @@ func TestHandlerServesVerifyPagesAndAPI(t *testing.T) {
 	}
 }
 
+func TestHandlerServesNetworkEndpoints(t *testing.T) {
+	h := Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/network/echo?status=201&response=created", strings.NewReader("request payload"))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("network echo status=%d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("network echo JSON: %v", err)
+	}
+	if body["method"] != http.MethodPost || body["requestBody"] != "request payload" || body["response"] != "created" {
+		t.Fatalf("network echo body=%+v", body)
+	}
+
+	started := time.Now()
+	req = httptest.NewRequest(http.MethodGet, "/api/network/slow?status=202&response=slow", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted || time.Since(started) < 250*time.Millisecond {
+		t.Fatalf("network slow status=%d elapsed=%s", rec.Code, time.Since(started))
+	}
+}
+
 func TestHandlerAdditionalPagesAndNotFound(t *testing.T) {
 	h := Handler()
 	for _, path := range []string{"/page2", "/tab", "/frame.html"} {

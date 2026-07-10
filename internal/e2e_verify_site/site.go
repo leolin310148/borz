@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"strconv"
+	"time"
 )
 
 // Site is a running e2e verification site.
@@ -63,6 +66,8 @@ func Handler() http.Handler {
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
 	mux.HandleFunc("/api/data", jsonEndpoint(map[string]string{"message": "hello from e2e verify site"}))
+	mux.HandleFunc("/api/network/echo", networkEcho)
+	mux.HandleFunc("/api/network/slow", networkSlow)
 	return mux
 }
 
@@ -403,5 +408,41 @@ func jsonEndpoint(body map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(body)
+	}
+}
+
+func networkEcho(w http.ResponseWriter, r *http.Request) {
+	status := http.StatusOK
+	if raw := r.URL.Query().Get("status"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 100 || parsed > 599 {
+			http.Error(w, "status must be between 100 and 599", http.StatusBadRequest)
+			return
+		}
+		status = parsed
+	}
+
+	requestBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "read request body", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"method":      r.Method,
+		"requestBody": string(requestBody),
+		"response":    r.URL.Query().Get("response"),
+	})
+}
+
+func networkSlow(w http.ResponseWriter, r *http.Request) {
+	timer := time.NewTimer(300 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		networkEcho(w, r)
+	case <-r.Context().Done():
+		return
 	}
 }

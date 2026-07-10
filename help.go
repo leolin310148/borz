@@ -299,12 +299,13 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"network": {
 		Summary: "List, clear, or live-tail network requests captured for the current tab.",
-		Usage:   "borz network [requests|clear] [--tail] [--interval <duration|ms>] [flags]",
+		Usage:   "borz network [requests|clear] [--tail] [--interval <duration|ms>] [--limit <n>] [flags]",
 		Flags: []string{
 			"  --filter <substr>    Only requests whose URL contains <substr>",
 			"  --method <M>         Only requests with HTTP method M (GET, POST, ...)",
 			"  --status <code|class>  Only requests whose response status matches (404, 5xx)",
 			"  --with-body          Include response bodies (heavier payload)",
+			"  --limit <n>          Return at most the newest n requests",
 			"  --since <seq|last_action>   Only events newer than this checkpoint",
 			"  --tail               Stream new requests as they arrive (Ctrl+C to stop)",
 			"  --interval <duration|ms>  Polling interval in --tail mode (default 500ms)",
@@ -1102,12 +1103,13 @@ var commandHelp = map[string]cmdHelp{
 	// --- Subcommand pages: network.* ---
 	"network.requests": {
 		Summary: "List network requests captured for the current tab.",
-		Usage:   "borz network requests [--filter S] [--method M] [--status C] [--with-body] [--since <seq|last_action>] [--tail] [--interval <duration|ms>] [--tab <id>]",
+		Usage:   "borz network requests [--filter S] [--method M] [--status C] [--with-body] [--since <seq|last_action>] [--limit <n>] [--tail] [--interval <duration|ms>] [--tab <id>]",
 		Flags: []string{
 			"  --filter <substr>    Only requests whose URL contains <substr>",
 			"  --method <M>         Only requests with HTTP method M (GET, POST, ...)",
 			"  --status <code>      Only requests whose response status matches <code>",
 			"  --with-body          Include response bodies (heavier payload)",
+			"  --limit <n>          Return at most the newest n requests",
 			"  --since <seq|last_action>   Only requests newer than this checkpoint",
 			"  --tail               Stream new requests as they arrive (Ctrl+C to stop)",
 			"  --interval <duration|ms>  Polling interval in --tail mode (default 500ms)",

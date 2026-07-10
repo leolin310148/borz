@@ -832,6 +832,72 @@ func TestE2ECLISnapshotModes(t *testing.T) {
 	}
 }
 
+func TestE2ECLINetworkDiagnostics(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("network diagnostics open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	runE2EJSON(t, env, "network", "clear", "--tab", tab, "--json")
+	runE2EJSON(t, env, "eval", `await Promise.all([
+		fetch('/api/network/echo?status=201&response=created', {method: 'POST', body: 'post payload'}),
+		fetch('/api/network/echo?status=404&response=missing'),
+		fetch('/api/network/slow?status=202&response=slow')
+	])`, "--tab", tab, "--json")
+
+	filtered := runE2EJSON(t, env, "network", "requests", "--filter", "/api/network/", "--method", "POST", "--status", "2xx", "--with-body", "--tab", tab, "--json")
+	if len(filtered.Data.NetworkRequests) != 1 {
+		t.Fatalf("filtered network requests = %+v, want one POST 2xx request", filtered.Data.NetworkRequests)
+	}
+	post := filtered.Data.NetworkRequests[0]
+	if post.Method != http.MethodPost || post.Status == nil || *post.Status != http.StatusCreated || !strings.Contains(post.ResponseBody, `"requestBody":"post payload"`) || !strings.Contains(post.ResponseBody, `"response":"created"`) {
+		t.Fatalf("filtered POST request = %+v", post)
+	}
+
+	limited := runE2EJSON(t, env, "network", "requests", "--filter", "/api/network/", "--limit", "2", "--tab", tab, "--json")
+	if len(limited.Data.NetworkRequests) != 2 {
+		t.Fatalf("limited network requests = %+v, want newest two", limited.Data.NetworkRequests)
+	}
+	if !strings.Contains(limited.Data.NetworkRequests[0].URL, "status=404") || !strings.Contains(limited.Data.NetworkRequests[1].URL, "/api/network/slow") || limited.Data.NetworkRequests[1].Status == nil || *limited.Data.NetworkRequests[1].Status != http.StatusAccepted {
+		t.Fatalf("limited network requests = %+v, want 404 echo then 202 slow response", limited.Data.NetworkRequests)
+	}
+
+	runE2EJSON(t, env, "eval", `await fetch('/api/network/echo?status=200&response=since-old')`, "--tab", tab, "--json")
+	runE2EJSON(t, env, "eval", `await fetch('/api/network/echo?status=200&response=since-new')`, "--tab", tab, "--json")
+	since := runE2EJSON(t, env, "network", "requests", "--filter", "response=since-", "--since", "last_action", "--tab", tab, "--json")
+	if len(since.Data.NetworkRequests) != 1 || !strings.Contains(since.Data.NetworkRequests[0].URL, "response=since-new") {
+		t.Fatalf("network requests since last_action = %+v, want only since-new", since.Data.NetworkRequests)
+	}
+
+	runE2EJSON(t, env, "network", "clear", "--tab", tab, "--json")
+	cleared := runE2EJSON(t, env, "network", "requests", "--filter", "/api/network/", "--tab", tab, "--json")
+	if len(cleared.Data.NetworkRequests) != 0 {
+		t.Fatalf("network clear left requests: %+v", cleared.Data.NetworkRequests)
+	}
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
