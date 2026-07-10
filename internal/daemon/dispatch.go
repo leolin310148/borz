@@ -463,7 +463,17 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			this.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
 			const rect = this.getBoundingClientRect();
 			if (!rect || rect.width <= 0 || rect.height <= 0) throw new Error('Element is not visible');
-			return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+			let x = rect.left + rect.width / 2;
+			let y = rect.top + rect.height / 2;
+			let view = this.ownerDocument.defaultView;
+			while (view && view.frameElement) {
+				const frame = view.frameElement;
+				const frameRect = frame.getBoundingClientRect();
+				x += frameRect.left + frame.clientLeft;
+				y += frameRect.top + frame.clientTop;
+				view = frame.ownerDocument.defaultView;
+			}
+			return { x, y };
 		}`,
 		"returnByValue": true,
 	})

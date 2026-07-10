@@ -337,7 +337,25 @@ func tabPage(w http.ResponseWriter, r *http.Request) {
 
 func frame(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, `<!doctype html><html><head><title>E2E Verify Frame</title></head><body><h2 id="frame-ready">Frame ready</h2></body></html>`)
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head><title>E2E Verify Frame</title></head>
+<body>
+  <h2 id="frame-ready">Frame ready</h2>
+  <section id="frame-controls" aria-label="Frame controls">
+    <label for="frame-text-input">Frame text</label>
+    <input id="frame-text-input" aria-label="Frame text input" autocomplete="off">
+    <button id="frame-submit" type="button" aria-label="Submit frame input">Submit frame input</button>
+    <p id="frame-result" role="status" aria-live="polite">Frame result pending</p>
+  </section>
+  <script>
+    document.getElementById('frame-submit').addEventListener('click', () => {
+      const value = document.getElementById('frame-text-input').value;
+      document.getElementById('frame-result').textContent = 'Frame received: ' + value;
+    });
+  </script>
+</body>
+</html>`)
 }
 
 func jsonEndpoint(body map[string]string) http.HandlerFunc {

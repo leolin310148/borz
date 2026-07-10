@@ -21,8 +21,17 @@ func TestHandlerServesVerifyPagesAndAPI(t *testing.T) {
 	}
 
 	frame := getBody(t, ts.URL+"/frame.html")
-	if !strings.Contains(frame, "Frame ready") {
-		t.Fatalf("frame page missing marker: %.200q", frame)
+	for _, marker := range []string{
+		"Frame ready",
+		`id="frame-controls" aria-label="Frame controls"`,
+		`aria-label="Frame text input"`,
+		`aria-label="Submit frame input"`,
+		`id="frame-result" role="status"`,
+		`'Frame received: ' + value`,
+	} {
+		if !strings.Contains(frame, marker) {
+			t.Errorf("frame page missing %q", marker)
+		}
 	}
 
 	var data map[string]string

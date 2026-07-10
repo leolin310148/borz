@@ -419,6 +419,64 @@ func TestE2ECLIFileUpload(t *testing.T) {
 	requireEvalString(t, env, `document.querySelector("#multiple-upload-state").textContent`, "first-note.txt: first file body | second-note.txt: second file body")
 }
 
+func TestE2ECLIFrameInteraction(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("frame test open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	frameResp := runE2EJSON(t, env, "frame", "#verify-frame", "--json")
+	if frameResp.Data.FrameInfo == nil {
+		t.Fatalf("frame command returned no frameInfo: %+v", frameResp.Data)
+	}
+	frameSnapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+	if frameSnapshot.Data.SnapshotData == nil {
+		t.Fatalf("frame snapshot returned no snapshot data: %+v", frameSnapshot.Data)
+	}
+	inputRef := refByName(t, frameSnapshot.Data.SnapshotData, "Frame text input")
+	submitRef := refByName(t, frameSnapshot.Data.SnapshotData, "Submit frame input")
+
+	runE2EJSON(t, env, "fill", inputRef, "inside iframe", "--json")
+	runE2EJSON(t, env, "click", submitRef, "--json")
+	resultSnapshot := runE2EJSON(t, env, "snapshot", "--json")
+	if resultSnapshot.Data.SnapshotData == nil {
+		t.Fatalf("frame result snapshot returned no snapshot data: %+v", resultSnapshot.Data)
+	}
+	requireContains(t, resultSnapshot.Data.SnapshotData.Snapshot, "Frame received: inside iframe", "frame result snapshot")
+
+	runE2EJSON(t, env, "frame", "main", "--json")
+	mainSnapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+	if mainSnapshot.Data.SnapshotData == nil {
+		t.Fatalf("main-frame snapshot returned no snapshot data: %+v", mainSnapshot.Data)
+	}
+	mainClickRef := refByName(t, mainSnapshot.Data.SnapshotData, "Click counter")
+	runE2EJSON(t, env, "click", mainClickRef, "--json")
+	requireEvalString(t, env, `document.querySelector("#clicked-result").textContent`, "clicked 1")
+	requireEvalBool(t, env, `document.querySelector("#frame-text-input") === null`, true)
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
