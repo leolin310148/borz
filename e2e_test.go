@@ -370,6 +370,61 @@ func TestE2ECLISnapshotDiff(t *testing.T) {
 	requireContains(t, navigated.Data.SnapshotData.Snapshot, "Details route content", "SPA navigation snapshot")
 }
 
+func TestE2ECLIScreenshotOutput(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("screenshot open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	outputPath := filepath.Join(t.TempDir(), "nested", "screenshot.png")
+	pathResp := runE2EJSON(t, env, "screenshot", outputPath, "--tab", tab, "--json")
+	if pathResp.Data.ScreenshotPath != outputPath {
+		t.Fatalf("screenshot path = %q, want %q", pathResp.Data.ScreenshotPath, outputPath)
+	}
+	pngData, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read screenshot output: %v", err)
+	}
+	pngSignature := []byte("\x89PNG\r\n\x1a\n")
+	if len(pngData) < len(pngSignature) || !bytes.Equal(pngData[:len(pngSignature)], pngSignature) {
+		t.Fatalf("screenshot output does not have a PNG signature: % x", pngData[:min(len(pngData), len(pngSignature))])
+	}
+	config, err := png.DecodeConfig(bytes.NewReader(pngData))
+	if err != nil {
+		t.Fatalf("decode screenshot output PNG: %v", err)
+	}
+	if config.Width <= 0 || config.Height <= 0 {
+		t.Fatalf("screenshot output dimensions = %dx%d, want non-empty dimensions", config.Width, config.Height)
+	}
+
+	inlineResp := runE2EJSON(t, env, "screenshot", "--tab", tab, "--json")
+	if !strings.HasPrefix(inlineResp.Data.DataURL, "data:image/png;base64,") {
+		t.Fatalf("inline screenshot data URL prefix mismatch: %.40q", inlineResp.Data.DataURL)
+	}
+}
+
 func TestE2ECLIViewportEmulation(t *testing.T) {
 	skipUnlessE2E(t)
 
