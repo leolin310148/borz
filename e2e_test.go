@@ -1125,6 +1125,66 @@ func TestE2ECLITabLifecycle(t *testing.T) {
 	}
 }
 
+func TestE2ECLIDelaySemantics(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	tab := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	if tab == "" {
+		t.Fatal("delay semantics open response did not include a tab id")
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json").Data.SnapshotData
+	if snapshot == nil {
+		t.Fatal("delay semantics snapshot returned no snapshot data")
+	}
+	clickRef := refByName(t, snapshot, "Click counter")
+
+	const successDelay = 750 * time.Millisecond
+	started := time.Now()
+	runE2EJSON(t, env, "click", clickRef, "--tab", tab, "--pre-delay", strconv.Itoa(int(successDelay/time.Millisecond)), "--json")
+	if elapsed := time.Since(started); elapsed < 600*time.Millisecond {
+		t.Fatalf("click with %s pre-delay returned after %s, want at least 600ms", successDelay, elapsed)
+	}
+	requireEvalString(t, env, `document.querySelector("#clicked-result").textContent`, "clicked 1")
+
+	started = time.Now()
+	runE2EJSON(t, env, "click", clickRef, "--tab", tab, "--post-delay", strconv.Itoa(int(successDelay/time.Millisecond)), "--json")
+	if elapsed := time.Since(started); elapsed < 600*time.Millisecond {
+		t.Fatalf("click with %s post-delay returned after %s, want at least 600ms", successDelay, elapsed)
+	}
+	requireEvalString(t, env, `document.querySelector("#clicked-result").textContent`, "clicked 2")
+
+	const failedActionPostDelay = 5 * time.Second
+	started = time.Now()
+	failed := runE2EJSONResponse(t, env, "click", "e999999", "--tab", tab, "--post-delay", strconv.Itoa(int(failedActionPostDelay/time.Millisecond)), "--json")
+	failedElapsed := time.Since(started)
+	if failed.Success || !strings.Contains(failed.Error, "unknown ref") {
+		t.Fatalf("failed click response = %+v, want structured unknown-ref error", failed)
+	}
+	if failedElapsed >= 3500*time.Millisecond {
+		t.Fatalf("failed click took %s with %s post-delay; post-delay should be skipped", failedElapsed, failedActionPostDelay)
+	}
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
