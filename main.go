@@ -98,7 +98,9 @@ func main() {
 	if err := config.SetProfile(profileName); err != nil {
 		fatal(err.Error())
 	}
-	client.SetRequestContext("cli", os.Getenv("BORZ_SESSION_ID"))
+	client.SetRequestContext("cli", cliSessionID(
+		os.Getenv("BORZ_SESSION_ID"), os.Getenv("TMUX_PANE"), os.Getenv("TERM_SESSION_ID"), os.Getppid(),
+	))
 	remoteRouting := hasFlag(args, "--remote")
 	client.SetRemoteRouting(remoteRouting)
 	globalTabID := getArgValue(args, "--tab")

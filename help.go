@@ -593,9 +593,11 @@ var commandHelp = map[string]cmdHelp{
 		Flags:   []string{"  --lines <n>   Number of events to show (default 50)"},
 	},
 	"logs.stats": {
-		Summary: "Aggregate command/tool failures, latency, and error codes.",
+		Summary: "Aggregate per-operation failures, latency, error codes, and bursts.",
 		Usage:   "borz logs stats [--since 7d] [--json]",
 		Flags:   []string{"  --since <duration|time>   Lookback such as 24h/7d, or RFC3339 (default 7d)"},
+		Notes: "Shows per-action/tool counts, failures, p50/p95/max latency, and the ten\n" +
+			"largest bursts with at least five identical operations in one second.",
 	},
 	"daemon": {
 		Summary: "Start or control the local daemon (loopback only).",

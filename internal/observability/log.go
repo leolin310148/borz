@@ -311,10 +311,24 @@ func ErrorCode(errText string) string {
 	switch {
 	case s == "":
 		return "unknown"
-	case strings.Contains(s, "ref") && (strings.Contains(s, "not found") || strings.Contains(s, "missing")):
+	case strings.Contains(s, "unknown ref") || strings.Contains(s, "ref") && (strings.Contains(s, "not found") || strings.Contains(s, "missing")):
 		return "stale_ref"
 	case strings.Contains(s, "tab not found") || strings.Contains(s, "target not found"):
 		return "tab_not_found"
+	case strings.Contains(s, "invalid selector") || strings.Contains(s, "invalid css") || strings.Contains(s, "not a valid selector"):
+		return "invalid_selector"
+	case strings.Contains(s, "iframe not found") || strings.Contains(s, "element not found"):
+		return "element_not_found"
+	case strings.Contains(s, "node is detached") || strings.Contains(s, "could not compute box model") ||
+		strings.Contains(s, "not clickable") || strings.Contains(s, "not interactable") || strings.Contains(s, "not editable"):
+		return "element_not_actionable"
+	case strings.Contains(s, "failed to fetch") || strings.Contains(s, "network request failed"):
+		return "fetch_failed"
+	case strings.Contains(s, "syntaxerror") || strings.Contains(s, "referenceerror") || strings.Contains(s, "typeerror") ||
+		strings.Contains(s, "exceptiondetails") || strings.Contains(s, "javascript exception"):
+		return "js_exception"
+	case strings.Contains(s, "no such file") || strings.Contains(s, "file not found"):
+		return "file_not_found"
 	case strings.Contains(s, "no extension connected") || strings.Contains(s, "extension") && strings.Contains(s, "not connected"):
 		return "extension_unavailable"
 	case strings.Contains(s, "domain guard"):

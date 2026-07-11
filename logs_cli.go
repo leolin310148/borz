@@ -13,16 +13,35 @@ import (
 )
 
 type logStats struct {
-	Since           time.Time      `json:"since"`
-	Commands        int            `json:"commands"`
-	CommandFailures int            `json:"commandFailures"`
-	Tools           int            `json:"tools"`
-	ToolFailures    int            `json:"toolFailures"`
-	CommandP95MS    int64          `json:"commandP95Ms"`
-	ToolP95MS       int64          `json:"toolP95Ms"`
-	ByAction        map[string]int `json:"byAction"`
-	ByTool          map[string]int `json:"byTool"`
-	ByError         map[string]int `json:"byError"`
+	Since           time.Time                    `json:"since"`
+	Commands        int                          `json:"commands"`
+	CommandFailures int                          `json:"commandFailures"`
+	Tools           int                          `json:"tools"`
+	ToolFailures    int                          `json:"toolFailures"`
+	CommandP95MS    int64                        `json:"commandP95Ms"`
+	ToolP95MS       int64                        `json:"toolP95Ms"`
+	ByAction        map[string]int               `json:"byAction"`
+	ByTool          map[string]int               `json:"byTool"`
+	ByError         map[string]int               `json:"byError"`
+	ActionStats     map[string]logOperationStats `json:"actionStats"`
+	ToolStats       map[string]logOperationStats `json:"toolStats"`
+	Bursts          []logBurst                   `json:"bursts,omitempty"`
+}
+
+type logOperationStats struct {
+	Count    int   `json:"count"`
+	Failures int   `json:"failures"`
+	P50MS    int64 `json:"p50Ms"`
+	P95MS    int64 `json:"p95Ms"`
+	MaxMS    int64 `json:"maxMs"`
+}
+
+type logBurst struct {
+	Second    time.Time `json:"second"`
+	Kind      string    `json:"kind"`
+	Name      string    `json:"name"`
+	SessionID string    `json:"sessionId,omitempty"`
+	Count     int       `json:"count"`
 }
 
 func handleLogs(cmdArgs, rawArgs []string, sinceValue string, jsonOutput bool) {
@@ -153,24 +172,40 @@ func parseLogSince(value string, now time.Time) (time.Time, error) {
 func calculateLogStats(entries []observability.Entry, since time.Time) logStats {
 	stats := logStats{
 		Since: since, ByAction: map[string]int{}, ByTool: map[string]int{}, ByError: map[string]int{},
+		ActionStats: map[string]logOperationStats{}, ToolStats: map[string]logOperationStats{},
 	}
 	var commandDurations, toolDurations []int64
+	actionDurations, toolDurationsByName := map[string][]int64{}, map[string][]int64{}
+	actionFailures, toolFailuresByName := map[string]int{}, map[string]int{}
+	type burstKey struct {
+		second    time.Time
+		kind      string
+		name      string
+		sessionID string
+	}
+	burstCounts := map[burstKey]int{}
 	for _, entry := range entries {
 		switch entry.Event {
 		case "command_completed":
 			stats.Commands++
 			stats.ByAction[entry.Action]++
+			actionDurations[entry.Action] = append(actionDurations[entry.Action], entry.DurationMS)
 			if entry.Success != nil && !*entry.Success {
 				stats.CommandFailures++
+				actionFailures[entry.Action]++
 			}
 			commandDurations = append(commandDurations, entry.DurationMS)
+			burstCounts[burstKey{entry.Time.Truncate(time.Second), "command", entry.Action, entry.SessionID}]++
 		case "tool_completed":
 			stats.Tools++
 			stats.ByTool[entry.Tool]++
+			toolDurationsByName[entry.Tool] = append(toolDurationsByName[entry.Tool], entry.DurationMS)
 			if entry.Success != nil && !*entry.Success {
 				stats.ToolFailures++
+				toolFailuresByName[entry.Tool]++
 			}
 			toolDurations = append(toolDurations, entry.DurationMS)
+			burstCounts[burstKey{entry.Time.Truncate(time.Second), "tool", entry.Tool, entry.SessionID}]++
 		default:
 			continue
 		}
@@ -180,15 +215,50 @@ func calculateLogStats(entries []observability.Entry, since time.Time) logStats 
 	}
 	stats.CommandP95MS = percentile95(commandDurations)
 	stats.ToolP95MS = percentile95(toolDurations)
+	stats.ActionStats = summarizeOperations(actionDurations, actionFailures)
+	stats.ToolStats = summarizeOperations(toolDurationsByName, toolFailuresByName)
+	for key, count := range burstCounts {
+		if count >= 5 {
+			stats.Bursts = append(stats.Bursts, logBurst{
+				Second: key.second, Kind: key.kind, Name: key.name, SessionID: key.sessionID, Count: count,
+			})
+		}
+	}
+	sort.Slice(stats.Bursts, func(i, j int) bool {
+		if stats.Bursts[i].Count != stats.Bursts[j].Count {
+			return stats.Bursts[i].Count > stats.Bursts[j].Count
+		}
+		return stats.Bursts[i].Second.Before(stats.Bursts[j].Second)
+	})
+	if len(stats.Bursts) > 10 {
+		stats.Bursts = stats.Bursts[:10]
+	}
 	return stats
 }
 
+func summarizeOperations(durations map[string][]int64, failures map[string]int) map[string]logOperationStats {
+	result := make(map[string]logOperationStats, len(durations))
+	for name, values := range durations {
+		copied := append([]int64(nil), values...)
+		sort.Slice(copied, func(i, j int) bool { return copied[i] < copied[j] })
+		result[name] = logOperationStats{
+			Count: len(copied), Failures: failures[name], P50MS: percentile(copied, 50),
+			P95MS: percentile(copied, 95), MaxMS: copied[len(copied)-1],
+		}
+	}
+	return result
+}
+
 func percentile95(values []int64) int64 {
+	return percentile(values, 95)
+}
+
+func percentile(values []int64, percentage int) int64 {
 	if len(values) == 0 {
 		return 0
 	}
 	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
-	idx := (95*len(values) + 99) / 100
+	idx := (percentage*len(values) + 99) / 100
 	if idx < 1 {
 		idx = 1
 	}
@@ -200,9 +270,41 @@ func printLogStats(stats logStats) {
 	fmt.Printf("Commands: %d (%d failed)\n", stats.Commands, stats.CommandFailures)
 	fmt.Printf("MCP tools: %d (%d failed)\n", stats.Tools, stats.ToolFailures)
 	fmt.Printf("Command p95: %dms; MCP tool p95: %dms\n", stats.CommandP95MS, stats.ToolP95MS)
-	printCountMap("Actions", stats.ByAction)
-	printCountMap("Tools", stats.ByTool)
+	printOperationStats("Action performance", stats.ActionStats)
+	printOperationStats("Tool performance", stats.ToolStats)
 	printCountMap("Error events by layer", stats.ByError)
+	if len(stats.Bursts) > 0 {
+		fmt.Println("Bursts (at least 5 identical operations in one second):")
+		for _, burst := range stats.Bursts {
+			session := ""
+			if burst.SessionID != "" {
+				session = " session=" + burst.SessionID
+			}
+			fmt.Printf("  %s %-7s %-24s %d%s\n", burst.Second.Local().Format("2006-01-02 15:04:05"), burst.Kind, burst.Name, burst.Count, session)
+		}
+	}
+}
+
+func printOperationStats(label string, stats map[string]logOperationStats) {
+	if len(stats) == 0 {
+		return
+	}
+	names := make([]string, 0, len(stats))
+	for name := range stats {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if stats[names[i]].Count == stats[names[j]].Count {
+			return names[i] < names[j]
+		}
+		return stats[names[i]].Count > stats[names[j]].Count
+	})
+	fmt.Printf("%s:\n", label)
+	fmt.Printf("  %-24s %7s %7s %8s %8s %8s\n", "name", "count", "failed", "p50", "p95", "max")
+	for _, name := range names {
+		item := stats[name]
+		fmt.Printf("  %-24s %7d %7d %7dms %7dms %7dms\n", name, item.Count, item.Failures, item.P50MS, item.P95MS, item.MaxMS)
+	}
 }
 
 func printCountMap(label string, counts map[string]int) {

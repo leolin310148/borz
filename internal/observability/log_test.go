@@ -85,13 +85,20 @@ func TestLoggerRotatesAndReadsEntries(t *testing.T) {
 
 func TestErrorCode(t *testing.T) {
 	tests := map[string]string{
-		"ref 9 not found":            "stale_ref",
-		"tab not found":              "tab_not_found",
-		"Command timeout":            "command_timeout",
-		"wait for selector timeout":  "wait_timeout",
-		"Chrome not connected (CDP)": "cdp_disconnected",
-		"no extension connected":     "extension_unavailable",
-		"something odd":              "command_error",
+		"ref 9 not found":                        "stale_ref",
+		"unknown ref: 9. Run snapshot first":     "stale_ref",
+		"tab not found":                          "tab_not_found",
+		"iframe not found: #checkout":            "element_not_found",
+		"DOM node is detached from document":     "element_not_actionable",
+		"SyntaxError: Unexpected token":          "js_exception",
+		"TypeError: Failed to fetch":             "fetch_failed",
+		"querySelector: not a valid selector":    "invalid_selector",
+		"stat upload: no such file or directory": "file_not_found",
+		"Command timeout":                        "command_timeout",
+		"wait for selector timeout":              "wait_timeout",
+		"Chrome not connected (CDP)":             "cdp_disconnected",
+		"no extension connected":                 "extension_unavailable",
+		"something odd":                          "command_error",
 	}
 	for in, want := range tests {
 		if got := ErrorCode(in); got != want {
