@@ -2660,6 +2660,93 @@ func TestE2ERESTAgainstServer(t *testing.T) {
 	}
 }
 
+func TestE2ERESTWaitAndDelaySemantics(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	token := "e2e-rest-delay-token"
+	_, serverURL := startE2EServer(t, home, token)
+	opened := runE2ERESTJSON(t, serverURL, token, "/v1/open", map[string]interface{}{
+		"url": site.URL() + "/async-action", "new": true,
+		"waitFor": "#async-action-ready", "timeoutMs": 10000,
+	})
+	tab := opened.Data.Tab
+	if tab == "" {
+		t.Fatalf("REST delay open response did not include tab: %+v", opened.Data)
+	}
+	t.Cleanup(func() {
+		runE2ERESTJSON(t, serverURL, token, "/v1/close", map[string]interface{}{"tab": tab})
+	})
+
+	snapshot := runE2ERESTJSON(t, serverURL, token, "/v1/snapshot", map[string]interface{}{
+		"interactive": true, "tab": tab,
+	})
+	actionRef := refByName(t, snapshot.Data.SnapshotData, "Start async action")
+
+	const delayMs = 700
+	started := time.Now()
+	runE2ERESTJSON(t, serverURL, token, "/v1/click", map[string]interface{}{
+		"ref": actionRef, "tab": tab,
+		"waitFor": "#async-action-result", "timeoutMs": 5000,
+		"preDelayMs": delayMs, "postDelayMs": delayMs,
+	})
+	if elapsed := time.Since(started); elapsed < 1800*time.Millisecond {
+		t.Fatalf("REST click with pre/wait/post delays returned after %s, want at least 1.8s", elapsed)
+	}
+	result := runE2ERESTJSON(t, serverURL, token, "/v1/eval", map[string]interface{}{
+		"script": `document.querySelector("#async-action-result").textContent`, "tab": tab,
+	})
+	if result.Data.Result != "Async action 1 complete" {
+		t.Fatalf("REST delayed action result = %#v", result.Data.Result)
+	}
+
+	const failedPostDelayMs = 5000
+	started = time.Now()
+	status, failed := runE2ERESTJSONResponse(t, serverURL, token, "/v1/click", map[string]interface{}{
+		"ref": actionRef, "tab": tab,
+		"waitFor": "#never-rendered-after-rest-action", "timeoutMs": 600,
+		"postDelayMs": failedPostDelayMs,
+	})
+	failedElapsed := time.Since(started)
+	if status != http.StatusBadRequest || failed.Success || failed.ID == "" {
+		t.Fatalf("REST timed-out action = status %d, response %+v", status, failed)
+	}
+	requireContains(t, failed.Error, `wait-for selector "#never-rendered-after-rest-action"`, "REST action timeout error")
+	requireContains(t, failed.Error, "timeout after 600ms", "REST action timeout error")
+	if failedElapsed >= 3500*time.Millisecond {
+		t.Fatalf("failed REST action took %s with %dms post-delay; post-delay should be skipped", failedElapsed, failedPostDelayMs)
+	}
+	cleared := runE2ERESTJSON(t, serverURL, token, "/v1/eval", map[string]interface{}{
+		"script": `document.querySelector("#async-action-result") === null`, "tab": tab,
+	})
+	if cleared.Data.Result != true {
+		t.Fatalf("REST timed-out action did not run before its wait failed: result %#v", cleared.Data.Result)
+	}
+
+	for field, value := range map[string]int{"timeoutMs": -1, "preDelayMs": -1, "postDelayMs": -1} {
+		status, invalid := runE2ERESTJSONResponse(t, serverURL, token, "/v1/click", map[string]interface{}{
+			"ref": actionRef, "tab": tab, field: value,
+		})
+		if status != http.StatusBadRequest || invalid.Error != field+" must be a non-negative integer" {
+			t.Errorf("REST %s lower bound = status %d, response %+v", field, status, invalid)
+		}
+	}
+}
+
 func TestE2ESiteAdapterTrustAgainstVerifySite(t *testing.T) {
 	skipUnlessE2E(t)
 
@@ -3542,6 +3629,15 @@ func runE2EJSONResponse(t *testing.T, env e2eDaemonEnv, args ...string) protocol
 
 func runE2ERESTJSON(t *testing.T, serverURL, token, path string, body interface{}) protocol.Response {
 	t.Helper()
+	status, resp := runE2ERESTJSONResponse(t, serverURL, token, path, body)
+	if status != http.StatusOK || !resp.Success || resp.ID == "" || resp.Data == nil || resp.Error != "" {
+		t.Fatalf("POST %s envelope = status %d, response %+v", path, status, resp)
+	}
+	return resp
+}
+
+func runE2ERESTJSONResponse(t *testing.T, serverURL, token, path string, body interface{}) (int, protocol.Response) {
+	t.Helper()
 
 	encoded, err := json.Marshal(body)
 	if err != nil {
@@ -3563,10 +3659,7 @@ func runE2ERESTJSON(t *testing.T, serverURL, token, path string, body interface{
 	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode POST %s response: %v", path, err)
 	}
-	if httpResp.StatusCode != http.StatusOK || !resp.Success || resp.ID == "" || resp.Data == nil || resp.Error != "" {
-		t.Fatalf("POST %s envelope = status %d, response %+v", path, httpResp.StatusCode, resp)
-	}
-	return resp
+	return httpResp.StatusCode, resp
 }
 
 func refByName(t *testing.T, snapshot *protocol.SnapshotData, name string) string {

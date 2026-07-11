@@ -92,6 +92,27 @@ func TestRestBody_ApplyDelays(t *testing.T) {
 	}
 }
 
+func TestRestBody_ValidateTiming(t *testing.T) {
+	zero := 0
+	if err := (restBody{TimeoutMs: &zero, PreDelayMs: &zero, PostDelayMs: &zero}).validateTiming(); err != nil {
+		t.Fatalf("validateTiming with zero values: %v", err)
+	}
+
+	negative := -1
+	for name, body := range map[string]restBody{
+		"timeoutMs":   {TimeoutMs: &negative},
+		"preDelayMs":  {PreDelayMs: &negative},
+		"postDelayMs": {PostDelayMs: &negative},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := body.validateTiming()
+			if err == nil || !strings.Contains(err.Error(), name+" must be a non-negative integer") {
+				t.Fatalf("validateTiming error = %v", err)
+			}
+		})
+	}
+}
+
 func TestReadBody_ParsesDelays(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/x",
 		strings.NewReader(`{"preDelayMs":150,"postDelayMs":350}`))

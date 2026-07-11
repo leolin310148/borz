@@ -526,6 +526,10 @@ func (s *Server) restJSONE(build func(restBody) (*protocol.Request, error)) http
 			sendJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
+		if err := body.validateTiming(); err != nil {
+			sendJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
 		req, err := build(body)
 		if err != nil {
 			sendJSON(w, 400, map[string]string{"error": err.Error()})
@@ -534,6 +538,22 @@ func (s *Server) restJSONE(build func(restBody) (*protocol.Request, error)) http
 		req.ID = newReqID()
 		s.dispatchAndWrite(w, req)
 	}
+}
+
+func (b restBody) validateTiming() error {
+	for _, field := range []struct {
+		name  string
+		value *int
+	}{
+		{"timeoutMs", b.TimeoutMs},
+		{"preDelayMs", b.PreDelayMs},
+		{"postDelayMs", b.PostDelayMs},
+	} {
+		if field.value != nil && *field.value < 0 {
+			return fmt.Errorf("%s must be a non-negative integer", field.name)
+		}
+	}
+	return nil
 }
 
 // dispatchAndWrite waits for CDP readiness then runs DispatchRequest with the
