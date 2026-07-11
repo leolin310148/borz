@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +96,32 @@ func TestHandlerServesNetworkEndpoints(t *testing.T) {
 	_ = resp.Body.Close()
 	if string(abortBody) != "partial-response" || readErr == nil {
 		t.Fatalf("network abort body=%q readErr=%v, want partial body and read failure", abortBody, readErr)
+	}
+}
+
+func TestHandlerServesCacheEndpointsWithIndependentCounters(t *testing.T) {
+	h := Handler()
+
+	for _, tt := range []struct {
+		path         string
+		cacheControl string
+	}{
+		{path: "/cache/cacheable", cacheControl: "public, max-age=3600"},
+		{path: "/cache/no-cache", cacheControl: "no-store"},
+	} {
+		for wantCount := 1; wantCount <= 2; wantCount++ {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != tt.cacheControl {
+				t.Fatalf("%s status=%d Cache-Control=%q", tt.path, rec.Code, rec.Header().Get("Cache-Control"))
+			}
+			want := strconv.Itoa(wantCount)
+			if rec.Header().Get("X-E2E-Request-Count") != want || !strings.Contains(rec.Body.String(), `id="request-count">`+want+`<`) {
+				t.Fatalf("%s count response = headers %v body %q, want %s", tt.path, rec.Header(), rec.Body.String(), want)
+			}
+		}
 	}
 }
 

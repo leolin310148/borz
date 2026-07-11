@@ -556,10 +556,11 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 				PostData string          `json:"postData"`
 			} `json:"request"`
 			RedirectResponse *struct {
-				Status     int             `json:"status"`
-				StatusText string          `json:"statusText"`
-				Headers    json.RawMessage `json:"headers"`
-				MimeType   string          `json:"mimeType"`
+				Status        int             `json:"status"`
+				StatusText    string          `json:"statusText"`
+				Headers       json.RawMessage `json:"headers"`
+				MimeType      string          `json:"mimeType"`
+				FromDiskCache bool            `json:"fromDiskCache"`
 			} `json:"redirectResponse"`
 			Type      string  `json:"type"`
 			Timestamp float64 `json:"timestamp"`
@@ -568,7 +569,7 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 			if params.RedirectResponse != nil {
 				status := params.RedirectResponse.Status
 				tab.UpdateNetworkResponse(params.RequestID, &status, params.RedirectResponse.StatusText,
-					normalizeHeaders(params.RedirectResponse.Headers), params.RedirectResponse.MimeType)
+					normalizeHeaders(params.RedirectResponse.Headers), params.RedirectResponse.MimeType, params.RedirectResponse.FromDiskCache)
 			}
 			tab.AddNetworkRequest(params.RequestID, protocol.NetworkRequestInfo{
 				URL:            params.Request.URL,
@@ -584,16 +585,17 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 		var params struct {
 			RequestID string `json:"requestId"`
 			Response  struct {
-				Status     int             `json:"status"`
-				StatusText string          `json:"statusText"`
-				Headers    json.RawMessage `json:"headers"`
-				MimeType   string          `json:"mimeType"`
+				Status        int             `json:"status"`
+				StatusText    string          `json:"statusText"`
+				Headers       json.RawMessage `json:"headers"`
+				MimeType      string          `json:"mimeType"`
+				FromDiskCache bool            `json:"fromDiskCache"`
 			} `json:"response"`
 		}
 		if json.Unmarshal(paramsRaw, &params) == nil && params.RequestID != "" {
 			status := params.Response.Status
 			tab.UpdateNetworkResponse(params.RequestID, &status, params.Response.StatusText,
-				normalizeHeaders(params.Response.Headers), params.Response.MimeType)
+				normalizeHeaders(params.Response.Headers), params.Response.MimeType, params.Response.FromDiskCache)
 		}
 
 	case "Network.loadingFailed":

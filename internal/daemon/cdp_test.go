@@ -348,13 +348,18 @@ func TestHandleSessionEvent_NetworkFlow(t *testing.T) {
 		"params": map[string]interface{}{
 			"requestId": "R1",
 			"response": map[string]interface{}{
-				"status":     200,
-				"statusText": "OK",
-				"headers":    map[string]interface{}{"Content-Type": "application/json"},
-				"mimeType":   "application/json",
+				"status":        200,
+				"statusText":    "OK",
+				"headers":       map[string]interface{}{"Content-Type": "application/json"},
+				"mimeType":      "application/json",
+				"fromDiskCache": true,
 			},
 		},
 	}))
+	requests := tab.GetNetworkRequests(QueryOptions{}).Items
+	if len(requests) != 1 || !requests[0].FromDiskCache {
+		t.Fatalf("cached response metadata = %+v", requests)
+	}
 
 	// loadingFailed marks failure.
 	c.handleSessionEvent("T1", "Network.loadingFailed", rawMsg(t, map[string]interface{}{

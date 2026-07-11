@@ -1307,6 +1307,92 @@ func TestE2ECLINetworkDiagnostics(t *testing.T) {
 	}
 }
 
+func TestE2ECLICacheNavigation(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	cacheableURL := site.URL() + "/cache/cacheable"
+	openResp := runE2EJSON(t, env, "open", cacheableURL, "--new", "--wait-for", "#cache-ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("cache fixture open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, "document.querySelector('#request-count').textContent", "1")
+	runE2EJSON(t, env, "network", "clear", "--tab", tab, "--json")
+	runE2EJSON(t, env, "refresh", "--tab", tab, "--wait-for", "#cache-ready", "--timeout", "10000", "--json")
+	refreshCount := runE2EJSON(t, env, "eval", "document.querySelector('#request-count').textContent", "--tab", tab, "--json").Data.Result
+	if refreshCount != "1" && refreshCount != "2" {
+		t.Fatalf("cacheable refresh count = %#v, want cached 1 or revalidated 2", refreshCount)
+	}
+	cacheableRequests := runE2EJSON(t, env, "network", "requests", "--filter", "/cache/cacheable", "--tab", tab, "--json").Data.NetworkRequests
+	if len(cacheableRequests) == 0 {
+		t.Fatal("cacheable refresh produced no network metadata")
+	}
+	cacheable := cacheableRequests[len(cacheableRequests)-1]
+	if cacheable.Status == nil || *cacheable.Status != http.StatusOK || networkHeader(cacheable.ResponseHeaders, "Cache-Control") != "public, max-age=3600" {
+		t.Fatalf("cacheable refresh metadata = %+v", cacheable)
+	}
+	if cacheable.FromDiskCache && refreshCount != "1" {
+		t.Fatalf("disk-cached response advanced fixture counter: count=%#v request=%+v", refreshCount, cacheable)
+	}
+
+	// Navigating away and back may use the back-forward cache, the HTTP cache,
+	// or revalidate. All are valid as long as at most one server request occurs.
+	runE2EJSON(t, env, "open", site.URL()+"/", "--tab", tab, "--wait-for", "#ready", "--timeout", "10000", "--json")
+	runE2EJSON(t, env, "network", "clear", "--tab", tab, "--json")
+	runE2EJSON(t, env, "back", "--tab", tab, "--wait-for", "#cache-ready", "--timeout", "10000", "--json")
+	backCount := runE2EJSON(t, env, "eval", "document.querySelector('#request-count').textContent", "--tab", tab, "--json").Data.Result
+	if backCount != refreshCount && !(refreshCount == "1" && backCount == "2") && !(refreshCount == "2" && backCount == "3") {
+		t.Fatalf("cacheable back-navigation count advanced unexpectedly: refresh=%#v back=%#v", refreshCount, backCount)
+	}
+	backRequests := runE2EJSON(t, env, "network", "requests", "--filter", "/cache/cacheable", "--tab", tab, "--json").Data.NetworkRequests
+	if len(backRequests) > 1 {
+		t.Fatalf("cacheable back navigation made multiple requests: %+v", backRequests)
+	}
+
+	runE2EJSON(t, env, "open", site.URL()+"/cache/no-cache", "--tab", tab, "--wait-for", "#cache-ready", "--timeout", "10000", "--json")
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, "document.querySelector('#request-count').textContent", "1")
+	runE2EJSON(t, env, "network", "clear", "--tab", tab, "--json")
+	runE2EJSON(t, env, "refresh", "--tab", tab, "--wait-for", "#cache-ready", "--timeout", "10000", "--json")
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, "document.querySelector('#request-count').textContent", "2")
+	noCacheRequests := runE2EJSON(t, env, "network", "requests", "--filter", "/cache/no-cache", "--tab", tab, "--json").Data.NetworkRequests
+	if len(noCacheRequests) == 0 {
+		t.Fatal("no-cache refresh produced no network metadata")
+	}
+	noCache := noCacheRequests[len(noCacheRequests)-1]
+	if noCache.FromDiskCache || noCache.Status == nil || *noCache.Status != http.StatusOK || networkHeader(noCache.ResponseHeaders, "Cache-Control") != "no-store" {
+		t.Fatalf("no-cache refresh metadata = %+v", noCache)
+	}
+}
+
+func networkHeader(headers map[string]string, name string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
+}
+
 func TestE2ECLIStreamingNetworkFailures(t *testing.T) {
 	skipUnlessE2E(t)
 

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -56,6 +57,8 @@ func (s *Site) Close(ctx context.Context) error {
 // Handler returns the verification site HTTP handler.
 func Handler() http.Handler {
 	mux := http.NewServeMux()
+	var cacheableRequests atomic.Uint64
+	var noCacheRequests atomic.Uint64
 	mux.HandleFunc("/", root)
 	mux.HandleFunc("/page2", pageTwo)
 	mux.HandleFunc("/url-fidelity", urlFidelity)
@@ -82,11 +85,23 @@ func Handler() http.Handler {
 	mux.HandleFunc("/api/network/slow", networkSlow)
 	mux.HandleFunc("/api/network/stream", networkStream)
 	mux.HandleFunc("/api/network/abort", networkAbort)
+	mux.HandleFunc("/cache/cacheable", cachePage(&cacheableRequests, "public, max-age=3600"))
+	mux.HandleFunc("/cache/no-cache", cachePage(&noCacheRequests, "no-store"))
 	mux.HandleFunc("/api/fetch/get", fetchRequest)
 	mux.HandleFunc("/api/fetch/post", fetchRequest)
 	mux.HandleFunc("/api/fetch/put", fetchRequest)
 	mux.HandleFunc("/api/fetch/status", fetchRequest)
 	return mux
+}
+
+func cachePage(counter *atomic.Uint64, cacheControl string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		count := counter.Add(1)
+		w.Header().Set("Cache-Control", cacheControl)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("X-E2E-Request-Count", strconv.FormatUint(count, 10))
+		fmt.Fprintf(w, `<!doctype html><html><head><title>E2E Cache</title></head><body><h1 id="cache-ready">Cache fixture ready</h1><output id="request-count">%d</output></body></html>`, count)
+	}
 }
 
 func root(w http.ResponseWriter, r *http.Request) {

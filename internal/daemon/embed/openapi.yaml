@@ -1532,6 +1532,7 @@ components:
         timestamp: { type: integer, format: int64 }
         status: { type: integer }
         statusText: { type: string }
+        fromDiskCache: { type: boolean }
         failed: { type: boolean }
         failureReason: { type: string }
         requestHeaders:

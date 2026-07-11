@@ -132,9 +132,9 @@ func TestTabState_NetworkLifecycle(t *testing.T) {
 	tab.AddNetworkRequest("r2", protocol.NetworkRequestInfo{URL: "https://api.example.com/b", Method: "POST"})
 
 	// Update response for r1.
-	tab.UpdateNetworkResponse("r1", intP(200), "OK", map[string]string{"x": "y"}, "application/json")
+	tab.UpdateNetworkResponse("r1", intP(200), "OK", map[string]string{"x": "y"}, "application/json", true)
 	// Update on unknown request id: no-op.
-	tab.UpdateNetworkResponse("unknown", intP(500), "", nil, "")
+	tab.UpdateNetworkResponse("unknown", intP(500), "", nil, "", false)
 
 	// Mark r2 failed.
 	tab.UpdateNetworkFailure("r2", "net::ERR_FAIL")
@@ -160,7 +160,7 @@ func TestTabState_NetworkLifecycle(t *testing.T) {
 		t.Fatal("missing r1/r2 in results")
 	}
 
-	if r1.Status == nil || *r1.Status != 200 || r1.StatusText != "OK" || r1.ResponseHeaders["x"] != "y" || r1.MimeType != "application/json" {
+	if r1.Status == nil || *r1.Status != 200 || r1.StatusText != "OK" || r1.ResponseHeaders["x"] != "y" || r1.MimeType != "application/json" || !r1.FromDiskCache {
 		t.Fatalf("r1 response fields not updated: %+v", *r1)
 	}
 	if !r2.Failed || r2.FailureReason != "net::ERR_FAIL" {
@@ -352,7 +352,7 @@ func TestTabState_Clear(t *testing.T) {
 		t.Fatal("ClearNetwork did not empty ring")
 	}
 	// After clear, updating a previously known id must be a no-op.
-	tab.UpdateNetworkResponse("r1", intP(200), "", nil, "")
+	tab.UpdateNetworkResponse("r1", intP(200), "", nil, "", false)
 	tab.UpdateNetworkFailure("r1", "x")
 
 	tab.ClearConsole()
@@ -378,7 +378,7 @@ func TestTabState_ConcurrentEventAccess(t *testing.T) {
 			for i := 0; i < 50; i++ {
 				requestID := fmt.Sprintf("r-%d-%d", worker, i)
 				tab.AddNetworkRequest(requestID, protocol.NetworkRequestInfo{URL: "https://example.test", Method: "GET"})
-				tab.UpdateNetworkResponse(requestID, intP(200), "OK", nil, "")
+				tab.UpdateNetworkResponse(requestID, intP(200), "OK", nil, "", false)
 				tab.UpdateNetworkFailure(requestID, "net::ERR_FAILED")
 				tab.AddConsoleMessage(protocol.ConsoleMessageInfo{Text: requestID})
 				tab.AddJSError(protocol.JSErrorInfo{Message: requestID})

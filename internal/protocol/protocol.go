@@ -312,6 +312,7 @@ type NetworkRequestInfo struct {
 	Timestamp             int64             `json:"timestamp"`
 	Status                *int              `json:"status,omitempty"`
 	StatusText            string            `json:"statusText,omitempty"`
+	FromDiskCache         bool              `json:"fromDiskCache,omitempty"`
 	Failed                bool              `json:"failed,omitempty"`
 	FailureReason         string            `json:"failureReason,omitempty"`
 	RequestHeaders        map[string]string `json:"requestHeaders,omitempty"`

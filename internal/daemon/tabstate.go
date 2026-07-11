@@ -140,7 +140,7 @@ func (ts *TabState) AddNetworkRequest(requestID string, info protocol.NetworkReq
 }
 
 // UpdateNetworkResponse updates an in-flight request with response data.
-func (ts *TabState) UpdateNetworkResponse(requestID string, status *int, statusText string, headers map[string]string, mimeType string) {
+func (ts *TabState) UpdateNetworkResponse(requestID string, status *int, statusText string, headers map[string]string, mimeType string, fromDiskCache bool) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	entry := ts.findNetworkRequest(requestID)
@@ -159,6 +159,7 @@ func (ts *TabState) UpdateNetworkResponse(requestID string, status *int, statusT
 	if mimeType != "" {
 		entry.MimeType = mimeType
 	}
+	entry.FromDiskCache = fromDiskCache
 }
 
 // UpdateNetworkFailure marks a request as failed.
