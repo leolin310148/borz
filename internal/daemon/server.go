@@ -151,13 +151,24 @@ func (s *Server) RunContext(ctx context.Context) error {
 	s.cancelReaper = cancelReaper
 	if s.opts.IdleTabCloseMinutes > 0 {
 		threshold := time.Duration(s.opts.IdleTabCloseMinutes) * time.Minute
+		tickEvery := reaperTickInterval
+		// Real-browser E2E uses an isolated profile and short durations so this
+		// behavior can be exercised without a minute-long test.
+		if os.Getenv("BORZ_E2E") == "1" {
+			if override, err := time.ParseDuration(os.Getenv("BORZ_E2E_IDLE_TAB_THRESHOLD")); err == nil && override > 0 {
+				threshold = override
+			}
+			if override, err := time.ParseDuration(os.Getenv("BORZ_E2E_IDLE_TAB_TICK")); err == nil && override > 0 {
+				tickEvery = override
+			}
+		}
 		fmt.Fprintf(os.Stderr, "borz idle-tab reaper enabled (threshold=%s)\n", threshold)
 		go runIdleTabReaper(
 			reaperCtx,
 			s.cdp.TabManager,
 			s.cdp,
 			threshold,
-			reaperTickInterval,
+			tickEvery,
 			func() string { return s.cdp.GetCurrentTargetID() },
 			time.Now,
 		)

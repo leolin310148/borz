@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/leolin310148/borz/internal/client"
 	e2everify "github.com/leolin310148/borz/internal/e2e_verify_site"
 	"github.com/leolin310148/borz/internal/protocol"
@@ -2220,6 +2221,179 @@ func TestE2ENamedProfileIsolation(t *testing.T) {
 	if _, err := os.Stat(daemonPath(profiles[1])); !os.IsNotExist(err) {
 		t.Fatalf("second profile daemon state remained after shutdown: %v", err)
 	}
+}
+
+func TestE2EIdleTabReaper(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	profile := "e2e-idle-reaper"
+	bin := filepath.Join(t.TempDir(), "borz")
+	build := exec.Command("go", "build", "-o", bin, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build borz e2e binary: %v\n%s", err, out)
+	}
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	baseEnv := make([]string, 0, len(os.Environ())+5)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "BORZ_CDP_URL=") || strings.HasPrefix(entry, "BB_BROWSER_CDP_URL=") {
+			continue
+		}
+		baseEnv = append(baseEnv, entry)
+	}
+	baseEnv = append(baseEnv,
+		"BORZ_HOME="+home,
+		"BORZ_E2E=1",
+		"BORZ_TAB_IDLE_TIMEOUT=1",
+		"BORZ_E2E_IDLE_TAB_THRESHOLD=3s",
+		"BORZ_E2E_IDLE_TAB_TICK=100ms",
+	)
+	run := func(args ...string) string {
+		t.Helper()
+		args = append(args, "--profile", profile)
+		cmd := exec.Command(bin, args...)
+		cmd.Env = baseEnv
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("borz %s failed: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return string(out)
+	}
+	runJSON := func(args ...string) protocol.Response {
+		t.Helper()
+		out := run(args...)
+		var resp protocol.Response
+		if err := json.Unmarshal([]byte(out), &resp); err != nil {
+			t.Fatalf("borz %s returned non-JSON response: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		if !resp.Success || resp.Data == nil {
+			t.Fatalf("borz %s returned unsuccessful response: %+v", strings.Join(args, " "), resp)
+		}
+		return resp
+	}
+
+	daemonPath := filepath.Join(home, "profiles", profile, "daemon.json")
+	portPath := filepath.Join(home, "profiles", profile, "browser", "cdp-port")
+	browserPort := 0
+	t.Cleanup(func() {
+		if raw, readErr := os.ReadFile(daemonPath); readErr == nil {
+			var info protocol.DaemonInfo
+			_ = json.Unmarshal(raw, &info)
+			cmd := exec.Command(bin, "daemon", "shutdown", "--profile", profile)
+			cmd.Env = baseEnv
+			_ = cmd.Run()
+			if info.PID > 0 && !client.WaitForProcessExit(info.PID, 3*time.Second) {
+				if process, findErr := os.FindProcess(info.PID); findErr == nil {
+					_ = process.Kill()
+				}
+			}
+		}
+		if browserPort == 0 {
+			if raw, readErr := os.ReadFile(portPath); readErr == nil {
+				browserPort, _ = strconv.Atoi(strings.TrimSpace(string(raw)))
+			}
+		}
+		if browserPort > 0 {
+			closeE2EBrowser(t, browserPort)
+		}
+	})
+
+	idle := runJSON("open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	active := runJSON("open", site.URL()+"/page2", "--new", "--wait-for", "#page-two-ready", "--timeout", "10000", "--json").Data.Tab
+	blank := runJSON("tab", "new", "--json").Data.Tab
+	if idle == "" || active == "" || blank == "" {
+		t.Fatalf("reaper tabs missing ids: idle=%q active=%q blank=%q", idle, active, blank)
+	}
+	portRaw, err := os.ReadFile(portPath)
+	if err != nil {
+		t.Fatalf("read isolated browser port: %v", err)
+	}
+	browserPort, err = strconv.Atoi(strings.TrimSpace(string(portRaw)))
+	if err != nil || browserPort <= 0 {
+		t.Fatalf("invalid isolated browser port %q: %v", portRaw, err)
+	}
+
+	// Keep the background blank tab fresh without changing the active fixture tab.
+	time.Sleep(1500 * time.Millisecond)
+	blankEval := runJSON("eval", "location.href", "--tab", blank, "--json")
+	if blankEval.Data.Result != "about:blank" {
+		t.Fatalf("blank tab URL = %#v, want about:blank", blankEval.Data.Result)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		tabs := runJSON("tab", "list", "--json").Data.Tabs
+		present := make(map[string]protocol.TabInfo, len(tabs))
+		for _, tab := range tabs {
+			present[tab.Tab] = tab
+		}
+		_, idlePresent := present[idle]
+		activeTab, activePresent := present[active]
+		blankTab, blankPresent := present[blank]
+		if !idlePresent {
+			if !activePresent || !activeTab.Active {
+				t.Fatalf("active fixture tab was not protected: active=%q tabs=%+v", active, tabs)
+			}
+			if !blankPresent || blankTab.URL != "about:blank" {
+				t.Fatalf("fresh blank tab was not preserved: blank=%q tabs=%+v", blank, tabs)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("idle fixture tab %q was not reaped; tabs=%+v", idle, tabs)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func closeE2EBrowser(t *testing.T, port int) {
+	t.Helper()
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port))
+	if err != nil {
+		t.Errorf("close isolated browser: read version endpoint: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	var versionInfo struct {
+		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil || versionInfo.WebSocketDebuggerURL == "" {
+		t.Errorf("close isolated browser: decode version endpoint: %v", err)
+		return
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(versionInfo.WebSocketDebuggerURL, nil)
+	if err != nil {
+		t.Errorf("close isolated browser: connect CDP: %v", err)
+		return
+	}
+	if err := conn.WriteJSON(map[string]interface{}{"id": 1, "method": "Browser.close"}); err != nil {
+		_ = conn.Close()
+		t.Errorf("close isolated browser: send Browser.close: %v", err)
+		return
+	}
+	_ = conn.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	versionURL := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
+	for time.Now().Before(deadline) {
+		check, checkErr := http.Get(versionURL)
+		if checkErr != nil {
+			return
+		}
+		_ = check.Body.Close()
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("close isolated browser: CDP endpoint on port %d remained reachable", port)
 }
 
 func requireEvalStringFromResponse(t *testing.T, resp protocol.Response, want string) {
