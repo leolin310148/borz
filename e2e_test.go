@@ -835,6 +835,86 @@ func TestE2ECLIKeyboardInteraction(t *testing.T) {
 	eval(`document.querySelector("#key-event-data").textContent`, `{"key":"k","target":"arrow-list","alt":true,"ctrl":true,"meta":false,"shift":true}`)
 }
 
+func TestE2ECLIClipboardWriteAndPaste(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/clipboard", "--new", "--wait-for", "#clipboard-ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("clipboard open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	plainText := "plain-clipboard-secret"
+	writeResp := runE2EJSON(t, env, "clipboard-write", plainText, "--tab", tab, "--json")
+	if writeResp.Data.Value != plainText {
+		t.Fatalf("clipboard-write value = %q, want %q", writeResp.Data.Value, plainText)
+	}
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `await navigator.clipboard.readText()`, plainText)
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json")
+	if snapshot.Data.SnapshotData == nil {
+		t.Fatalf("clipboard snapshot returned no snapshot data: %+v", snapshot.Data)
+	}
+	inputRef := refByName(t, snapshot.Data.SnapshotData, "Clipboard paste input")
+	runE2EJSON(t, env, "click", inputRef, "--tab", tab, "--json")
+
+	pastedText := "clipboard-secret-純文字\nsecond-line-🚀"
+	pasteResp := runE2EJSON(t, env, "clipboard-write", pastedText, "--paste", "--tab", tab, "--json")
+	result, ok := pasteResp.Data.Result.(map[string]interface{})
+	if !ok || result["written"] != true || result["pasted"] != true {
+		t.Fatalf("clipboard paste result = %#v", pasteResp.Data.Result)
+	}
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#clipboard-input").value`, pastedText)
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#paste-event").textContent`, pastedText)
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#paste-event").dataset.count`, "1")
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#input-event").textContent`, pastedText)
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#input-event").dataset.count`, "1")
+
+	logs := runE2ECLI(t, env, "logs", "tail", "--lines", "200", "--json")
+	for _, secret := range []string{plainText, "clipboard-secret-", "純文字", "second-line-", "🚀"} {
+		requireNotContains(t, logs, secret, "operational logs")
+	}
+	var entries []struct {
+		Action    string `json:"action"`
+		TextBytes int    `json:"text_bytes"`
+	}
+	if err := json.Unmarshal([]byte(logs), &entries); err != nil {
+		t.Fatalf("decode operational logs: %v\n%s", err, logs)
+	}
+	wantSizes := map[int]bool{len(plainText): false, len(pastedText): false}
+	for _, entry := range entries {
+		if entry.Action == string(protocol.ActionClipboardWrite) {
+			if _, wanted := wantSizes[entry.TextBytes]; wanted {
+				wantSizes[entry.TextBytes] = true
+			}
+		}
+	}
+	for size, found := range wantSizes {
+		if !found {
+			t.Errorf("operational logs missing clipboard_write metadata with text_bytes=%d", size)
+		}
+	}
+}
+
 func TestE2ECLISnapshotModes(t *testing.T) {
 	skipUnlessE2E(t)
 

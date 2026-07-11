@@ -28,7 +28,7 @@ func TestClipboardWrite_MissingText(t *testing.T) {
 }
 
 // clipboard-write JSON-encodes the text into writeText() and, with paste:true,
-// fires a Ctrl+Shift+V key pair into the page.
+// fires the platform paste-as-plain-text key pair into the page.
 func TestClipboardWrite_WritesAndPastes(t *testing.T) {
 	s, f := serverWithFakeCDP(t)
 
@@ -77,7 +77,7 @@ func TestClipboardWrite_WritesAndPastes(t *testing.T) {
 		t.Errorf("write script missing JSON-encoded text; got:\n%s", writeExpr)
 	}
 
-	// Ctrl+Shift+V => modifier mask 2|8 = 10, key "V", down + up.
+	// Platform modifier mask, key "V", down + up.
 	if len(keyEvents) != 2 {
 		t.Fatalf("expected 2 key events (down+up), got %d: %+v", len(keyEvents), keyEvents)
 	}
@@ -85,12 +85,19 @@ func TestClipboardWrite_WritesAndPastes(t *testing.T) {
 		if ev["key"] != "V" {
 			t.Errorf("key = %v want V", ev["key"])
 		}
-		if ev["modifiers"] != float64(10) {
-			t.Errorf("modifiers = %v want 10 (ctrl|shift)", ev["modifiers"])
+		if ev["modifiers"] != float64(pasteModifierMask) {
+			t.Errorf("modifiers = %v want %d", ev["modifiers"], pasteModifierMask)
 		}
 	}
 	if keyEvents[0]["type"] != "keyDown" || keyEvents[1]["type"] != "keyUp" {
 		t.Errorf("event types = %v / %v want keyDown / keyUp", keyEvents[0]["type"], keyEvents[1]["type"])
+	}
+	commands, ok := keyEvents[0]["commands"].([]interface{})
+	if !ok || len(commands) != 1 || commands[0] != "PasteAndMatchStyle" {
+		t.Errorf("keyDown commands = %#v want PasteAndMatchStyle", keyEvents[0]["commands"])
+	}
+	if _, ok := keyEvents[1]["commands"]; ok {
+		t.Errorf("keyUp unexpectedly included commands: %+v", keyEvents[1])
 	}
 
 	// Response surfaces written + pasted flags.
@@ -246,7 +253,7 @@ func TestTermText_NotFound(t *testing.T) {
 	}
 }
 
-// dispatchPasteShortcut builds the Ctrl+Shift+V key descriptor.
+// dispatchPasteShortcut builds the platform paste-as-plain-text key descriptor.
 func TestDispatchPasteShortcut(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
@@ -270,7 +277,11 @@ func TestDispatchPasteShortcut(t *testing.T) {
 	if len(events) != 2 {
 		t.Fatalf("expected down+up, got %d", len(events))
 	}
-	if events[0]["code"] != "KeyV" || events[0]["modifiers"] != float64(10) {
-		t.Errorf("keyDown = %+v want code KeyV modifiers 10", events[0])
+	if events[0]["code"] != "KeyV" || events[0]["modifiers"] != float64(pasteModifierMask) {
+		t.Errorf("keyDown = %+v want code KeyV modifiers %d", events[0], pasteModifierMask)
+	}
+	commands, ok := events[0]["commands"].([]interface{})
+	if !ok || len(commands) != 1 || commands[0] != "PasteAndMatchStyle" {
+		t.Errorf("keyDown commands = %#v want PasteAndMatchStyle", events[0]["commands"])
 	}
 }

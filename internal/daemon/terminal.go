@@ -158,22 +158,29 @@ const termFocusScript = `(() => {
   return visit(document);
 })()`
 
-// dispatchPasteShortcut fires Ctrl+Shift+V against target so the browser
+// dispatchPasteShortcut fires the platform paste-as-plain-text shortcut
+// against target so the browser
 // performs a native paste of the clipboard into the focused element (an
 // xterm.js terminal listens for the resulting `paste` event). Sending a real
 // key event — rather than a synthetic ClipboardEvent — keeps the paste
 // "trusted" so xterm's handler reads it.
 func dispatchPasteShortcut(cdp *CdpConnection, targetID string) error {
-	const ctrlShift = 2 | 8 // CDP modifier mask: ctrl|shift
 	event := func(eventType string) map[string]interface{} {
-		return map[string]interface{}{
+		params := map[string]interface{}{
 			"type":                  eventType,
 			"key":                   "V",
 			"code":                  "KeyV",
 			"windowsVirtualKeyCode": 86,
 			"nativeVirtualKeyCode":  86,
-			"modifiers":             ctrlShift,
+			"modifiers":             pasteModifierMask,
 		}
+		if eventType == "keyDown" {
+			// CDP key events do not pass through the browser's accelerator
+			// handling. Supplying Blink's editor command makes Chromium perform
+			// the trusted plain-text paste and dispatch paste/input events.
+			params["commands"] = []string{"PasteAndMatchStyle"}
+		}
+		return params
 	}
 	if _, err := cdp.SessionCommand(targetID, "Input.dispatchKeyEvent", event("keyDown")); err != nil {
 		return err

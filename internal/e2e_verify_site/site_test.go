@@ -259,6 +259,30 @@ func TestHandlerServesKeyboardPage(t *testing.T) {
 	}
 }
 
+func TestHandlerServesClipboardPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/clipboard", nil)
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clipboard status=%d", rec.Code)
+	}
+	for _, marker := range []string{
+		`id="clipboard-ready"`,
+		`class="xterm-helper-textarea"`,
+		`aria-label="Clipboard paste input"`,
+		`id="paste-event" data-count="0"`,
+		`id="input-event" data-count="0"`,
+		`addEventListener('paste'`,
+		`event.clipboardData.getData('text/plain')`,
+		`addEventListener('input'`,
+	} {
+		if !strings.Contains(rec.Body.String(), marker) {
+			t.Errorf("clipboard page missing %q", marker)
+		}
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {

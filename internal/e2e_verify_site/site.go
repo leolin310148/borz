@@ -63,6 +63,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/file-upload", fileUpload)
 	mux.HandleFunc("/dialogs", dialogs)
 	mux.HandleFunc("/keyboard", keyboard)
+	mux.HandleFunc("/clipboard", clipboard)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -431,6 +432,34 @@ func keyboard(w http.ResponseWriter, r *http.Request) {
       });
       if (event.key === 'Escape') panel.hidden = true;
       if (event.altKey || event.ctrlKey || event.metaKey) event.preventDefault();
+    });
+  </script>
+</body>
+</html>`)
+}
+
+func clipboard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>E2E Clipboard</title></head>
+<body>
+  <h1 id="clipboard-ready">Clipboard fixture</h1>
+  <label for="clipboard-input">Clipboard paste input</label>
+  <textarea id="clipboard-input" class="xterm-helper-textarea" aria-label="Clipboard paste input"></textarea>
+  <output id="paste-event" data-count="0">none</output>
+  <output id="input-event" data-count="0">none</output>
+  <script>
+    const input = document.getElementById('clipboard-input');
+    const pasteEvent = document.getElementById('paste-event');
+    const inputEvent = document.getElementById('input-event');
+    input.addEventListener('paste', (event) => {
+      pasteEvent.dataset.count = String(Number(pasteEvent.dataset.count) + 1);
+      pasteEvent.textContent = event.clipboardData.getData('text/plain');
+    });
+    input.addEventListener('input', () => {
+      inputEvent.dataset.count = String(Number(inputEvent.dataset.count) + 1);
+      inputEvent.textContent = input.value;
     });
   </script>
 </body>
