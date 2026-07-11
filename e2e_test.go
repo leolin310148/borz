@@ -20,6 +20,9 @@ import (
 	"github.com/leolin310148/borz/internal/client"
 	e2everify "github.com/leolin310148/borz/internal/e2e_verify_site"
 	"github.com/leolin310148/borz/internal/protocol"
+	mcpclient "github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
+	mcpprotocol "github.com/mark3labs/mcp-go/mcp"
 )
 
 const (
@@ -1336,6 +1339,134 @@ func TestE2ERESTAgainstServer(t *testing.T) {
 	if secondTitle.Data.Tab != secondTab || secondTitle.Data.Result != "E2E Verify Page Two" {
 		t.Fatalf("second targeted REST eval = tab %q result %#v, want tab %q title %q", secondTitle.Data.Tab, secondTitle.Data.Result, secondTab, "E2E Verify Page Two")
 	}
+}
+
+func TestE2EMCPStdioAgainstVerifySite(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	startE2EDaemon(t, home)
+	stdio := transport.NewStdio(os.Args[0], []string{
+		"BORZ_E2E_HELPER=1",
+		"BORZ_HOME=" + home,
+	}, "-test.run=TestE2ECLIHelper", "--", "mcp")
+	mcpClient := mcpclient.NewClient(stdio)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := mcpClient.Start(ctx); err != nil {
+		t.Fatalf("start MCP stdio client: %v", err)
+	}
+	closed := false
+	t.Cleanup(func() {
+		if !closed {
+			_ = mcpClient.Close()
+		}
+	})
+
+	initRequest := mcpprotocol.InitializeRequest{}
+	initRequest.Params.ProtocolVersion = mcpprotocol.LATEST_PROTOCOL_VERSION
+	initRequest.Params.ClientInfo = mcpprotocol.Implementation{Name: "borz-e2e", Version: "test"}
+	initialized, err := mcpClient.Initialize(ctx, initRequest)
+	if err != nil {
+		t.Fatalf("initialize MCP stdio server: %v", err)
+	}
+	if initialized.ServerInfo.Name != "borz" || initialized.ProtocolVersion == "" || initialized.Capabilities.Tools == nil {
+		t.Fatalf("unexpected MCP initialize result: %+v", initialized)
+	}
+
+	baseURL := site.URL() + "/"
+	navigate := callE2EMCPTool(t, ctx, mcpClient, "browser_navigate", map[string]interface{}{
+		"url": baseURL, "new": true, "waitFor": "#ready", "timeout": 10000,
+	})
+	requireContains(t, navigate, "Navigated to "+baseURL, "MCP navigate result")
+	requireContains(t, navigate, "Page: "+baseURL, "MCP navigate result")
+
+	t.Cleanup(func() {
+		if !closed {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cleanupCancel()
+			_, _ = callMCPTool(cleanupCtx, mcpClient, "browser_close", nil)
+		}
+	})
+	snapshot := callE2EMCPTool(t, ctx, mcpClient, "browser_snapshot", map[string]interface{}{"interactive": true})
+	clickRef := refFromMCPSnapshot(t, snapshot, "Click counter")
+	clicked := callE2EMCPTool(t, ctx, mcpClient, "browser_click", map[string]interface{}{"ref": clickRef})
+	requireContains(t, clicked, "Clicked element @"+clickRef, "MCP click result")
+
+	evaluated := callE2EMCPTool(t, ctx, mcpClient, "browser_eval", map[string]interface{}{
+		"script": `document.querySelector("#clicked-result").textContent`,
+	})
+	if evaluated != `"clicked 1"` {
+		t.Fatalf("MCP eval result = %q, want JSON-shaped string %q", evaluated, `"clicked 1"`)
+	}
+	closedTab := callE2EMCPTool(t, ctx, mcpClient, "browser_close", nil)
+	if closedTab != "Tab closed" {
+		t.Fatalf("MCP close result = %q, want %q", closedTab, "Tab closed")
+	}
+
+	if err := mcpClient.Close(); err != nil {
+		t.Fatalf("close MCP stdio client and wait for server exit: %v", err)
+	}
+	closed = true
+}
+
+func callE2EMCPTool(t *testing.T, ctx context.Context, client *mcpclient.Client, name string, args map[string]interface{}) string {
+	t.Helper()
+	result, err := callMCPTool(ctx, client, name, args)
+	if err != nil {
+		t.Fatalf("call MCP tool %s: %v", name, err)
+	}
+	if result.IsError {
+		t.Fatalf("MCP tool %s returned an error result: %+v", name, result)
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("MCP tool %s returned %d content items, want 1: %+v", name, len(result.Content), result)
+	}
+	text, ok := result.Content[0].(mcpprotocol.TextContent)
+	if !ok || text.Type != "text" {
+		t.Fatalf("MCP tool %s returned non-text content: %#v", name, result.Content[0])
+	}
+	return text.Text
+}
+
+func callMCPTool(ctx context.Context, client *mcpclient.Client, name string, args map[string]interface{}) (*mcpprotocol.CallToolResult, error) {
+	request := mcpprotocol.CallToolRequest{}
+	request.Params.Name = name
+	request.Params.Arguments = args
+	return client.CallTool(ctx, request)
+}
+
+func refFromMCPSnapshot(t *testing.T, snapshot, name string) string {
+	t.Helper()
+	for _, line := range strings.Split(snapshot, "\n") {
+		if !strings.Contains(line, `"`+name+`"`) {
+			continue
+		}
+		_, after, ok := strings.Cut(line, "[ref=")
+		if !ok {
+			break
+		}
+		ref, _, ok := strings.Cut(after, "]")
+		if ok && ref != "" {
+			return ref
+		}
+	}
+	t.Fatalf("MCP snapshot did not contain a ref for %q:\n%s", name, snapshot)
+	return ""
 }
 
 type e2eDaemonEnv struct {
