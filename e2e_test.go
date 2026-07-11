@@ -1217,17 +1217,57 @@ func TestE2EClientModeAgainstServer(t *testing.T) {
 	if openResp.Data == nil || openResp.Data.Tab == "" {
 		t.Fatalf("remote open response did not include tab: %+v", openResp.Data)
 	}
-	requireEvalStringWithPrefix(t, env, []string{"--remote"}, "document.title", "E2E Verify Home")
+	homeTab := openResp.Data.Tab
+	pageTwo := runE2EJSON(t, env, "--remote", "open", site.URL()+"/page2", "--new", "--wait-for", "#page-two-ready", "--timeout", "10000", "--json")
+	if pageTwo.Data == nil || pageTwo.Data.Tab == "" {
+		t.Fatalf("remote second open response did not include tab: %+v", pageTwo.Data)
+	}
+	pageTwoTab := pageTwo.Data.Tab
+	for _, tab := range []string{homeTab, pageTwoTab} {
+		tab := tab
+		t.Cleanup(func() {
+			runE2ERESTJSON(t, serverURL, token, "/v1/close", map[string]interface{}{"tab": tab})
+		})
+	}
 
-	snapshot := runE2EJSON(t, env, "--remote", "snapshot", "-i", "--json")
+	snapshot := runE2EJSON(t, env, "--remote", "snapshot", "-i", "--tab", homeTab, "--json")
 	clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
-	runE2EJSON(t, env, "--remote", "click", clickRef, "--json")
-	requireEvalStringWithPrefix(t, env, []string{"--remote"}, `document.querySelector("#clicked-result").textContent`, "clicked 1")
+	inputRef := refByName(t, snapshot.Data.SnapshotData, "E2E text input")
+	runE2EJSON(t, env, "--remote", "click", clickRef, "--tab", homeTab, "--json")
+	runE2EJSON(t, env, "--remote", "fill", inputRef, "remote form value", "--tab", homeTab, "--wait-for", "#input-state", "--timeout", "5000", "--json")
+	value := runE2EJSON(t, env, "--remote", "eval", `document.querySelector("#text-input").value`, "--tab", homeTab, "--json")
+	if value.Data.Result != "remote form value" {
+		t.Fatalf("remote explicitly targeted form value = %#v", value.Data.Result)
+	}
+	requireEvalStringWithPrefix(t, env, []string{"--remote"}, "document.title", "E2E Verify Page Two")
+
+	runE2EJSON(t, env, "--remote", "console", "--clear", "--tab", homeTab, "--json")
+	runE2EJSON(t, env, "--remote", "errors", "--clear", "--tab", homeTab, "--json")
+	runE2EJSON(t, env, "--remote", "network", "clear", "--tab", homeTab, "--json")
+	runE2EJSON(t, env, "--remote", "eval", `console.log("e2e-remote-console"); setTimeout(() => { throw new Error("e2e remote error"); }, 0); await fetch("/api/ping?from=remote-client"); true`, "--tab", homeTab, "--json")
+	runE2EJSON(t, env, "--remote", "wait", "200", "--tab", homeTab, "--json")
+	consoleResp := runE2EJSON(t, env, "--remote", "console", "--filter", "e2e-remote-console", "--tab", homeTab, "--json")
+	if len(consoleResp.Data.ConsoleMessages) == 0 {
+		t.Fatalf("remote console diagnostics missing targeted message: %+v", consoleResp.Data)
+	}
+	errorsResp := runE2EJSON(t, env, "--remote", "errors", "--filter", "e2e remote error", "--tab", homeTab, "--json")
+	if len(errorsResp.Data.JSErrors) == 0 {
+		t.Fatalf("remote error diagnostics missing targeted error: %+v", errorsResp.Data)
+	}
+	networkResp := runE2EJSON(t, env, "--remote", "network", "requests", "--filter", "from=remote-client", "--tab", homeTab, "--json")
+	if len(networkResp.Data.NetworkRequests) == 0 {
+		t.Fatalf("remote network diagnostics missing targeted request: %+v", networkResp.Data)
+	}
 
 	tabs := runE2EJSON(t, env, "--remote", "tab", "list", "--json")
-	if len(tabs.Data.Tabs) == 0 {
-		t.Fatalf("remote tab list returned no tabs: %+v", tabs.Data)
+	if len(tabs.Data.Tabs) < 2 {
+		t.Fatalf("remote tab list returned fewer than two tabs: %+v", tabs.Data)
 	}
+
+	runE2ECLI(t, env, "client", "setup", serverURL, "--no-check")
+	_, unauthorized := runE2ECLIError(t, env, "--remote", "status")
+	requireContains(t, unauthorized, "borz HTTP 401", "remote missing-token failure")
+	runE2ECLI(t, env, "client", "setup", serverURL, "--token", token)
 }
 
 func TestE2ERESTAgainstServer(t *testing.T) {
@@ -1648,6 +1688,21 @@ func runE2ECLI(t *testing.T, env e2eDaemonEnv, args ...string) string {
 		t.Fatalf("borz %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
 	}
 	return string(out)
+}
+
+func runE2ECLIError(t *testing.T, env e2eDaemonEnv, args ...string) (error, string) {
+	t.Helper()
+	cmdArgs := append([]string{"-test.run=TestE2ECLIHelper", "--"}, args...)
+	cmd := exec.Command(os.Args[0], cmdArgs...)
+	cmd.Env = append(os.Environ(),
+		"BORZ_E2E_HELPER=1",
+		"BORZ_HOME="+env.home,
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("borz %s unexpectedly succeeded:\n%s", strings.Join(args, " "), string(out))
+	}
+	return err, string(out)
 }
 
 func runE2EJSON(t *testing.T, env e2eDaemonEnv, args ...string) protocol.Response {
