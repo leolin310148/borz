@@ -2307,6 +2307,95 @@ func TestE2ECLIEvalOptions(t *testing.T) {
 	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, "window.__borzEvalState.unicode", "Unicode 雪人 ☃️")
 }
 
+func TestE2ECLIOutputShaping(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	opened := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := opened.Data.Tab
+	if tab == "" {
+		t.Fatalf("open response did not include tab: %+v", opened.Data)
+	}
+	t.Cleanup(func() { runE2EJSON(t, env, "close", "--tab", tab, "--json") })
+
+	script := `({object: {label: "live", count: 2}, list: ["first", 7], string: "plain output"})`
+
+	jsonOut := runE2ECLI(t, env, "eval", script, "--tab", tab, "--unwrap", "--json")
+	var jsonResp protocol.Response
+	if err := json.Unmarshal([]byte(jsonOut), &jsonResp); err != nil {
+		t.Fatalf("eval --unwrap --json returned non-JSON output: %v\n%s", err, jsonOut)
+	}
+	result, ok := jsonResp.Data.Result.(map[string]interface{})
+	if !ok || result["string"] != "plain output" {
+		t.Fatalf("eval --unwrap --json did not preserve the response envelope: %#v", jsonResp.Data.Result)
+	}
+
+	objectOut := runE2ECLI(t, env, "eval", script+`.object`, "--tab", tab, "--unwrap")
+	var object map[string]interface{}
+	if err := json.Unmarshal([]byte(objectOut), &object); err != nil {
+		t.Fatalf("unwrapped object is not JSON: %v\n%s", err, objectOut)
+	}
+	if object["label"] != "live" || object["count"] != float64(2) {
+		t.Fatalf("unwrapped object = %#v", object)
+	}
+
+	listOut := runE2ECLI(t, env, "eval", script+`.list`, "--tab", tab, "--unwrap")
+	var list []interface{}
+	if err := json.Unmarshal([]byte(listOut), &list); err != nil {
+		t.Fatalf("unwrapped list is not JSON: %v\n%s", err, listOut)
+	}
+	if len(list) != 2 || list[0] != "first" || list[1] != float64(7) {
+		t.Fatalf("unwrapped list = %#v", list)
+	}
+
+	stringOut := runE2ECLI(t, env, "eval", script+`.string`, "--tab", tab, "--unwrap")
+	if got := strings.TrimSpace(stringOut); got != "plain output" {
+		t.Fatalf("unwrapped string = %q", got)
+	}
+
+	jqOut := runE2ECLI(t, env, "eval", script, "--tab", tab, "--unwrap", "--json", "--jq", ".result.object")
+	var jqObject map[string]interface{}
+	if err := json.Unmarshal([]byte(jqOut), &jqObject); err != nil {
+		t.Fatalf("jq object output is not JSON: %v\n%s", err, jqOut)
+	}
+	if jqObject["label"] != "live" || jqObject["count"] != float64(2) {
+		t.Fatalf("jq object output = %#v", jqObject)
+	}
+
+	jqList := runE2ECLI(t, env, "eval", script, "--tab", tab, "--jq", ".result.list")
+	if err := json.Unmarshal([]byte(jqList), &list); err != nil || len(list) != 2 || list[0] != "first" || list[1] != float64(7) {
+		t.Fatalf("jq list output = %q, parsed %#v, error %v", jqList, list, err)
+	}
+
+	jqString := runE2ECLI(t, env, "eval", script, "--tab", tab, "--jq", ".result.string")
+	if got := strings.TrimSpace(jqString); got != "plain output" {
+		t.Fatalf("jq string output = %q", got)
+	}
+
+	missing := runE2ECLI(t, env, "eval", script, "--tab", tab, "--jq", ".result.missing")
+	if strings.TrimSpace(missing) != "" {
+		t.Fatalf("jq missing path output = %q, want empty", missing)
+	}
+
+	jqFailure := runE2ECLI(t, env, "eval", `(() => { throw new Error("e2e-output-shaping") })()`, "--tab", tab, "--jq", ".error")
+	requireContains(t, jqFailure, "Error: e2e-output-shaping", "jq failure output")
+}
+
 func TestE2ECLIFetchRequests(t *testing.T) {
 	skipUnlessE2E(t)
 
