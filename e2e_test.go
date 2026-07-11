@@ -72,147 +72,159 @@ func TestE2ECLICommandsAgainstVerifySite(t *testing.T) {
 		t.Fatalf("open response did not include short tab id: %+v", openResp.Data)
 	}
 
-	statusOut := runE2ECLI(t, env, "status")
-	requireContains(t, statusOut, `"cdpConnected": true`, "status")
-	daemonStatusOut := runE2ECLI(t, env, "daemon", "status")
-	requireContains(t, daemonStatusOut, `"running": true`, "daemon status")
-	doctorOut := runE2ECLI(t, env, "doctor", "--json")
-	requireContains(t, doctorOut, `"name": "CDP connected"`, "doctor")
+	t.Run("status_and_page_metadata", func(t *testing.T) {
+		statusOut := runE2ECLI(t, env, "status")
+		requireContains(t, statusOut, `"cdpConnected": true`, "status")
+		daemonStatusOut := runE2ECLI(t, env, "daemon", "status")
+		requireContains(t, daemonStatusOut, `"running": true`, "daemon status")
+		doctorOut := runE2ECLI(t, env, "doctor", "--json")
+		requireContains(t, doctorOut, `"name": "CDP connected"`, "doctor")
 
-	requireEvalString(t, env, "document.title", "E2E Verify Home")
-	urlResp := runE2EJSON(t, env, "get", "url", "--json")
-	requireContains(t, urlResp.Data.Value, baseURL+"/", "get url")
-	titleResp := runE2EJSON(t, env, "get", "title", "--json")
-	if titleResp.Data.Value != "E2E Verify Home" {
-		t.Fatalf("get title = %q", titleResp.Data.Value)
-	}
+		requireEvalString(t, env, "document.title", "E2E Verify Home")
+		urlResp := runE2EJSON(t, env, "get", "url", "--json")
+		requireContains(t, urlResp.Data.Value, baseURL+"/", "get url")
+		titleResp := runE2EJSON(t, env, "get", "title", "--json")
+		if titleResp.Data.Value != "E2E Verify Home" {
+			t.Fatalf("get title = %q", titleResp.Data.Value)
+		}
+	})
 
-	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
-	if snapshot.Data.SnapshotData == nil || len(snapshot.Data.SnapshotData.Elements) == 0 {
-		t.Fatalf("snapshot returned no elements: %+v", snapshot.Data)
-	}
-	requireContains(t, snapshot.Data.SnapshotData.Snapshot, "Click counter", "snapshot")
+	t.Run("element_actions", func(t *testing.T) {
+		snapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+		if snapshot.Data.SnapshotData == nil || len(snapshot.Data.SnapshotData.Elements) == 0 {
+			t.Fatalf("snapshot returned no elements: %+v", snapshot.Data)
+		}
+		requireContains(t, snapshot.Data.SnapshotData.Snapshot, "Click counter", "snapshot")
 
-	clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
-	hoverRef := refByName(t, snapshot.Data.SnapshotData, "Hover target")
-	inputRef := refByName(t, snapshot.Data.SnapshotData, "E2E text input")
-	checkRef := refByName(t, snapshot.Data.SnapshotData, "E2E checkbox")
-	selectRef := refByName(t, snapshot.Data.SnapshotData, "E2E color select")
+		clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
+		hoverRef := refByName(t, snapshot.Data.SnapshotData, "Hover target")
+		inputRef := refByName(t, snapshot.Data.SnapshotData, "E2E text input")
+		checkRef := refByName(t, snapshot.Data.SnapshotData, "E2E checkbox")
+		selectRef := refByName(t, snapshot.Data.SnapshotData, "E2E color select")
 
-	getTextResp := runE2EJSON(t, env, "get", "text", clickRef, "--json")
-	if getTextResp.Data.Value != "Click me" {
-		t.Fatalf("get text on click button = %q", getTextResp.Data.Value)
-	}
+		getTextResp := runE2EJSON(t, env, "get", "text", clickRef, "--json")
+		if getTextResp.Data.Value != "Click me" {
+			t.Fatalf("get text on click button = %q", getTextResp.Data.Value)
+		}
 
-	runE2EJSON(t, env, "click", clickRef, "--json")
-	requireEvalString(t, env, `document.querySelector("#clicked-result").textContent`, "clicked 1")
+		runE2EJSON(t, env, "click", clickRef, "--json")
+		requireEvalString(t, env, `document.querySelector("#clicked-result").textContent`, "clicked 1")
 
-	runE2EJSON(t, env, "hover", hoverRef, "--json")
-	requireEvalString(t, env, `document.querySelector("#hover-result").textContent`, "hovered")
+		runE2EJSON(t, env, "hover", hoverRef, "--json")
+		requireEvalString(t, env, `document.querySelector("#hover-result").textContent`, "hovered")
 
-	runE2EJSON(t, env, "fill", inputRef, "hello", "--json")
-	requireEvalString(t, env, `document.querySelector("#text-input").value`, "hello")
-	runE2EJSON(t, env, "type", inputRef, " world", "--json")
-	requireEvalString(t, env, `document.querySelector("#text-input").value`, "hello world")
-	runE2EJSON(t, env, "press", "!", "--json")
-	requireEvalString(t, env, `document.querySelector("#text-input").value`, "hello world!")
+		runE2EJSON(t, env, "fill", inputRef, "hello", "--json")
+		requireEvalString(t, env, `document.querySelector("#text-input").value`, "hello")
+		runE2EJSON(t, env, "type", inputRef, " world", "--json")
+		requireEvalString(t, env, `document.querySelector("#text-input").value`, "hello world")
+		runE2EJSON(t, env, "press", "!", "--json")
+		requireEvalString(t, env, `document.querySelector("#text-input").value`, "hello world!")
 
-	runE2EJSON(t, env, "check", checkRef, "--json")
-	requireEvalBool(t, env, `document.querySelector("#check-box").checked`, true)
-	runE2EJSON(t, env, "uncheck", checkRef, "--json")
-	requireEvalBool(t, env, `document.querySelector("#check-box").checked`, false)
+		runE2EJSON(t, env, "check", checkRef, "--json")
+		requireEvalBool(t, env, `document.querySelector("#check-box").checked`, true)
+		runE2EJSON(t, env, "uncheck", checkRef, "--json")
+		requireEvalBool(t, env, `document.querySelector("#check-box").checked`, false)
 
-	runE2EJSON(t, env, "select", selectRef, "green", "--json")
-	requireEvalString(t, env, `document.querySelector("#color-select").value`, "green")
+		runE2EJSON(t, env, "select", selectRef, "green", "--json")
+		requireEvalString(t, env, `document.querySelector("#color-select").value`, "green")
+	})
 
-	runE2EJSON(t, env, "wait", "10", "--json")
-	runE2EJSON(t, env, "scroll", "down", "900", "--json")
-	runE2EJSON(t, env, "wait", "200", "--json")
-	requireEvalBool(t, env, "document.scrollingElement.scrollTop > 0 || window.scrollY > 0", true)
+	t.Run("scroll_and_screenshot", func(t *testing.T) {
+		runE2EJSON(t, env, "wait", "10", "--json")
+		runE2EJSON(t, env, "scroll", "down", "900", "--json")
+		runE2EJSON(t, env, "wait", "200", "--json")
+		requireEvalBool(t, env, "document.scrollingElement.scrollTop > 0 || window.scrollY > 0", true)
 
-	screenshot := runE2EJSON(t, env, "screenshot", "--json")
-	if !strings.HasPrefix(screenshot.Data.DataURL, "data:image/png;base64,") {
-		t.Fatalf("screenshot data URL prefix mismatch: %.40q", screenshot.Data.DataURL)
-	}
+		screenshot := runE2EJSON(t, env, "screenshot", "--json")
+		if !strings.HasPrefix(screenshot.Data.DataURL, "data:image/png;base64,") {
+			t.Fatalf("screenshot data URL prefix mismatch: %.40q", screenshot.Data.DataURL)
+		}
+	})
 
-	runE2EJSON(t, env, "console", "--clear", "--json")
-	runE2EJSON(t, env, "eval", `console.log("e2e-console-from-test"); true`, "--json")
-	runE2EJSON(t, env, "wait", "100", "--json")
-	consoleResp := runE2EJSON(t, env, "console", "--filter", "e2e-console-from-test", "--json")
-	if len(consoleResp.Data.ConsoleMessages) == 0 {
-		t.Fatalf("console command did not return e2e-console-from-test: %+v", consoleResp.Data)
-	}
+	t.Run("diagnostics_and_fetch", func(t *testing.T) {
+		runE2EJSON(t, env, "console", "--clear", "--json")
+		runE2EJSON(t, env, "eval", `console.log("e2e-console-from-test"); true`, "--json")
+		runE2EJSON(t, env, "wait", "100", "--json")
+		consoleResp := runE2EJSON(t, env, "console", "--filter", "e2e-console-from-test", "--json")
+		if len(consoleResp.Data.ConsoleMessages) == 0 {
+			t.Fatalf("console command did not return e2e-console-from-test: %+v", consoleResp.Data)
+		}
 
-	runE2EJSON(t, env, "errors", "--clear", "--json")
-	runE2EJSON(t, env, "eval", `setTimeout(() => { throw new Error("e2e thrown error"); }, 0); true`, "--json")
-	runE2EJSON(t, env, "wait", "200", "--json")
-	errorsResp := runE2EJSON(t, env, "errors", "--filter", "e2e thrown error", "--json")
-	if len(errorsResp.Data.JSErrors) == 0 {
-		t.Fatalf("errors command did not return e2e thrown error: %+v", errorsResp.Data)
-	}
+		runE2EJSON(t, env, "errors", "--clear", "--json")
+		runE2EJSON(t, env, "eval", `setTimeout(() => { throw new Error("e2e thrown error"); }, 0); true`, "--json")
+		runE2EJSON(t, env, "wait", "200", "--json")
+		errorsResp := runE2EJSON(t, env, "errors", "--filter", "e2e thrown error", "--json")
+		if len(errorsResp.Data.JSErrors) == 0 {
+			t.Fatalf("errors command did not return e2e thrown error: %+v", errorsResp.Data)
+		}
 
-	runE2EJSON(t, env, "network", "clear", "--json")
-	runE2EJSON(t, env, "eval", `await fetch("/api/ping?from=e2e").then(r => r.json())`, "--json")
-	runE2EJSON(t, env, "wait", "100", "--json")
-	networkResp := runE2EJSON(t, env, "network", "requests", "--filter", "/api/ping", "--json")
-	if len(networkResp.Data.NetworkRequests) == 0 {
-		t.Fatalf("network command did not return /api/ping: %+v", networkResp.Data)
-	}
+		runE2EJSON(t, env, "network", "clear", "--json")
+		runE2EJSON(t, env, "eval", `await fetch("/api/ping?from=e2e").then(r => r.json())`, "--json")
+		runE2EJSON(t, env, "wait", "100", "--json")
+		networkResp := runE2EJSON(t, env, "network", "requests", "--filter", "/api/ping", "--json")
+		if len(networkResp.Data.NetworkRequests) == 0 {
+			t.Fatalf("network command did not return /api/ping: %+v", networkResp.Data)
+		}
 
-	fetchResp := runE2EJSON(t, env, "fetch", baseURL+"/api/data", "--json")
-	fetchResult, ok := fetchResp.Data.Result.(map[string]interface{})
-	if !ok || fetchResult["status"].(float64) != 200 {
-		t.Fatalf("fetch result = %#v", fetchResp.Data.Result)
-	}
-	body, ok := fetchResult["body"].(map[string]interface{})
-	if !ok || body["message"] != "hello from e2e verify site" {
-		t.Fatalf("fetch body = %#v", fetchResp.Data.Result)
-	}
+		fetchResp := runE2EJSON(t, env, "fetch", baseURL+"/api/data", "--json")
+		fetchResult, ok := fetchResp.Data.Result.(map[string]interface{})
+		if !ok || fetchResult["status"].(float64) != 200 {
+			t.Fatalf("fetch result = %#v", fetchResp.Data.Result)
+		}
+		body, ok := fetchResult["body"].(map[string]interface{})
+		if !ok || body["message"] != "hello from e2e verify site" {
+			t.Fatalf("fetch body = %#v", fetchResp.Data.Result)
+		}
+	})
 
-	runE2EJSON(t, env, "dialog", "accept", "--json")
-	dialogEval := runE2EJSON(t, env, "eval", `confirm("e2e confirm dialog")`, "--json")
-	if dialogEval.Data.Result != true {
-		t.Fatalf("dialog confirm result = %#v", dialogEval.Data.Result)
-	}
+	t.Run("dialog_frame_and_trace", func(t *testing.T) {
+		runE2EJSON(t, env, "dialog", "accept", "--json")
+		dialogEval := runE2EJSON(t, env, "eval", `confirm("e2e confirm dialog")`, "--json")
+		if dialogEval.Data.Result != true {
+			t.Fatalf("dialog confirm result = %#v", dialogEval.Data.Result)
+		}
 
-	frameResp := runE2EJSON(t, env, "frame", "#verify-frame", "--json")
-	if frameResp.Data.FrameInfo == nil {
-		t.Fatalf("frame command returned no frameInfo: %+v", frameResp.Data)
-	}
-	runE2EJSON(t, env, "frame", "main", "--json")
+		frameResp := runE2EJSON(t, env, "frame", "#verify-frame", "--json")
+		if frameResp.Data.FrameInfo == nil {
+			t.Fatalf("frame command returned no frameInfo: %+v", frameResp.Data)
+		}
+		runE2EJSON(t, env, "frame", "main", "--json")
 
-	runE2EJSON(t, env, "trace", "start", "--json")
-	traceStatus := runE2EJSON(t, env, "trace", "status", "--json")
-	if traceStatus.Data.TraceStatus == nil || !traceStatus.Data.TraceStatus.Recording {
-		t.Fatalf("trace status not recording: %+v", traceStatus.Data.TraceStatus)
-	}
-	traceStop := runE2EJSON(t, env, "trace", "stop", "--json")
-	if traceStop.Data.TraceStatus == nil || traceStop.Data.TraceStatus.Recording {
-		t.Fatalf("trace stop still recording: %+v", traceStop.Data.TraceStatus)
-	}
+		runE2EJSON(t, env, "trace", "start", "--json")
+		traceStatus := runE2EJSON(t, env, "trace", "status", "--json")
+		if traceStatus.Data.TraceStatus == nil || !traceStatus.Data.TraceStatus.Recording {
+			t.Fatalf("trace status not recording: %+v", traceStatus.Data.TraceStatus)
+		}
+		traceStop := runE2EJSON(t, env, "trace", "stop", "--json")
+		if traceStop.Data.TraceStatus == nil || traceStop.Data.TraceStatus.Recording {
+			t.Fatalf("trace stop still recording: %+v", traceStop.Data.TraceStatus)
+		}
+	})
 
-	runE2EJSON(t, env, "open", baseURL+"/page2", "--tab", tab, "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
-	requireEvalString(t, env, "document.title", "E2E Verify Page Two")
-	runE2EJSON(t, env, "back", "--wait-for", "#ready", "--timeout", "5000", "--json")
-	requireEvalString(t, env, "document.title", "E2E Verify Home")
-	runE2EJSON(t, env, "forward", "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
-	requireEvalString(t, env, "document.title", "E2E Verify Page Two")
-	runE2EJSON(t, env, "refresh", "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
+	t.Run("history_and_tabs", func(t *testing.T) {
+		runE2EJSON(t, env, "open", baseURL+"/page2", "--tab", tab, "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
+		requireEvalString(t, env, "document.title", "E2E Verify Page Two")
+		runE2EJSON(t, env, "back", "--wait-for", "#ready", "--timeout", "5000", "--json")
+		requireEvalString(t, env, "document.title", "E2E Verify Home")
+		runE2EJSON(t, env, "forward", "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
+		requireEvalString(t, env, "document.title", "E2E Verify Page Two")
+		runE2EJSON(t, env, "refresh", "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
 
-	tabList := runE2EJSON(t, env, "tab", "list", "--json")
-	if len(tabList.Data.Tabs) == 0 {
-		t.Fatalf("tab list returned no tabs: %+v", tabList.Data)
-	}
-	newTabResp := runE2EJSON(t, env, "tab", "new", baseURL+"/tab", "--json")
-	newTab := newTabResp.Data.Tab
-	if newTab == "" {
-		t.Fatalf("tab new response did not include short id: %+v", newTabResp.Data)
-	}
-	runE2EJSON(t, env, "tab", "select", newTab, "--json")
-	requireEvalString(t, env, "document.title", "E2E Verify Tab")
-	runE2EJSON(t, env, "tab", "close", newTab, "--json")
+		tabList := runE2EJSON(t, env, "tab", "list", "--json")
+		if len(tabList.Data.Tabs) == 0 {
+			t.Fatalf("tab list returned no tabs: %+v", tabList.Data)
+		}
+		newTabResp := runE2EJSON(t, env, "tab", "new", baseURL+"/tab", "--json")
+		newTab := newTabResp.Data.Tab
+		if newTab == "" {
+			t.Fatalf("tab new response did not include short id: %+v", newTabResp.Data)
+		}
+		runE2EJSON(t, env, "tab", "select", newTab, "--json")
+		requireEvalString(t, env, "document.title", "E2E Verify Tab")
+		runE2EJSON(t, env, "tab", "close", newTab, "--json")
 
-	runE2EJSON(t, env, "close", "--tab", tab, "--json")
+		runE2EJSON(t, env, "close", "--tab", tab, "--json")
+	})
 }
 
 func TestE2ECLISPAHistoryNavigation(t *testing.T) {

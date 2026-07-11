@@ -1182,13 +1182,17 @@ The hook skips when no `.go` files are staged. Bypass with `git commit
 
 ### Local Chrome e2e tests
 
-The browser e2e test starts `internal/e2e_verify_site` on localhost, starts a
-local daemon, connects to a real Chromium-based browser through CDP, and drives
-the CLI against that page. It is opt-in locally and explicitly skips in GitHub
+The browser e2e tests start `internal/e2e_verify_site` on localhost, start a
+local daemon, connect to a real Chromium-based browser through CDP, and drive
+the CLI against that page. They are opt-in locally and explicitly skip in GitHub
 Actions.
 
 ```bash
-BORZ_E2E=1 go test -run TestE2ECLICommandsAgainstVerifySite -count=1 -v .
+# Run every opt-in real-Chromium scenario.
+BORZ_E2E=1 go test -run '^TestE2E' -count=1 -v .
+
+# Run one focused subtest.
+BORZ_E2E=1 go test -run '^TestE2ECLICommandsAgainstVerifySite$/^element_actions$' -count=1 -v .
 ```
 
 Set `BORZ_CDP_URL=http://host:port` to force a specific Chrome CDP

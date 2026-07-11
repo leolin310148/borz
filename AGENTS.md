@@ -14,7 +14,8 @@ go vet ./...
 go test -race ./...
 go test -race -run TestFoo ./...
 go test -race -coverprofile=c.out -covermode=atomic ./... && go tool cover -func=c.out
-BORZ_E2E=1 go test -run TestE2ECLICommandsAgainstVerifySite -count=1 -v .
+BORZ_E2E=1 go test -run '^TestE2E' -count=1 -v .
+BORZ_E2E=1 go test -run '^TestE2ECLICommandsAgainstVerifySite$/^element_actions$' -count=1 -v .
 ```
 
 Set hooks once with `git config core.hooksPath .githooks`. Hooks and CI run vet, race tests, and enforce 85% total coverage.
