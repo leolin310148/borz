@@ -2471,6 +2471,86 @@ func TestE2ECLISelectorAndRefErrors(t *testing.T) {
 	}
 }
 
+func TestE2ECLIActionIdempotencyAndStateTransitions(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	tab := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	if tab == "" {
+		t.Fatal("action state fixture open returned no tab")
+	}
+	t.Cleanup(func() { runE2ECLI(t, env, "close", "--tab", tab, "--json") })
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json").Data.SnapshotData
+	if snapshot == nil {
+		t.Fatal("action state snapshot returned no data")
+	}
+	clickRef := refByName(t, snapshot, "Click counter")
+	hoverRef := refByName(t, snapshot, "Hover target")
+	inputRef := refByName(t, snapshot, "E2E text input")
+	submitRef := refByName(t, snapshot, "Submit form")
+	checkRef := refByName(t, snapshot, "E2E checkbox")
+	selectRef := refByName(t, snapshot, "E2E color select")
+
+	assertState := func(label, script string) {
+		t.Helper()
+		resp := runE2EJSON(t, env, "eval", script, "--tab", tab, "--json")
+		if ok, _ := resp.Data.Result.(bool); !ok {
+			t.Fatalf("%s state check = %#v, want true", label, resp.Data.Result)
+		}
+	}
+
+	for range 2 {
+		runE2EJSON(t, env, "check", checkRef, "--tab", tab, "--json")
+	}
+	assertState("repeated check", `document.querySelector("#check-box").checked && document.querySelector("#checkbox-state").textContent === "checked"`)
+	for range 2 {
+		runE2EJSON(t, env, "uncheck", checkRef, "--tab", tab, "--json")
+	}
+	assertState("repeated uncheck", `!document.querySelector("#check-box").checked && document.querySelector("#checkbox-state").textContent === "unchecked"`)
+
+	runE2EJSON(t, env, "fill", inputRef, "Unicode 測試 ☃️", "--tab", tab, "--json")
+	assertState("Unicode fill", `document.querySelector("#text-input").value === "Unicode 測試 ☃️" && document.querySelector("#input-state").textContent === "Unicode 測試 ☃️"`)
+	runE2EJSON(t, env, "fill", inputRef, "", "--tab", tab, "--json")
+	assertState("empty fill", `document.querySelector("#text-input").value === "" && document.querySelector("#input-state").textContent === "empty"`)
+
+	for range 2 {
+		runE2EJSON(t, env, "select", selectRef, "green", "--tab", tab, "--json")
+	}
+	assertState("repeated select", `document.querySelector("#color-select").value === "green" && document.querySelector("#select-state").textContent === "green"`)
+
+	for range 2 {
+		runE2EJSON(t, env, "hover", hoverRef, "--tab", tab, "--json")
+	}
+	assertState("repeated hover", `document.querySelector("#hover-result").textContent === "hovered"`)
+	for range 2 {
+		runE2EJSON(t, env, "click", clickRef, "--tab", tab, "--json")
+	}
+	assertState("repeated click", `document.querySelector("#clicked-result").textContent === "clicked 2"`)
+
+	runE2EJSON(t, env, "eval", `window.__borzSubmitCount = 0; document.querySelector("#text-form").addEventListener("submit", () => { window.__borzSubmitCount += 1; }); true`, "--tab", tab, "--json")
+	runE2EJSON(t, env, "fill", inputRef, "submit 測試", "--tab", tab, "--json")
+	for range 2 {
+		runE2EJSON(t, env, "click", submitRef, "--tab", tab, "--json")
+	}
+	assertState("submission event count", `window.__borzSubmitCount === 2 && document.querySelector("#submit-result").textContent === "submitted submit 測試"`)
+}
+
 func TestE2ECLIFetchRequests(t *testing.T) {
 	skipUnlessE2E(t)
 
