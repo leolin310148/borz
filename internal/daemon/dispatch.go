@@ -1853,12 +1853,18 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		defer traceMu.Unlock()
 		switch subCmd {
 		case "start":
+			if traceRecording {
+				return failResp(req.ID, "trace is already recording")
+			}
 			traceRecording = true
 			traceEvents = nil
 			return okResp(req.ID, &protocol.ResponseData{
 				TraceStatus: &protocol.TraceStatus{Recording: true, EventCount: 0}, Tab: shortID,
 			})
 		case "stop":
+			if !traceRecording {
+				return failResp(req.ID, "trace is not recording")
+			}
 			traceRecording = false
 			events := make([]protocol.TraceEvent, len(traceEvents))
 			copy(events, traceEvents)

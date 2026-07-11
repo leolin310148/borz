@@ -76,6 +76,22 @@ func TestDispatchTabSelectionCloseAndTraceBranches(t *testing.T) {
 			t.Fatalf("trace %s = %+v", tc.cmd, resp)
 		}
 	}
+	resp = DispatchRequest(c, &protocol.Request{ID: "trace-stop-again", Action: protocol.ActionTrace, TraceCommand: "stop"})
+	if resp.Success || !strings.Contains(resp.Error, "not recording") {
+		t.Fatalf("repeated trace stop = %+v", resp)
+	}
+	resp = DispatchRequest(c, &protocol.Request{ID: "trace-restart", Action: protocol.ActionTrace, TraceCommand: "start"})
+	if !resp.Success {
+		t.Fatalf("trace restart = %+v", resp)
+	}
+	resp = DispatchRequest(c, &protocol.Request{ID: "trace-start-again", Action: protocol.ActionTrace, TraceCommand: "start"})
+	if resp.Success || !strings.Contains(resp.Error, "already recording") {
+		t.Fatalf("repeated trace start = %+v", resp)
+	}
+	resp = DispatchRequest(c, &protocol.Request{ID: "trace-final-stop", Action: protocol.ActionTrace, TraceCommand: "stop"})
+	if !resp.Success {
+		t.Fatalf("trace final stop = %+v", resp)
+	}
 	resp = DispatchRequest(c, &protocol.Request{ID: "history", Action: protocol.ActionHistory})
 	if resp.Success || !strings.Contains(resp.Error, "not supported") {
 		t.Fatalf("history = %+v", resp)

@@ -4165,6 +4165,107 @@ func TestE2ECLILocalRecording(t *testing.T) {
 	}
 }
 
+func TestE2ECLITracingArtifact(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		status := runE2EJSONResponse(t, env, "trace", "status", "--tab", tab, "--json")
+		if status.Success && status.Data != nil && status.Data.TraceStatus != nil && status.Data.TraceStatus.Recording {
+			runE2EJSON(t, env, "trace", "stop", "--tab", tab, "--json")
+		}
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	runE2EJSON(t, env, "trace", "start", "--tab", tab, "--json")
+	repeatedStart := runE2EJSONResponse(t, env, "trace", "start", "--tab", tab, "--json")
+	if repeatedStart.Success || !strings.Contains(repeatedStart.Error, "already recording") {
+		t.Fatalf("repeated trace start response = %+v", repeatedStart)
+	}
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json")
+	if snapshot.Data.SnapshotData == nil {
+		t.Fatalf("trace snapshot returned no snapshot data: %+v", snapshot.Data)
+	}
+	clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
+	inputRef := refByName(t, snapshot.Data.SnapshotData, "E2E text input")
+	runE2EJSON(t, env, "click", clickRef, "--tab", tab, "--json")
+	runE2EJSON(t, env, "fill", inputRef, "trace artifact text", "--tab", tab, "--json")
+
+	artifactPath := filepath.Join(t.TempDir(), "trace.json")
+	artifact, err := os.Create(artifactPath)
+	if err != nil {
+		t.Fatalf("create trace artifact: %v", err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestE2ECLIHelper", "--", "trace", "stop", "--tab", tab, "--json")
+	cmd.Env = append(os.Environ(), "BORZ_E2E_HELPER=1", "BORZ_HOME="+env.home)
+	var stderr bytes.Buffer
+	cmd.Stdout = artifact
+	cmd.Stderr = &stderr
+	runErr := cmd.Run()
+	closeErr := artifact.Close()
+	if runErr != nil {
+		t.Fatalf("stop trace to artifact: %v\n%s", runErr, stderr.String())
+	}
+	if closeErr != nil {
+		t.Fatalf("close trace artifact: %v", closeErr)
+	}
+
+	artifactInfo, err := os.Stat(artifactPath)
+	if err != nil {
+		t.Fatalf("stat trace artifact: %v", err)
+	}
+	if artifactInfo.Size() == 0 {
+		t.Fatal("trace artifact is empty")
+	}
+	artifactData, err := os.ReadFile(artifactPath)
+	if err != nil {
+		t.Fatalf("read trace artifact: %v", err)
+	}
+	var stopped protocol.Response
+	if err := json.Unmarshal(artifactData, &stopped); err != nil {
+		t.Fatalf("decode trace artifact: %v\n%s", err, artifactData)
+	}
+	if !stopped.Success || stopped.Data == nil || stopped.Data.TraceStatus == nil ||
+		stopped.Data.TraceStatus.Recording || stopped.Data.TraceStatus.EventCount != 2 ||
+		len(stopped.Data.TraceEvents) != 2 {
+		t.Fatalf("trace artifact response = %+v", stopped)
+	}
+	clickEvent, fillEvent := stopped.Data.TraceEvents[0], stopped.Data.TraceEvents[1]
+	if clickEvent.Type != "click" || clickEvent.Timestamp <= 0 || clickEvent.Ref == nil {
+		t.Fatalf("trace click event = %+v", clickEvent)
+	}
+	if fillEvent.Type != "fill" || fillEvent.Timestamp <= 0 || fillEvent.Ref == nil ||
+		fillEvent.Value != "trace artifact text" {
+		t.Fatalf("trace fill event = %+v", fillEvent)
+	}
+
+	repeatedStop := runE2EJSONResponse(t, env, "trace", "stop", "--tab", tab, "--json")
+	if repeatedStop.Success || !strings.Contains(repeatedStop.Error, "not recording") {
+		t.Fatalf("repeated trace stop response = %+v", repeatedStop)
+	}
+}
+
 func skipUnlessE2E(t *testing.T) {
 	t.Helper()
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
