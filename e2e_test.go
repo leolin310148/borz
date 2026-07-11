@@ -1854,6 +1854,106 @@ func TestE2ECLITabLifecycle(t *testing.T) {
 	}
 }
 
+func TestE2ECLIPerActionTabTargeting(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	baseURL := site.URL()
+	first := runE2EJSON(t, env, "open", baseURL+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	second := runE2EJSON(t, env, "open", baseURL+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	if first == "" || second == "" || first == second {
+		t.Fatalf("per-action fixtures are not distinct: first=%q second=%q", first, second)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", first, "--json")
+		runE2ECLI(t, env, "close", "--tab", second, "--json")
+	})
+
+	requireTab := func(operation string, resp protocol.Response, want string) {
+		t.Helper()
+		if resp.Data.Tab != want {
+			t.Fatalf("%s response tab = %q, want %q", operation, resp.Data.Tab, want)
+		}
+	}
+	requireSecondActive := func(stage string) {
+		t.Helper()
+		tabs := runE2EJSON(t, env, "tab", "list", "--json").Data.Tabs
+		active := ""
+		for _, tab := range tabs {
+			if tab.Active {
+				active = tab.Tab
+				break
+			}
+		}
+		if active != second {
+			t.Fatalf("active tab after %s = %q, want second fixture %q; tabs=%+v", stage, active, second, tabs)
+		}
+	}
+
+	firstSetup := runE2EJSON(t, env, "eval", `document.querySelector("#click-button").setAttribute("aria-label", "First tab action"); document.querySelector("#clicked-result").textContent = "first idle"; true`, "--tab", first, "--json")
+	requireTab("first eval", firstSetup, first)
+	secondSetup := runE2EJSON(t, env, "eval", `document.querySelector("#click-button").setAttribute("aria-label", "Second tab action"); document.querySelector("#clicked-result").textContent = "second idle"; true`, "--tab", second, "--json")
+	requireTab("second eval", secondSetup, second)
+	requireSecondActive("targeted evals")
+
+	firstSnapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", first, "--json")
+	requireTab("first snapshot", firstSnapshot, first)
+	firstRef := refByName(t, firstSnapshot.Data.SnapshotData, "First tab action")
+	secondSnapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", second, "--json")
+	requireTab("second snapshot", secondSnapshot, second)
+	secondRef := refByName(t, secondSnapshot.Data.SnapshotData, "Second tab action")
+	requireSecondActive("targeted snapshots")
+
+	firstGet := runE2EJSON(t, env, "get", "text", firstRef, "--tab", first, "--json")
+	requireTab("first get", firstGet, first)
+	if firstGet.Data.Value != "Click me" {
+		t.Fatalf("first get text = %q, want Click me", firstGet.Data.Value)
+	}
+	secondGet := runE2EJSON(t, env, "get", "text", secondRef, "--tab", second, "--json")
+	requireTab("second get", secondGet, second)
+	if secondGet.Data.Value != "Click me" {
+		t.Fatalf("second get text = %q, want Click me", secondGet.Data.Value)
+	}
+	requireSecondActive("targeted gets")
+
+	firstClick := runE2EJSON(t, env, "click", firstRef, "--tab", first, "--json")
+	requireTab("first click", firstClick, first)
+	firstResult := runE2EJSON(t, env, "eval", `document.querySelector("#clicked-result").textContent`, "--tab", first, "--json")
+	requireTab("first result eval", firstResult, first)
+	if firstResult.Data.Result != "clicked 1" {
+		t.Fatalf("first action result = %#v, want clicked 1", firstResult.Data.Result)
+	}
+	secondBeforeClick := runE2EJSON(t, env, "eval", `document.querySelector("#clicked-result").textContent`, "--tab", second, "--json")
+	requireTab("second isolation eval", secondBeforeClick, second)
+	if secondBeforeClick.Data.Result != "second idle" {
+		t.Fatalf("first action affected second tab: result=%#v", secondBeforeClick.Data.Result)
+	}
+
+	secondClick := runE2EJSON(t, env, "click", secondRef, "--tab", second, "--json")
+	requireTab("second click", secondClick, second)
+	secondResult := runE2EJSON(t, env, "eval", `document.querySelector("#clicked-result").textContent`, "--tab", second, "--json")
+	requireTab("second result eval", secondResult, second)
+	if secondResult.Data.Result != "clicked 1" {
+		t.Fatalf("second action result = %#v, want clicked 1", secondResult.Data.Result)
+	}
+	requireSecondActive("all explicitly targeted actions")
+}
+
 func TestE2ECLIDelaySemantics(t *testing.T) {
 	skipUnlessE2E(t)
 
