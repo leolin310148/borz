@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -300,6 +301,7 @@ func TestRestJSON_MethodRejection(t *testing.T) {
 	if got := rec.Header().Get("Allow"); got != http.MethodPost {
 		t.Fatalf("GET /v1/click Allow = %q want %q", got, http.MethodPost)
 	}
+	assertRESTErrorEnvelope(t, rec, "Method not allowed")
 }
 
 func TestRestJSON_BadJSON(t *testing.T) {
@@ -312,6 +314,18 @@ func TestRestJSON_BadJSON(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != 400 {
 		t.Fatalf("bad JSON: got %d want 400", rec.Code)
+	}
+	assertRESTErrorEnvelope(t, rec, "invalid JSON")
+}
+
+func assertRESTErrorEnvelope(t *testing.T, rec *httptest.ResponseRecorder, wantError string) {
+	t.Helper()
+	var resp protocol.Response
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode REST error envelope: %v\n%s", err, rec.Body.String())
+	}
+	if resp.ID == "" || resp.Success || !strings.Contains(resp.Error, wantError) || resp.Data != nil {
+		t.Fatalf("REST error envelope = %+v, want id, success=false, error containing %q", resp, wantError)
 	}
 }
 

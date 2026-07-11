@@ -98,6 +98,9 @@ func (s *Server) RunContext(ctx context.Context) error {
 	s.registerExtRoutes(protectedMux)
 	s.registerRecordingRoutes(protectedMux)
 	s.registerRecordingPreviewRoutes(protectedMux)
+	protectedMux.HandleFunc("/v1/", func(w http.ResponseWriter, r *http.Request) {
+		sendRESTError(w, http.StatusNotFound, "Not found")
+	})
 
 	root := http.NewServeMux()
 	root.HandleFunc("/healthz", s.handleHealthz)
@@ -275,7 +278,11 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			}
 			if !validBearerToken(auth, s.opts.Token) {
 				w.Header().Set("WWW-Authenticate", "Bearer")
-				sendJSON(w, 401, map[string]string{"error": "Unauthorized"})
+				if strings.HasPrefix(r.URL.Path, "/v1/") {
+					sendRESTError(w, http.StatusUnauthorized, "Unauthorized")
+				} else {
+					sendJSON(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+				}
 				return
 			}
 		}
@@ -494,4 +501,13 @@ func sendJSON(w http.ResponseWriter, status int, data interface{}) {
 func sendMethodNotAllowed(w http.ResponseWriter, allowed ...string) {
 	w.Header().Set("Allow", strings.Join(allowed, ", "))
 	sendJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+}
+
+func sendRESTError(w http.ResponseWriter, status int, message string) {
+	sendJSON(w, status, &protocol.Response{ID: newReqID(), Success: false, Error: message})
+}
+
+func sendRESTMethodNotAllowed(w http.ResponseWriter, allowed ...string) {
+	w.Header().Set("Allow", strings.Join(allowed, ", "))
+	sendRESTError(w, http.StatusMethodNotAllowed, "Method not allowed")
 }

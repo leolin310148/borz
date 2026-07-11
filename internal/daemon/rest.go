@@ -518,21 +518,21 @@ func (s *Server) restJSON(build func(restBody) *protocol.Request) http.HandlerFu
 func (s *Server) restJSONE(build func(restBody) (*protocol.Request, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			sendMethodNotAllowed(w, http.MethodPost)
+			sendRESTMethodNotAllowed(w, http.MethodPost)
 			return
 		}
 		body, err := readBody(r)
 		if err != nil {
-			sendJSON(w, 400, map[string]string{"error": err.Error()})
+			sendRESTError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if err := body.validateTiming(); err != nil {
-			sendJSON(w, 400, map[string]string{"error": err.Error()})
+			sendRESTError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		req, err := build(body)
 		if err != nil {
-			sendJSON(w, 400, map[string]string{"error": err.Error()})
+			sendRESTError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		req.ID = newReqID()

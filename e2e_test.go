@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/png"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -2744,6 +2745,88 @@ func TestE2ERESTWaitAndDelaySemantics(t *testing.T) {
 		if status != http.StatusBadRequest || invalid.Error != field+" must be a non-negative integer" {
 			t.Errorf("REST %s lower bound = status %d, response %+v", field, status, invalid)
 		}
+	}
+}
+
+func TestE2ERESTMalformedRequests(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	token := "e2e-rest-malformed-token"
+	_, serverURL := startE2EServer(t, home, token)
+
+	request := func(method, path, bearer, contentType, body string) (*http.Response, []byte) {
+		t.Helper()
+		req, err := http.NewRequest(method, serverURL+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("build %s %s: %v", method, path, err)
+		}
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		defer resp.Body.Close()
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read %s %s: %v", method, path, err)
+		}
+		return resp, raw
+	}
+
+	assertError := func(name, method, path, bearer, contentType, body string, wantStatus int, wantError string) {
+		t.Helper()
+		resp, raw := request(method, path, bearer, contentType, body)
+		if resp.StatusCode != wantStatus {
+			t.Fatalf("%s status = %d, want %d; body=%s", name, resp.StatusCode, wantStatus, raw)
+		}
+		if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+			t.Fatalf("%s Content-Type = %q, want application/json", name, got)
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+			t.Fatalf("%s CORS origin = %q, want *", name, got)
+		}
+		var envelope protocol.Response
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			t.Fatalf("decode %s envelope: %v\n%s", name, err, raw)
+		}
+		if envelope.ID == "" || envelope.Success || envelope.Data != nil || !strings.Contains(envelope.Error, wantError) {
+			t.Fatalf("%s envelope = %+v, want id, success=false, error containing %q", name, envelope, wantError)
+		}
+	}
+
+	assertError("invalid JSON", http.MethodPost, "/v1/snapshot", token, "text/plain", `{not-json`, http.StatusBadRequest, "invalid JSON")
+	assertError("missing required field with ignored unknown field", http.MethodPost, "/v1/upload", token, "application/json", `{"unknownField":true}`, http.StatusBadRequest, "files (or file) is required")
+	assertError("wrong method", http.MethodGet, "/v1/snapshot", token, "", "", http.StatusMethodNotAllowed, "Method not allowed")
+	assertError("bad bearer token", http.MethodPost, "/v1/snapshot", "wrong-token", "application/json", `{}`, http.StatusUnauthorized, "Unauthorized")
+	assertError("unknown route", http.MethodPost, "/v1/does-not-exist", token, "application/json", `{}`, http.StatusNotFound, "Not found")
+
+	wrongMethod, _ := request(http.MethodGet, "/v1/snapshot", token, "", "")
+	if got := wrongMethod.Header.Get("Allow"); got != http.MethodPost {
+		t.Fatalf("wrong-method Allow = %q, want POST", got)
+	}
+	badToken, _ := request(http.MethodPost, "/v1/snapshot", "wrong-token", "application/json", `{}`)
+	if got := badToken.Header.Get("WWW-Authenticate"); got != "Bearer" {
+		t.Fatalf("bad-token WWW-Authenticate = %q, want Bearer", got)
+	}
+
+	preflight, raw := request(http.MethodOptions, "/v1/snapshot", "", "", "")
+	if preflight.StatusCode != http.StatusNoContent || len(raw) != 0 {
+		t.Fatalf("CORS preflight = status %d body %q, want 204 with empty body", preflight.StatusCode, raw)
+	}
+	if preflight.Header.Get("Access-Control-Allow-Origin") != "*" ||
+		!strings.Contains(preflight.Header.Get("Access-Control-Allow-Methods"), http.MethodPost) ||
+		!strings.Contains(preflight.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
+		t.Fatalf("CORS preflight headers = %v", preflight.Header)
 	}
 }
 
