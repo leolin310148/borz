@@ -24,6 +24,7 @@ import (
 	"github.com/leolin310148/borz/internal/client"
 	e2everify "github.com/leolin310148/borz/internal/e2e_verify_site"
 	"github.com/leolin310148/borz/internal/protocol"
+	"github.com/leolin310148/borz/internal/recorder"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
 	mcpprotocol "github.com/mark3labs/mcp-go/mcp"
@@ -4067,6 +4068,101 @@ func refFromMCPSnapshot(t *testing.T, snapshot, name string) string {
 
 type e2eDaemonEnv struct {
 	home string
+}
+
+func TestE2ECLILocalRecording(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	baseURL := site.URL()
+	openResp := runE2EJSON(t, env, "open", baseURL+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	runE2EJSON(t, env, "eval", `document.querySelector("#click-button").style.cursor = "pointer"`, "--json")
+	bundlePath := filepath.Join(t.TempDir(), "local-recording.borzrec")
+	const recordingID = "e2e-local-recording"
+	startOut := runE2ECLI(t, env, "record", "start", "--id", recordingID, "--tab", tab,
+		"--out", bundlePath, "--fps", "10", "--lossless", "--mask-selectors", "#text-input", "--json")
+	var started recordInfo
+	if err := json.Unmarshal([]byte(startOut), &started); err != nil {
+		t.Fatalf("decode record start response: %v\n%s", err, startOut)
+	}
+	if started.ID != recordingID || started.Status != "recording" || started.Path != bundlePath {
+		t.Fatalf("record start response = %+v", started)
+	}
+
+	runE2EJSON(t, env, "wait", "300", "--json")
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+	if snapshot.Data.SnapshotData == nil {
+		t.Fatalf("recording snapshot returned no snapshot data: %+v", snapshot.Data)
+	}
+	runE2EJSON(t, env, "click", refByName(t, snapshot.Data.SnapshotData, "Click counter"), "--json")
+	runE2EJSON(t, env, "click", refByName(t, snapshot.Data.SnapshotData, "E2E text input"), "--json")
+	runE2EJSON(t, env, "press", "z", "--json")
+	runE2EJSON(t, env, "wait", "400", "--json")
+
+	stopOut := runE2ECLI(t, env, "record", "stop", recordingID, "--json")
+	var stopped recordInfo
+	if err := json.Unmarshal([]byte(stopOut), &stopped); err != nil {
+		t.Fatalf("decode record stop response: %v\n%s", err, stopOut)
+	}
+	if stopped.Status != "stopped" || stopped.FrameCount == 0 || stopped.EventCount == 0 {
+		t.Fatalf("record stop response = %+v", stopped)
+	}
+
+	bundle, err := recorder.Verify(bundlePath)
+	if err != nil {
+		t.Fatalf("verify recording bundle: %v", err)
+	}
+	if bundle.Manifest.SchemaVersion != recorder.SchemaVersion || bundle.Manifest.Partial || bundle.Manifest.FinalizedAt == nil {
+		t.Fatalf("recording manifest finalization/schema = %+v", bundle.Manifest)
+	}
+	if bundle.Manifest.CaptureMode != "cdp" || bundle.Manifest.Options.Tab != tab ||
+		!slices.Contains(bundle.Manifest.Options.MaskSelectors, "#text-input") {
+		t.Fatalf("recording manifest options = %+v", bundle.Manifest)
+	}
+	if len(bundle.Frames) == 0 || bundle.Frames[0].Width <= 0 || bundle.Frames[0].Height <= 0 {
+		t.Fatalf("recording frames = %+v", bundle.Frames)
+	}
+
+	var foundClick, foundRedactedKey bool
+	for _, event := range bundle.Events {
+		if event.Type == "click" && event.Selector == "button#click-button" &&
+			event.X != nil && event.Y != nil && event.Cursor == "pointer" && !event.Redacted {
+			foundClick = true
+		}
+		if (event.Type == "keydown" || event.Type == "keyup") && event.Selector == "input#text-input" &&
+			event.Redacted && event.Key == "<redacted>" && event.Text == "<redacted>" {
+			foundRedactedKey = true
+		}
+	}
+	if !foundClick {
+		t.Fatalf("recording events missing click coordinates/cursor metadata: %+v", bundle.Events)
+	}
+	if !foundRedactedKey {
+		t.Fatalf("recording events missing redacted input metadata: %+v", bundle.Events)
+	}
 }
 
 func skipUnlessE2E(t *testing.T) {
