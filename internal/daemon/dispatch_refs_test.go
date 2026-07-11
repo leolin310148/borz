@@ -20,7 +20,7 @@ func setupRefHandlers(f *fakeCDP) {
 	})
 	f.On("Runtime.callFunctionOn", func(json.RawMessage) (interface{}, error) {
 		return map[string]interface{}{
-			"result": map[string]interface{}{"value": map[string]interface{}{"x": 12.5, "y": 20.0}},
+			"result": map[string]interface{}{"value": map[string]interface{}{"x": 12.5, "y": 20.0, "ok": true}},
 		}, nil
 	})
 	f.On("Input.dispatchMouseEvent", func(json.RawMessage) (interface{}, error) {
@@ -131,6 +131,35 @@ func TestDispatch_Check_Uncheck_Select(t *testing.T) {
 	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionSelect, Ref: "1", Value: "opt2"})
 	if !resp.Success {
 		t.Fatalf("select: %+v", resp)
+	}
+}
+
+func TestDispatch_SelectRejectsWrongElementAndUnknownValue(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	f.On("Runtime.callFunctionOn", func(params json.RawMessage) (interface{}, error) {
+		message := "element is not a select"
+		if strings.Contains(string(params), `"value":"missing"`) {
+			message = "select value not found: missing"
+		}
+		return map[string]interface{}{
+			"result": map[string]interface{}{"value": map[string]interface{}{"ok": false, "error": message}},
+		}, nil
+	})
+	c := connectCdp(t, f)
+
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "1", &protocol.RefInfo{BackendDOMNodeID: 10})
+
+	wrongType := DispatchRequest(c, &protocol.Request{ID: "wrong-type", Action: protocol.ActionSelect, Ref: "1", Value: "green"})
+	if wrongType.Success || !strings.Contains(wrongType.Error, "not a select") {
+		t.Fatalf("select wrong element type = %+v", wrongType)
+	}
+
+	invalidValue := DispatchRequest(c, &protocol.Request{ID: "invalid-value", Action: protocol.ActionSelect, Ref: "1", Value: "missing"})
+	if invalidValue.Success || !strings.Contains(invalidValue.Error, "select value not found: missing") {
+		t.Fatalf("select invalid value = %+v", invalidValue)
 	}
 }
 

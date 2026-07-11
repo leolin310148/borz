@@ -122,7 +122,11 @@ func TestDispatchFrameDialogAndEventQueryBranches(t *testing.T) {
 		return map[string]interface{}{"root": map[string]interface{}{"nodeId": 10}}, nil
 	})
 	queryNode := 7
+	invalidSelector := false
 	f.On("DOM.querySelector", func(json.RawMessage) (interface{}, error) {
+		if invalidSelector {
+			return nil, fmt.Errorf("DOM Error while querying")
+		}
 		return map[string]interface{}{"nodeId": queryNode}, nil
 	})
 	frameID := "F1"
@@ -157,6 +161,12 @@ func TestDispatchFrameDialogAndEventQueryBranches(t *testing.T) {
 	if resp.Success || !strings.Contains(resp.Error, "iframe not found") {
 		t.Fatalf("frame not found = %+v", resp)
 	}
+	invalidSelector = true
+	resp = DispatchRequest(c, &protocol.Request{ID: "frame-invalid-selector", Action: protocol.ActionFrame, Selector: "["})
+	if resp.Success || !strings.Contains(resp.Error, `invalid selector "["`) {
+		t.Fatalf("frame invalid selector = %+v", resp)
+	}
+	invalidSelector = false
 	queryNode = 7
 	frameID = ""
 	resp = DispatchRequest(c, &protocol.Request{ID: "frame-no-id", Action: protocol.ActionFrame, Selector: "iframe"})

@@ -1165,11 +1165,41 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			} `json:"object"`
 		}
 		json.Unmarshal(resolvedRaw, &resolved)
-		valueJSON, _ := json.Marshal(req.Value)
-		cdp.SessionCommand(target.ID, "Runtime.callFunctionOn", map[string]interface{}{
-			"objectId":            resolved.Object.ObjectID,
-			"functionDeclaration": fmt.Sprintf(`function() { this.value = %s; this.dispatchEvent(new Event('input', { bubbles: true })); this.dispatchEvent(new Event('change', { bubbles: true })); }`, string(valueJSON)),
+		callRaw, err := cdp.SessionCommand(target.ID, "Runtime.callFunctionOn", map[string]interface{}{
+			"objectId": resolved.Object.ObjectID,
+			"functionDeclaration": `function(value) {
+				if (!(this instanceof HTMLSelectElement)) return { ok: false, error: 'element is not a select' };
+				if (!Array.from(this.options).some((option) => option.value === value)) {
+					return { ok: false, error: 'select value not found: ' + value };
+				}
+				this.value = value;
+				this.dispatchEvent(new Event('input', { bubbles: true }));
+				this.dispatchEvent(new Event('change', { bubbles: true }));
+				return { ok: true };
+			}`,
+			"arguments":     []map[string]interface{}{{"value": req.Value}},
+			"returnByValue": true,
 		})
+		if err != nil {
+			return failResp(req.ID, err)
+		}
+		var call struct {
+			Result struct {
+				Value struct {
+					OK    bool   `json:"ok"`
+					Error string `json:"error"`
+				} `json:"value"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(callRaw, &call); err != nil {
+			return failResp(req.ID, fmt.Errorf("decode select result: %w", err))
+		}
+		if !call.Result.Value.OK {
+			if call.Result.Value.Error == "" {
+				call.Result.Value.Error = "select action failed"
+			}
+			return failResp(req.ID, call.Result.Value.Error)
+		}
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Value: req.Value, Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionUpload:
@@ -1655,9 +1685,12 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		}
 		json.Unmarshal(docRaw, &doc)
 
-		nodeRaw, _ := cdp.PageCommand(target.ID, "DOM.querySelector", map[string]interface{}{
+		nodeRaw, err := cdp.PageCommand(target.ID, "DOM.querySelector", map[string]interface{}{
 			"nodeId": doc.Root.NodeID, "selector": req.Selector,
 		})
+		if err != nil {
+			return failResp(req.ID, fmt.Errorf("invalid selector %q: %w", req.Selector, err))
+		}
 		var node struct {
 			NodeID int `json:"nodeId"`
 		}

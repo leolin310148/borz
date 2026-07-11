@@ -2396,6 +2396,81 @@ func TestE2ECLIOutputShaping(t *testing.T) {
 	requireContains(t, jqFailure, "Error: e2e-output-shaping", "jq failure output")
 }
 
+func TestE2ECLISelectorAndRefErrors(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	baseURL := site.URL()
+	tab := runE2EJSON(t, env, "open", baseURL+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	if tab == "" {
+		t.Fatal("selector/ref fixture open returned no tab")
+	}
+	t.Cleanup(func() { runE2ECLI(t, env, "close", "--tab", tab, "--json") })
+
+	requireError := func(label string, response protocol.Response, fragments ...string) {
+		t.Helper()
+		if response.Success || response.ID == "" || response.Error == "" {
+			t.Fatalf("%s response = %+v, want structured error", label, response)
+		}
+		for _, fragment := range fragments {
+			if !strings.Contains(response.Error, fragment) {
+				t.Fatalf("%s error %q missing %q", label, response.Error, fragment)
+			}
+		}
+	}
+
+	missingSelector := runE2EJSONResponse(t, env, "frame", "#missing-frame", "--tab", tab, "--json")
+	requireError("missing selector", missingSelector, "iframe not found", "#missing-frame")
+
+	invalidCSS := runE2EJSONResponse(t, env, "frame", "[", "--tab", tab, "--json")
+	requireError("invalid CSS", invalidCSS, "invalid selector", "[")
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json").Data.SnapshotData
+	if snapshot == nil {
+		t.Fatal("selector/ref snapshot returned no data")
+	}
+	clickRef := refByName(t, snapshot, "Click counter")
+	inputRef := refByName(t, snapshot, "E2E text input")
+	selectRef := refByName(t, snapshot, "E2E color select")
+
+	nonexistentRef := runE2EJSONResponse(t, env, "click", "e999999", "--tab", tab, "--json")
+	requireError("nonexistent ref", nonexistentRef, "unknown ref: e999999", "Run snapshot first")
+
+	wrongType := runE2EJSONResponse(t, env, "select", inputRef, "green", "--tab", tab, "--json")
+	requireError("wrong element type", wrongType, "element is not a select")
+
+	invalidValue := runE2EJSONResponse(t, env, "select", selectRef, "purple", "--tab", tab, "--json")
+	requireError("invalid select value", invalidValue, "select value not found: purple")
+
+	runE2EJSON(t, env, "open", baseURL+"/page2", "--tab", tab, "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
+	staleRef := runE2EJSONResponse(t, env, "click", clickRef, "--tab", tab, "--json")
+	requireError("stale ref", staleRef, "unknown ref: "+clickRef, "Run snapshot first")
+
+	runE2EJSON(t, env, "open", baseURL+"/", "--tab", tab, "--wait-for", "#ready", "--timeout", "5000", "--json")
+	refreshed := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json").Data.SnapshotData
+	validClickRef := refByName(t, refreshed, "Click counter")
+	runE2EJSON(t, env, "click", validClickRef, "--tab", tab, "--json")
+	clicked := runE2EJSON(t, env, "eval", `document.querySelector("#clicked-result").textContent`, "--tab", tab, "--json")
+	if clicked.Data.Result != "clicked 1" {
+		t.Fatalf("valid action after selector/ref errors = %#v, want clicked 1", clicked.Data.Result)
+	}
+}
+
 func TestE2ECLIFetchRequests(t *testing.T) {
 	skipUnlessE2E(t)
 
