@@ -1227,6 +1227,117 @@ func TestE2EClientModeAgainstServer(t *testing.T) {
 	}
 }
 
+func TestE2ERESTAgainstServer(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	token := "e2e-rest-token"
+	_, serverURL := startE2EServer(t, home, token)
+
+	healthResp, err := http.Get(serverURL + "/healthz")
+	if err != nil {
+		t.Fatalf("GET /healthz: %v", err)
+	}
+	defer healthResp.Body.Close()
+	var health struct {
+		OK           bool `json:"ok"`
+		CDPConnected bool `json:"cdpConnected"`
+	}
+	if err := json.NewDecoder(healthResp.Body).Decode(&health); err != nil {
+		t.Fatalf("decode /healthz: %v", err)
+	}
+	if healthResp.StatusCode != http.StatusOK || !health.OK || !health.CDPConnected {
+		t.Fatalf("GET /healthz = status %d, body %+v", healthResp.StatusCode, health)
+	}
+
+	openAPIResp, err := http.Get(serverURL + "/openapi.yaml")
+	if err != nil {
+		t.Fatalf("GET /openapi.yaml: %v", err)
+	}
+	defer openAPIResp.Body.Close()
+	var openAPIBody bytes.Buffer
+	if _, err := openAPIBody.ReadFrom(openAPIResp.Body); err != nil {
+		t.Fatalf("read /openapi.yaml: %v", err)
+	}
+	if openAPIResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /openapi.yaml status = %d, want 200", openAPIResp.StatusCode)
+	}
+	requireContains(t, openAPIBody.String(), "openapi: 3.1.0", "OpenAPI document")
+	requireContains(t, openAPIBody.String(), "/v1/open:", "OpenAPI document")
+
+	unauthorizedReq, err := http.NewRequest(http.MethodPost, serverURL+"/v1/snapshot", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("build unauthorized REST request: %v", err)
+	}
+	unauthorizedResp, err := http.DefaultClient.Do(unauthorizedReq)
+	if err != nil {
+		t.Fatalf("POST /v1/snapshot without bearer token: %v", err)
+	}
+	defer unauthorizedResp.Body.Close()
+	if unauthorizedResp.StatusCode != http.StatusUnauthorized || unauthorizedResp.Header.Get("WWW-Authenticate") != "Bearer" {
+		t.Fatalf("unauthorized REST response = status %d, WWW-Authenticate %q", unauthorizedResp.StatusCode, unauthorizedResp.Header.Get("WWW-Authenticate"))
+	}
+
+	first := runE2ERESTJSON(t, serverURL, token, "/v1/open", map[string]interface{}{
+		"url": site.URL() + "/", "new": true, "waitFor": "#ready", "timeoutMs": 10000,
+	})
+	firstTab := first.Data.Tab
+	if firstTab == "" {
+		t.Fatalf("REST open response did not include tab: %+v", first.Data)
+	}
+	second := runE2ERESTJSON(t, serverURL, token, "/v1/open", map[string]interface{}{
+		"url": site.URL() + "/page2", "new": true, "waitFor": "#page-two-ready", "timeoutMs": 10000,
+	})
+	secondTab := second.Data.Tab
+	if secondTab == "" || secondTab == firstTab {
+		t.Fatalf("second REST open tab = %q, want non-empty tab distinct from %q", secondTab, firstTab)
+	}
+	t.Cleanup(func() {
+		runE2ERESTJSON(t, serverURL, token, "/v1/close", map[string]interface{}{"tab": firstTab})
+		runE2ERESTJSON(t, serverURL, token, "/v1/close", map[string]interface{}{"tab": secondTab})
+	})
+
+	snapshot := runE2ERESTJSON(t, serverURL, token, "/v1/snapshot", map[string]interface{}{
+		"interactive": true, "tab": firstTab,
+	})
+	if snapshot.Data.Tab != firstTab || snapshot.Data.SnapshotData == nil {
+		t.Fatalf("targeted REST snapshot = %+v, want tab %q with snapshot data", snapshot.Data, firstTab)
+	}
+	clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
+	clicked := runE2ERESTJSON(t, serverURL, token, "/v1/click", map[string]interface{}{
+		"ref": clickRef, "tab": firstTab,
+	})
+	if clicked.Data.Tab != firstTab {
+		t.Fatalf("targeted REST click tab = %q, want %q", clicked.Data.Tab, firstTab)
+	}
+	clickResult := runE2ERESTJSON(t, serverURL, token, "/v1/eval", map[string]interface{}{
+		"script": `document.querySelector("#clicked-result").textContent`, "tab": firstTab,
+	})
+	if clickResult.Data.Tab != firstTab || clickResult.Data.Result != "clicked 1" {
+		t.Fatalf("targeted REST eval = tab %q result %#v, want tab %q result %q", clickResult.Data.Tab, clickResult.Data.Result, firstTab, "clicked 1")
+	}
+	secondTitle := runE2ERESTJSON(t, serverURL, token, "/v1/eval", map[string]interface{}{
+		"script": "document.title", "tab": secondTab,
+	})
+	if secondTitle.Data.Tab != secondTab || secondTitle.Data.Result != "E2E Verify Page Two" {
+		t.Fatalf("second targeted REST eval = tab %q result %#v, want tab %q title %q", secondTitle.Data.Tab, secondTitle.Data.Result, secondTab, "E2E Verify Page Two")
+	}
+}
+
 type e2eDaemonEnv struct {
 	home string
 }
@@ -1430,6 +1541,35 @@ func runE2EJSONResponse(t *testing.T, env e2eDaemonEnv, args ...string) protocol
 	var resp protocol.Response
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("borz %s returned non-JSON response: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return resp
+}
+
+func runE2ERESTJSON(t *testing.T, serverURL, token, path string, body interface{}) protocol.Response {
+	t.Helper()
+
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("encode REST body for %s: %v", path, err)
+	}
+	req, err := http.NewRequest(http.MethodPost, serverURL+path, bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("build REST request for %s: %v", path, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	httpResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer httpResp.Body.Close()
+
+	var resp protocol.Response
+	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode POST %s response: %v", path, err)
+	}
+	if httpResp.StatusCode != http.StatusOK || !resp.Success || resp.ID == "" || resp.Data == nil || resp.Error != "" {
+		t.Fatalf("POST %s envelope = status %d, response %+v", path, httpResp.StatusCode, resp)
 	}
 	return resp
 }
