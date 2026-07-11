@@ -105,6 +105,9 @@ func collectTextContent(el rawDomElementNode, nodeMap map[string]json.RawMessage
 			}
 			return
 		}
+		if isAccessibilityHidden(childEl) {
+			return
+		}
 		for _, childID := range childEl.Children {
 			visit(childID, depth+1)
 		}
@@ -179,6 +182,38 @@ func matchesRole(role, roleFilter string) bool {
 	return strings.EqualFold(role, roleFilter)
 }
 
+func accessibilityState(el rawDomElementNode) string {
+	attrs := el.Attributes
+	var states []string
+	if _, ok := attrs["disabled"]; ok {
+		states = append(states, "disabled")
+	} else if value, ok := attrs["aria-disabled"]; ok {
+		states = append(states, "disabled="+value)
+	}
+	for _, state := range []struct {
+		attribute string
+		label     string
+	}{
+		{"aria-expanded", "expanded"},
+		{"aria-selected", "selected"},
+		{"aria-checked", "checked"},
+		{"aria-live", "live"},
+	} {
+		if value, ok := attrs[state.attribute]; ok {
+			states = append(states, state.label+"="+value)
+		}
+	}
+	if len(states) == 0 {
+		return ""
+	}
+	return " [" + strings.Join(states, ", ") + "]"
+}
+
+func isAccessibilityHidden(el rawDomElementNode) bool {
+	_, hidden := el.Attributes["hidden"]
+	return hidden || strings.EqualFold(el.Attributes["aria-hidden"], "true")
+}
+
 // ConvertBuildDomTreeResult converts buildDomTree.js output to an accessibility tree.
 //
 // selector is a case-insensitive substring match across tag/role/name/xpath/attr values.
@@ -214,6 +249,9 @@ func ConvertBuildDomTreeResult(result *buildDomTreeResult, interactiveOnly, comp
 		})
 
 		for _, n := range nodes {
+			if isAccessibilityHidden(n.el) {
+				continue
+			}
 			refID := fmt.Sprintf("%d", n.index)
 			role := getRole(n.el)
 			name := getName(n.el, result.Map)
@@ -224,6 +262,7 @@ func ConvertBuildDomTreeResult(result *buildDomTreeResult, interactiveOnly, comp
 			if name != "" {
 				line += fmt.Sprintf(" %q", truncateText(name, 50))
 			}
+			line += accessibilityState(n.el)
 			lines = append(lines, line)
 			tag := strings.ToLower(n.el.TagName)
 			xpath := el2xpath(n.el)
@@ -268,6 +307,9 @@ func ConvertBuildDomTreeResult(result *buildDomTreeResult, interactiveOnly, comp
 			lines = append(lines, fmt.Sprintf("%s- text %q", strings.Repeat("  ", depth), truncateText(text, maxLen)))
 			return
 		}
+		if isAccessibilityHidden(el) {
+			return
+		}
 
 		role := getRole(el)
 		name := getName(el, result.Map)
@@ -295,6 +337,7 @@ func ConvertBuildDomTreeResult(result *buildDomTreeResult, interactiveOnly, comp
 		if name != "" {
 			line += fmt.Sprintf(" %q", truncateText(name, nameMaxLen))
 		}
+		line += accessibilityState(el)
 		if !compact {
 			line += fmt.Sprintf(" <%s>", strings.ToLower(el.TagName))
 		}

@@ -971,6 +971,87 @@ func TestE2ECLIShadowDOMBoundary(t *testing.T) {
 	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#shadow-host").shadowRoot.querySelector("#shadow-result").textContent`, "value: shadow value 純文字")
 }
 
+func TestE2ECLIAccessibilityState(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/accessibility-state", "--new", "--wait-for", "#accessibility-state-ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("accessibility state open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	initial := runE2EJSON(t, env, "snapshot", "--tab", tab, "--json").Data.SnapshotData
+	if initial == nil {
+		t.Fatal("initial accessibility state snapshot returned no data")
+	}
+	for _, want := range []string{
+		`button "Disabled action" [disabled]`,
+		`button [ref=`,
+		`"State disclosure" [expanded=false]`,
+		`"State checkbox" [checked=false]`,
+		`"Choice one" [selected=true]`,
+		`"Choice two" [selected=false]`,
+		`"State updates" [live=polite]`,
+		`State idle`,
+	} {
+		requireContains(t, initial.Snapshot, want, "initial accessibility state snapshot")
+	}
+	requireNotContains(t, initial.Snapshot, "Revealed accessibility details", "initial accessibility state snapshot")
+	for _, element := range initial.Elements {
+		if element.Name == "Disabled action" {
+			t.Fatalf("disabled action unexpectedly received interactive ref %q", element.Ref)
+		}
+	}
+	mutateRef := refByName(t, initial, "Mutate accessibility state")
+
+	runE2EJSON(t, env, "click", mutateRef, "--tab", tab, "--wait-for", `#state-live[data-state="updated"]`, "--timeout", "5000", "--json")
+	updated := runE2EJSON(t, env, "snapshot", "--tab", tab, "--json").Data.SnapshotData
+	for _, want := range []string{
+		`button [ref=`,
+		`"Disabled action"`,
+		`"State disclosure" [expanded=true]`,
+		`Revealed accessibility details`,
+		`"State checkbox" [checked=true]`,
+		`"Choice one" [selected=false]`,
+		`"Choice two" [selected=true]`,
+		`Accessibility state updated`,
+	} {
+		requireContains(t, updated.Snapshot, want, "updated accessibility state snapshot")
+	}
+	requireNotContains(t, updated.Snapshot, `"Disabled action" [disabled]`, "updated accessibility state snapshot")
+	if refByName(t, updated, "Disabled action") == "" {
+		t.Fatal("enabled action did not receive a refreshed ref")
+	}
+	refreshedMutateRef := refByName(t, updated, "Mutate accessibility state")
+	if refreshedMutateRef == mutateRef {
+		t.Fatalf("mutation ref was not regenerated after interactive state changed: %q", mutateRef)
+	}
+
+	runE2EJSON(t, env, "click", refreshedMutateRef, "--tab", tab, "--json")
+	reset := runE2EJSON(t, env, "snapshot", "--tab", tab, "--json").Data.SnapshotData
+	requireContains(t, reset.Snapshot, `"State disclosure" [expanded=false]`, "reset accessibility state snapshot")
+	requireNotContains(t, reset.Snapshot, "Revealed accessibility details", "reset accessibility state snapshot")
+}
+
 func TestE2ECLISnapshotModes(t *testing.T) {
 	skipUnlessE2E(t)
 

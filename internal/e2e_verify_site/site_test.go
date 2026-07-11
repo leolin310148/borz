@@ -306,6 +306,31 @@ func TestHandlerServesShadowDOMPage(t *testing.T) {
 	}
 }
 
+func TestHandlerServesAccessibilityStatePage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/accessibility-state", nil)
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("accessibility state status=%d", rec.Code)
+	}
+	for _, marker := range []string{
+		`id="accessibility-state-ready"`,
+		`id="disabled-action" type="button" disabled`,
+		`aria-expanded="false"`,
+		`id="disclosure-panel" hidden`,
+		`aria-checked="false"`,
+		`role="option" aria-selected="true"`,
+		`role="status" aria-live="polite"`,
+		`aria-label="Mutate accessibility state"`,
+		`live.textContent = changed ? 'Accessibility state updated'`,
+	} {
+		if !strings.Contains(rec.Body.String(), marker) {
+			t.Errorf("accessibility state page missing %q", marker)
+		}
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {

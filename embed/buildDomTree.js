@@ -1370,7 +1370,9 @@ window.buildDomTree = (
     if (
       isInteractiveCandidate(node) ||
       node.tagName.toLowerCase() === 'iframe' ||
-      node.tagName.toLowerCase() === 'body'
+      node.tagName.toLowerCase() === 'body' ||
+      node.hasAttribute('hidden') ||
+      node.hasAttribute('aria-hidden')
     ) {
       const attributeNames = node.getAttributeNames?.() || [];
       for (const name of attributeNames) {

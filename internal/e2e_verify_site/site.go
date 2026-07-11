@@ -65,6 +65,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/keyboard", keyboard)
 	mux.HandleFunc("/clipboard", clipboard)
 	mux.HandleFunc("/shadow-dom", shadowDOM)
+	mux.HandleFunc("/accessibility-state", accessibilityState)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -496,6 +497,45 @@ func shadowDOM(w http.ResponseWriter, r *http.Request) {
       root.getElementById('shadow-result').textContent = 'value: ' + event.target.value;
     });
     host.dataset.shadowReady = 'true';
+  </script>
+</body>
+</html>`)
+}
+
+func accessibilityState(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>E2E Accessibility State</title></head>
+<body>
+  <h1 id="accessibility-state-ready">Accessibility state fixture</h1>
+  <button id="disabled-action" type="button" disabled aria-label="Disabled action">Disabled action</button>
+  <button id="disclosure" type="button" aria-label="State disclosure" aria-expanded="false" aria-controls="disclosure-panel">Toggle details</button>
+  <section id="disclosure-panel" hidden><p>Revealed accessibility details</p></section>
+  <label><input id="state-checkbox" type="checkbox" aria-label="State checkbox" aria-checked="false"> Check state</label>
+  <div id="state-options" role="listbox" aria-label="State choices">
+    <div id="choice-one" role="option" aria-selected="true" tabindex="0">Choice one</div>
+    <div id="choice-two" role="option" aria-selected="false" tabindex="-1">Choice two</div>
+  </div>
+  <div id="state-live" role="status" aria-live="polite" aria-label="State updates">State idle</div>
+  <button id="mutate-state" type="button" aria-label="Mutate accessibility state">Mutate state</button>
+  <script>
+    const mutate = document.getElementById('mutate-state');
+    let changed = false;
+    mutate.addEventListener('click', () => {
+      changed = !changed;
+      document.getElementById('disabled-action').disabled = !changed;
+      document.getElementById('disclosure').setAttribute('aria-expanded', String(changed));
+      document.getElementById('disclosure-panel').hidden = !changed;
+      const checkbox = document.getElementById('state-checkbox');
+      checkbox.checked = changed;
+      checkbox.setAttribute('aria-checked', String(changed));
+      document.getElementById('choice-one').setAttribute('aria-selected', String(!changed));
+      document.getElementById('choice-two').setAttribute('aria-selected', String(changed));
+      const live = document.getElementById('state-live');
+      live.textContent = changed ? 'Accessibility state updated' : 'State idle';
+      live.dataset.state = changed ? 'updated' : 'idle';
+    });
   </script>
 </body>
 </html>`)

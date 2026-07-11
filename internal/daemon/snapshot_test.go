@@ -348,3 +348,35 @@ func TestConvertBuildDomTreeResult_FullTree(t *testing.T) {
 		t.Fatalf("empty text should be skipped: %q", out.Snapshot)
 	}
 }
+
+func TestConvertBuildDomTreeResult_AccessibilityState(t *testing.T) {
+	hi := func(i int) *int { return &i }
+	nodeMap := map[string]json.RawMessage{
+		"root": mustRaw(t, rawDomElementNode{TagName: "main", Children: []string{"disabled", "toggle", "hidden", "status"}}),
+		"disabled": mustRaw(t, rawDomElementNode{TagName: "button", Attributes: map[string]string{
+			"aria-label": "Unavailable action", "disabled": "",
+		}}),
+		"toggle": mustRaw(t, rawDomElementNode{TagName: "button", HighlightIndex: hi(1), Attributes: map[string]string{
+			"aria-label": "Details", "aria-expanded": "false", "aria-checked": "true", "aria-selected": "false",
+		}}),
+		"hidden": mustRaw(t, rawDomElementNode{TagName: "section", Attributes: map[string]string{"hidden": ""}, Children: []string{"secret"}}),
+		"secret": mustRaw(t, rawDomTextNode{Type: "TEXT_NODE", Text: "hidden details"}),
+		"status": mustRaw(t, rawDomElementNode{TagName: "div", Attributes: map[string]string{
+			"role": "status", "aria-live": "polite", "aria-label": "Updates",
+		}}),
+	}
+
+	out := ConvertBuildDomTreeResult(&buildDomTreeResult{RootID: "root", Map: nodeMap}, false, false, nil, "", "")
+	for _, want := range []string{
+		`button "Unavailable action" [disabled]`,
+		`button [ref=1] "Details" [expanded=false, selected=false, checked=true]`,
+		`status "Updates" [live=polite]`,
+	} {
+		if !strings.Contains(out.Snapshot, want) {
+			t.Errorf("snapshot missing %q in:\n%s", want, out.Snapshot)
+		}
+	}
+	if strings.Contains(out.Snapshot, "hidden details") {
+		t.Fatalf("snapshot exposed hidden subtree:\n%s", out.Snapshot)
+	}
+}
