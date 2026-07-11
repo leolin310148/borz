@@ -18,7 +18,6 @@ servers:
     description: Local daemon (default)
 security:
   - bearerAuth: []
-  - {}
 tags:
   - name: health
   - name: status

@@ -455,6 +455,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		sendMethodNotAllowed(w, http.MethodGet)
+		return
+	}
 	sendJSON(w, 200, map[string]interface{}{
 		"ok":           true,
 		"cdpConnected": s.cdp.Connected(),

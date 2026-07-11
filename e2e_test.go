@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -2828,6 +2829,199 @@ func TestE2ERESTMalformedRequests(t *testing.T) {
 		!strings.Contains(preflight.Header.Get("Access-Control-Allow-Headers"), "Authorization") {
 		t.Fatalf("CORS preflight headers = %v", preflight.Header)
 	}
+}
+
+func TestE2ERESTOpenAPIConformance(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	token := "e2e-openapi-conformance-token"
+	_, serverURL := startE2EServer(t, home, token)
+
+	request := func(method, path, bearer string, body io.Reader) (*http.Response, []byte) {
+		t.Helper()
+		req, err := http.NewRequest(method, serverURL+path, body)
+		if err != nil {
+			t.Fatalf("build %s %s: %v", method, path, err)
+		}
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		defer resp.Body.Close()
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read %s %s: %v", method, path, err)
+		}
+		return resp, raw
+	}
+
+	specResp, specBody := request(http.MethodGet, "/openapi.yaml", "", nil)
+	if specResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /openapi.yaml status = %d, want 200", specResp.StatusCode)
+	}
+	operations := parseE2EOpenAPIOperations(t, specBody)
+
+	paths := make([]string, 0, len(operations))
+	for path := range operations {
+		paths = append(paths, path)
+	}
+	slices.Sort(paths)
+	for _, path := range paths {
+		methods := operations[path]
+		t.Run("route_"+strings.Trim(strings.ReplaceAll(path, "/", "_"), "_"), func(t *testing.T) {
+			wrongMethod, _ := request(http.MethodDelete, path, token, nil)
+			if wrongMethod.StatusCode != http.StatusMethodNotAllowed {
+				t.Fatalf("DELETE %s status = %d, want 405", path, wrongMethod.StatusCode)
+			}
+			gotMethods := strings.Split(wrongMethod.Header.Get("Allow"), ", ")
+			wantMethods := make([]string, 0, len(methods))
+			for method := range methods {
+				wantMethods = append(wantMethods, method)
+			}
+			slices.Sort(wantMethods)
+			if gotMethods[0] != "" {
+				slices.Sort(gotMethods)
+			}
+			if gotMethods[0] != "" && !slices.Equal(gotMethods, wantMethods) {
+				t.Fatalf("%s Allow = %v, OpenAPI documents %v", path, gotMethods, wantMethods)
+			}
+
+			method := wantMethods[0]
+			var body io.Reader
+			if method != http.MethodGet {
+				body = strings.NewReader(`{}`)
+			}
+			unauthorized, _ := request(method, path, "", body)
+			if methods[method] {
+				if unauthorized.StatusCode != http.StatusUnauthorized {
+					t.Fatalf("unauthenticated %s %s status = %d, want 401", method, path, unauthorized.StatusCode)
+				}
+			} else if unauthorized.StatusCode == http.StatusUnauthorized {
+				t.Fatalf("unauthenticated %s %s returned 401, but OpenAPI declares security: []", method, path)
+			}
+		})
+	}
+
+	statusResp, statusBody := request(http.MethodGet, "/status", token, nil)
+	if statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated GET /status = %d: %s", statusResp.StatusCode, statusBody)
+	}
+	tabsResp, tabsBody := request(http.MethodGet, "/v1/tabs", token, nil)
+	if tabsResp.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated GET /v1/tabs = %d: %s", tabsResp.StatusCode, tabsBody)
+	}
+
+	opened := runE2ERESTJSON(t, serverURL, token, "/v1/open", map[string]interface{}{
+		"url": site.URL() + "/", "new": true, "waitFor": "#ready", "timeoutMs": 10000,
+	})
+	tab := opened.Data.Tab
+	if tab == "" {
+		t.Fatalf("OpenAPI smoke open response did not include tab: %+v", opened.Data)
+	}
+	t.Cleanup(func() {
+		runE2ERESTJSON(t, serverURL, token, "/v1/close", map[string]interface{}{"tab": tab})
+	})
+	snapshot := runE2ERESTJSON(t, serverURL, token, "/v1/snapshot", map[string]interface{}{
+		"interactive": true, "tab": tab,
+	})
+	if snapshot.Data.Tab != tab || snapshot.Data.SnapshotData == nil {
+		t.Fatalf("OpenAPI smoke snapshot = %+v, want tab %q with snapshot data", snapshot.Data, tab)
+	}
+	title := runE2ERESTJSON(t, serverURL, token, "/v1/get", map[string]interface{}{
+		"attribute": "title", "tab": tab,
+	})
+	if title.Data.Tab != tab || title.Data.Value != "E2E Verify Home" {
+		t.Fatalf("OpenAPI smoke get = tab %q value %q, want tab %q title %q", title.Data.Tab, title.Data.Value, tab, "E2E Verify Home")
+	}
+}
+
+// parseE2EOpenAPIOperations extracts the path, method, and effective security
+// from borz's deliberately conventional OpenAPI YAML formatting. Keeping this
+// parser test-local avoids adding a production YAML dependency for one E2E.
+func parseE2EOpenAPIOperations(t *testing.T, spec []byte) map[string]map[string]bool {
+	t.Helper()
+	operations := make(map[string]map[string]bool)
+	globalBearer := false
+	inGlobalSecurity := false
+	inPaths := false
+	currentPath := ""
+	currentMethod := ""
+
+	for _, line := range strings.Split(string(spec), "\n") {
+		switch {
+		case line == "security:":
+			inGlobalSecurity = true
+		case inGlobalSecurity && strings.HasPrefix(line, "  - bearerAuth:"):
+			globalBearer = true
+		case inGlobalSecurity && strings.TrimSpace(line) == "- {}":
+			t.Fatal("OpenAPI global security permits anonymous access, but token servers require bearer auth")
+		case inGlobalSecurity && line != "" && !strings.HasPrefix(line, " "):
+			inGlobalSecurity = false
+		}
+
+		if line == "paths:" {
+			inPaths = true
+			continue
+		}
+		if !inPaths {
+			continue
+		}
+		if line != "" && !strings.HasPrefix(line, " ") {
+			break
+		}
+		if strings.HasPrefix(line, "  /") && strings.HasSuffix(line, ":") {
+			currentPath = strings.TrimSuffix(strings.TrimSpace(line), ":")
+			operations[currentPath] = make(map[string]bool)
+			currentMethod = ""
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(line, "    ") && !strings.HasPrefix(line, "      ") && strings.HasSuffix(trimmed, ":") {
+			method := strings.ToUpper(strings.TrimSuffix(trimmed, ":"))
+			if slices.Contains([]string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}, method) {
+				currentMethod = method
+				operations[currentPath][currentMethod] = globalBearer
+			}
+			continue
+		}
+		if currentPath != "" && currentMethod != "" && line == "      security: []" {
+			operations[currentPath][currentMethod] = false
+		}
+	}
+
+	if !globalBearer {
+		t.Fatal("OpenAPI document is missing global bearerAuth security")
+	}
+	if len(operations) == 0 {
+		t.Fatal("OpenAPI document did not contain any operations")
+	}
+	for path, methods := range operations {
+		if len(methods) == 0 {
+			t.Fatalf("OpenAPI path %s has no supported HTTP operations", path)
+		}
+	}
+	return operations
 }
 
 func TestE2ESiteAdapterTrustAgainstVerifySite(t *testing.T) {

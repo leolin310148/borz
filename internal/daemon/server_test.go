@@ -205,6 +205,16 @@ func TestAuthMiddleware_TokenRequired(t *testing.T) {
 
 func TestHandleHealthz(t *testing.T) {
 	s := newTestServer(t, "")
+
+	t.Run("rejects non-GET", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodDelete, "/healthz", nil)
+		s.handleHealthz(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != http.MethodGet {
+			t.Fatalf("DELETE /healthz = status %d Allow %q, want 405 Allow GET", rec.Code, rec.Header().Get("Allow"))
+		}
+	})
+
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	s.handleHealthz(rec, req)
