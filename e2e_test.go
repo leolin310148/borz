@@ -1021,6 +1021,110 @@ func requireNoE2EDiagnostics(t *testing.T, env e2eDaemonEnv, tab, since string) 
 	}
 }
 
+func TestE2ECLITabLifecycle(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	baseURL := site.URL()
+	primary := runE2EJSON(t, env, "open", baseURL+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	guard := runE2EJSON(t, env, "open", baseURL+"/page2", "--new", "--wait-for", "#page-two-ready", "--timeout", "10000", "--json").Data.Tab
+	if primary == "" || guard == "" || primary == guard {
+		t.Fatalf("tab lifecycle fixtures are not distinct: primary=%q guard=%q", primary, guard)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", primary, "--json")
+		runE2ECLI(t, env, "close", "--tab", guard, "--json")
+	})
+
+	runE2EJSON(t, env, "eval", `window.__borzTabReuseSentinel = "preserved"`, "--tab", primary, "--json")
+	reused := runE2EJSON(t, env, "open", baseURL+"/", "--wait-for", "#ready", "--timeout", "5000", "--json")
+	if reused.Data.Tab != primary {
+		t.Fatalf("exact-URL open selected tab %q, want reused tab %q", reused.Data.Tab, primary)
+	}
+	reuseState := runE2EJSON(t, env, "eval", `window.__borzTabReuseSentinel`, "--tab", primary, "--json")
+	if reuseState.Data.Result != "preserved" {
+		t.Fatalf("exact-URL reuse reloaded tab state: result=%#v", reuseState.Data.Result)
+	}
+
+	forced := runE2EJSON(t, env, "open", baseURL+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	if forced == "" || forced == primary || forced == guard {
+		t.Fatalf("--new returned non-distinct tab %q (primary=%q guard=%q)", forced, primary, guard)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", forced, "--json")
+	})
+
+	selectedByID := runE2EJSON(t, env, "tab", "select", primary, "--json")
+	if selectedByID.Data.Tab != primary || selectedByID.Data.URL != baseURL+"/" {
+		t.Fatalf("select by short id returned %+v", selectedByID.Data)
+	}
+
+	tabs := runE2EJSON(t, env, "tab", "list", "--json").Data.Tabs
+	forcedIndex := -1
+	for _, tab := range tabs {
+		if tab.Tab == forced {
+			forcedIndex = tab.Index
+			break
+		}
+	}
+	if forcedIndex < 0 {
+		t.Fatalf("forced tab %q missing from tab list: %+v", forced, tabs)
+	}
+	selectedByIndex := runE2EJSON(t, env, "tab", strconv.Itoa(forcedIndex), "--json")
+	if selectedByIndex.Data.Tab != forced || selectedByIndex.Data.URL != baseURL+"/" {
+		t.Fatalf("select by index %d returned %+v", forcedIndex, selectedByIndex.Data)
+	}
+
+	closed := runE2EJSON(t, env, "tab", "close", forced, "--json")
+	if closed.Data.Tab != forced {
+		t.Fatalf("closed tab response = %+v, want tab %q", closed.Data, forced)
+	}
+	afterClose := runE2EJSON(t, env, "tab", "list", "--json").Data.Tabs
+	foundPrimary, foundGuard, foundForced := false, false, false
+	for _, tab := range afterClose {
+		foundPrimary = foundPrimary || tab.Tab == primary
+		foundGuard = foundGuard || tab.Tab == guard
+		foundForced = foundForced || tab.Tab == forced
+	}
+	if !foundPrimary || !foundGuard || foundForced {
+		t.Fatalf("tab list after close = %+v, want primary and guard only among test tabs", afterClose)
+	}
+	missingClose := runE2EJSONResponse(t, env, "tab", "close", forced, "--json")
+	if missingClose.Success || !strings.Contains(missingClose.Error, "tab not found") {
+		t.Fatalf("second close response = %+v, want structured tab-not-found error", missingClose)
+	}
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", primary, "--json").Data.SnapshotData
+	if snapshot == nil {
+		t.Fatal("primary tab snapshot returned no snapshot data")
+	}
+	staleRef := refByName(t, snapshot, "Click counter")
+	runE2EJSON(t, env, "open", baseURL+"/page2", "--tab", primary, "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
+	staleAction := runE2EJSONResponse(t, env, "click", staleRef, "--tab", primary, "--json")
+	if staleAction.Success || !strings.Contains(staleAction.Error, "unknown ref: "+staleRef) || !strings.Contains(staleAction.Error, "Run snapshot first") {
+		t.Fatalf("stale ref response = %+v, want structured ref-not-found error", staleAction)
+	}
+	guardTitle := runE2EJSON(t, env, "get", "title", "--tab", guard, "--json")
+	if guardTitle.Data.Value != "E2E Verify Page Two" {
+		t.Fatalf("guard tab changed or closed: title=%q", guardTitle.Data.Value)
+	}
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
