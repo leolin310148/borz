@@ -3637,6 +3637,142 @@ func TestE2EMCPStdioAgainstVerifySite(t *testing.T) {
 	closed = true
 }
 
+func TestE2EMCPMultiTabAgainstVerifySite(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	startE2EDaemon(t, home)
+	stdio := transport.NewStdio(os.Args[0], []string{
+		"BORZ_E2E_HELPER=1",
+		"BORZ_HOME=" + home,
+	}, "-test.run=TestE2ECLIHelper", "--", "mcp")
+	mcpClient := mcpclient.NewClient(stdio)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := mcpClient.Start(ctx); err != nil {
+		t.Fatalf("start MCP stdio client: %v", err)
+	}
+	clientClosed := false
+	t.Cleanup(func() {
+		if !clientClosed {
+			_ = mcpClient.Close()
+		}
+	})
+
+	initRequest := mcpprotocol.InitializeRequest{}
+	initRequest.Params.ProtocolVersion = mcpprotocol.LATEST_PROTOCOL_VERSION
+	initRequest.Params.ClientInfo = mcpprotocol.Implementation{Name: "borz-e2e-multi-tab", Version: "test"}
+	if _, err := mcpClient.Initialize(ctx, initRequest); err != nil {
+		t.Fatalf("initialize MCP stdio server: %v", err)
+	}
+
+	firstURL := site.URL() + "/?mcp-tab=first"
+	secondURL := site.URL() + "/page2?mcp-tab=second"
+	firstNew := callE2EMCPTool(t, ctx, mcpClient, "browser_tab_new", map[string]interface{}{"url": firstURL})
+	requireContains(t, firstNew, "Opened new tab at "+firstURL, "first MCP tab-new result")
+	secondNew := callE2EMCPTool(t, ctx, mcpClient, "browser_tab_new", map[string]interface{}{"url": secondURL})
+	requireContains(t, secondNew, "Opened new tab at "+secondURL, "second MCP tab-new result")
+
+	tabIDForURL := func(tabList, url string) string {
+		t.Helper()
+		for _, line := range strings.Split(tabList, "\n") {
+			if !strings.Contains(line, url) {
+				continue
+			}
+			_, after, ok := strings.Cut(line, "(tab: ")
+			if !ok {
+				break
+			}
+			if id := strings.TrimSuffix(after, ")"); id != "" {
+				return id
+			}
+		}
+		t.Fatalf("MCP tab list did not contain a tab id for %s:\n%s", url, tabList)
+		return ""
+	}
+
+	tabs := callE2EMCPTool(t, ctx, mcpClient, "browser_tab_list", nil)
+	firstTab := tabIDForURL(tabs, firstURL)
+	secondTab := tabIDForURL(tabs, secondURL)
+	if firstTab == secondTab {
+		t.Fatalf("MCP tab-new returned non-distinct tabs: first=%q second=%q", firstTab, secondTab)
+	}
+	firstOpen, secondOpen := true, true
+	t.Cleanup(func() {
+		if clientClosed {
+			return
+		}
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		if firstOpen {
+			_, _ = callMCPTool(cleanupCtx, mcpClient, "browser_tab_close", map[string]interface{}{"tab": firstTab})
+		}
+		if secondOpen {
+			_, _ = callMCPTool(cleanupCtx, mcpClient, "browser_tab_close", map[string]interface{}{"tab": secondTab})
+		}
+	})
+
+	selected := callE2EMCPTool(t, ctx, mcpClient, "browser_tab_select", map[string]interface{}{"tab": firstTab})
+	requireContains(t, selected, "Switched tab", "MCP tab-select result")
+	tabs = callE2EMCPTool(t, ctx, mcpClient, "browser_tab_list", nil)
+	requireContains(t, tabs, "* ", "selected MCP tab-list result")
+	for _, line := range strings.Split(tabs, "\n") {
+		if strings.HasPrefix(line, "* ") && !strings.Contains(line, "(tab: "+firstTab+")") {
+			t.Fatalf("MCP selected unexpected tab, want %q:\n%s", firstTab, tabs)
+		}
+	}
+
+	secondTitle := callE2EMCPTool(t, ctx, mcpClient, "browser_get", map[string]interface{}{
+		"attribute": "title", "tab": secondTab,
+	})
+	if secondTitle != "E2E Verify Page Two" {
+		t.Fatalf("explicit MCP tab targeting returned title %q, want %q", secondTitle, "E2E Verify Page Two")
+	}
+	tabs = callE2EMCPTool(t, ctx, mcpClient, "browser_tab_list", nil)
+	for _, line := range strings.Split(tabs, "\n") {
+		if strings.HasPrefix(line, "* ") && !strings.Contains(line, "(tab: "+firstTab+")") {
+			t.Fatalf("explicit MCP targeting changed active tab, want %q:\n%s", firstTab, tabs)
+		}
+	}
+
+	closedFirst := callE2EMCPTool(t, ctx, mcpClient, "browser_tab_close", map[string]interface{}{"tab": firstTab})
+	if closedFirst != "Tab closed" {
+		t.Fatalf("MCP tab-close result = %q, want %q", closedFirst, "Tab closed")
+	}
+	firstOpen = false
+	tabs = callE2EMCPTool(t, ctx, mcpClient, "browser_tab_list", nil)
+	if strings.Contains(tabs, "(tab: "+firstTab+")") || !strings.Contains(tabs, "(tab: "+secondTab+")") {
+		t.Fatalf("MCP tab list after close did not preserve only the remaining test tab:\n%s", tabs)
+	}
+	remainingTitle := callE2EMCPTool(t, ctx, mcpClient, "browser_get", map[string]interface{}{
+		"attribute": "title", "tab": secondTab,
+	})
+	if remainingTitle != "E2E Verify Page Two" {
+		t.Fatalf("remaining MCP tab unusable after closing peer: title=%q", remainingTitle)
+	}
+
+	callE2EMCPTool(t, ctx, mcpClient, "browser_tab_close", map[string]interface{}{"tab": secondTab})
+	secondOpen = false
+	if err := mcpClient.Close(); err != nil {
+		t.Fatalf("close MCP stdio client and wait for server exit: %v", err)
+	}
+	clientClosed = true
+}
+
 func TestE2EMCPErrorPathsAgainstVerifySite(t *testing.T) {
 	skipUnlessE2E(t)
 
