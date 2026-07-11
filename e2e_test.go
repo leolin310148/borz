@@ -3636,6 +3636,150 @@ func TestE2EMCPStdioAgainstVerifySite(t *testing.T) {
 	closed = true
 }
 
+func TestE2EMCPErrorPathsAgainstVerifySite(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	startE2EDaemon(t, home)
+	stdio := transport.NewStdio(os.Args[0], []string{
+		"BORZ_E2E_HELPER=1",
+		"BORZ_HOME=" + home,
+	}, "-test.run=TestE2ECLIHelper", "--", "mcp")
+	mcpClient := mcpclient.NewClient(stdio)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := mcpClient.Start(ctx); err != nil {
+		t.Fatalf("start MCP stdio client: %v", err)
+	}
+	closed := false
+	t.Cleanup(func() {
+		if !closed {
+			_ = mcpClient.Close()
+		}
+	})
+
+	initRequest := mcpprotocol.InitializeRequest{}
+	initRequest.Params.ProtocolVersion = mcpprotocol.LATEST_PROTOCOL_VERSION
+	initRequest.Params.ClientInfo = mcpprotocol.Implementation{Name: "borz-e2e-errors", Version: "test"}
+	if _, err := mcpClient.Initialize(ctx, initRequest); err != nil {
+		t.Fatalf("initialize MCP stdio server: %v", err)
+	}
+
+	baseURL := site.URL() + "/"
+	callE2EMCPTool(t, ctx, mcpClient, "browser_navigate", map[string]interface{}{
+		"url": baseURL, "new": true, "waitFor": "#ready", "timeout": 10000,
+	})
+	t.Cleanup(func() {
+		if !closed {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cleanupCancel()
+			_, _ = callMCPTool(cleanupCtx, mcpClient, "browser_close", nil)
+		}
+	})
+
+	invalidParams := callE2EMCPRawTool(t, ctx, stdio, "invalid-params", "browser_navigate", map[string]interface{}{"url": 42})
+	requireE2EMCPErrorText(t, invalidParams, "url is required", "invalid MCP parameters")
+
+	unknownRef := callE2EMCPRawTool(t, ctx, stdio, "unknown-ref", "browser_click", map[string]interface{}{"ref": "999999"})
+	requireE2EMCPErrorText(t, unknownRef, "ref", "unknown MCP ref")
+
+	unknownTab := callE2EMCPRawTool(t, ctx, stdio, "unknown-tab", "browser_get", map[string]interface{}{
+		"attribute": "url", "tab": "missing-e2e-tab",
+	})
+	requireE2EMCPErrorText(t, unknownTab, "tab not found", "unknown MCP tab")
+
+	jsException := callE2EMCPRawTool(t, ctx, stdio, "js-exception", "browser_eval", map[string]interface{}{
+		"script": `throw new Error("mcp-e2e-boom")`,
+	})
+	requireE2EMCPErrorText(t, jsException, "mcp-e2e-boom", "MCP JavaScript exception")
+
+	snapshot := callE2EMCPTool(t, ctx, mcpClient, "browser_snapshot", map[string]interface{}{"interactive": true})
+	clickRef := refFromMCPSnapshot(t, snapshot, "Click counter")
+	waitTimeout := callE2EMCPRawTool(t, ctx, stdio, "wait-timeout", "browser_click", map[string]interface{}{
+		"ref": clickRef, "waitFor": "#never-rendered-for-mcp", "timeout": 600,
+	})
+	requireE2EMCPErrorText(t, waitTimeout, `wait-for selector "#never-rendered-for-mcp"`, "MCP wait timeout")
+
+	unsupported := sendE2EMCPRequest(t, ctx, stdio, "unsupported-call", "unsupported/e2e", map[string]interface{}{})
+	if unsupported.Error == nil {
+		t.Fatalf("unsupported MCP call returned no JSON-RPC error: %+v", unsupported)
+	}
+	if unsupported.Error.Code != mcpprotocol.METHOD_NOT_FOUND {
+		t.Fatalf("unsupported MCP call error code = %d, want %d: %+v", unsupported.Error.Code, mcpprotocol.METHOD_NOT_FOUND, unsupported.Error)
+	}
+	requireContains(t, strings.ToLower(unsupported.Error.Message), "not found", "unsupported MCP call error")
+
+	valid := callE2EMCPTool(t, ctx, mcpClient, "browser_eval", map[string]interface{}{
+		"script": `document.querySelector("#clicked-result").textContent`,
+	})
+	if valid != `"clicked 1"` {
+		t.Fatalf("valid MCP call after errors = %q, want %q", valid, `"clicked 1"`)
+	}
+
+	if err := mcpClient.Close(); err != nil {
+		t.Fatalf("close MCP stdio client and wait for server exit: %v", err)
+	}
+	closed = true
+}
+
+func sendE2EMCPRequest(t *testing.T, ctx context.Context, stdio *transport.Stdio, id, method string, params interface{}) *transport.JSONRPCResponse {
+	t.Helper()
+	response, err := stdio.SendRequest(ctx, transport.JSONRPCRequest{
+		JSONRPC: mcpprotocol.JSONRPC_VERSION,
+		ID:      mcpprotocol.NewRequestId(id),
+		Method:  method,
+		Params:  params,
+	})
+	if err != nil {
+		t.Fatalf("send MCP request %s (%s): %v", id, method, err)
+	}
+	if got := response.ID.Value(); got != id {
+		t.Fatalf("MCP response id = %#v, want %q for method %s", got, id, method)
+	}
+	return response
+}
+
+func callE2EMCPRawTool(t *testing.T, ctx context.Context, stdio *transport.Stdio, id, name string, args map[string]interface{}) *mcpprotocol.CallToolResult {
+	t.Helper()
+	response := sendE2EMCPRequest(t, ctx, stdio, id, "tools/call", mcpprotocol.CallToolParams{
+		Name: name, Arguments: args,
+	})
+	if response.Error != nil {
+		t.Fatalf("MCP tool %s returned JSON-RPC error for id %s: %+v", name, id, response.Error)
+	}
+	result, err := mcpprotocol.ParseCallToolResult(&response.Result)
+	if err != nil {
+		t.Fatalf("parse MCP tool %s result for id %s: %v", name, id, err)
+	}
+	return result
+}
+
+func requireE2EMCPErrorText(t *testing.T, result *mcpprotocol.CallToolResult, want, label string) {
+	t.Helper()
+	if !result.IsError || len(result.Content) != 1 {
+		t.Fatalf("%s result = %+v, want one error content item", label, result)
+	}
+	text, ok := result.Content[0].(mcpprotocol.TextContent)
+	if !ok {
+		t.Fatalf("%s returned non-text error content: %#v", label, result.Content[0])
+	}
+	requireContains(t, text.Text, want, label)
+}
+
 func callE2EMCPTool(t *testing.T, ctx context.Context, client *mcpclient.Client, name string, args map[string]interface{}) string {
 	t.Helper()
 	result, err := callMCPTool(ctx, client, name, args)
