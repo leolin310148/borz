@@ -696,13 +696,35 @@ func TestDispatch_EvalSiteAutoOpen_WildcardDomainDoesNotOpen(t *testing.T) {
 func TestDispatch_Scroll_AllDirections(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
+	var expressions []string
+	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			Expression string `json:"expression"`
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		expressions = append(expressions, p.Expression)
+		return map[string]interface{}{"result": map[string]interface{}{"type": "boolean", "value": true}}, nil
+	})
 	c := connectCdp(t, f)
 
-	for _, dir := range []string{"up", "down", "left", "right", ""} {
+	directions := []string{"up", "down", "left", "right", ""}
+	for _, dir := range directions {
 		resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionScroll, Direction: dir})
 		if !resp.Success {
 			t.Fatalf("scroll %q: %+v", dir, resp)
 		}
+	}
+	wantExpressions := []string{
+		"window.scrollBy({left: 0, top: -300, behavior: 'instant'})",
+		"window.scrollBy({left: 0, top: 300, behavior: 'instant'})",
+		"window.scrollBy({left: -300, top: 0, behavior: 'instant'})",
+		"window.scrollBy({left: 300, top: 0, behavior: 'instant'})",
+		"window.scrollBy({left: 0, top: 0, behavior: 'instant'})",
+	}
+	if strings.Join(expressions, "|") != strings.Join(wantExpressions, "|") {
+		t.Fatalf("scroll expressions = %q, want %q", expressions, wantExpressions)
 	}
 
 	// Custom pixel count.
@@ -710,6 +732,9 @@ func TestDispatch_Scroll_AllDirections(t *testing.T) {
 	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionScroll, Direction: "down", Pixels: &px})
 	if !resp.Success {
 		t.Fatalf("scroll px: %+v", resp)
+	}
+	if got := expressions[len(expressions)-1]; got != "window.scrollBy({left: 0, top: 500, behavior: 'instant'})" {
+		t.Fatalf("custom scroll expression = %q", got)
 	}
 }
 

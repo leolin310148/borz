@@ -1499,9 +1499,10 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		case "right":
 			deltaX = pixels
 		}
-		cdp.SessionCommand(target.ID, "Input.dispatchMouseEvent", map[string]interface{}{
-			"type": "mouseWheel", "x": 0, "y": 0, "deltaX": deltaX, "deltaY": deltaY,
-		})
+		expr := fmt.Sprintf("window.scrollBy({left: %d, top: %d, behavior: 'instant'})", deltaX, deltaY)
+		if _, err := cdp.Evaluate(target.ID, expr, true); err != nil {
+			return failResp(req.ID, err)
+		}
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionWait:

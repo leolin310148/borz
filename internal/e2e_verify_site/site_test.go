@@ -331,6 +331,30 @@ func TestHandlerServesAccessibilityStatePage(t *testing.T) {
 	}
 }
 
+func TestHandlerServesScrollingPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/scrolling", nil)
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("scrolling status=%d", rec.Code)
+	}
+	for _, marker := range []string{
+		`id="scrolling-ready"`,
+		`id="outer-scroll" aria-label="Outer scrolling container"`,
+		`id="inner-scroll" aria-label="Inner scrolling container"`,
+		`id="nested-end-marker"`,
+		`id="viewport-end-marker"`,
+		`outer.scrollTo(40, 50)`,
+		`inner.scrollTo(60, 70)`,
+		`dataset.initialized = 'true'`,
+	} {
+		if !strings.Contains(rec.Body.String(), marker) {
+			t.Errorf("scrolling page missing %q", marker)
+		}
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {

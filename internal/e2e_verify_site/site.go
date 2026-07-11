@@ -66,6 +66,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/clipboard", clipboard)
 	mux.HandleFunc("/shadow-dom", shadowDOM)
 	mux.HandleFunc("/accessibility-state", accessibilityState)
+	mux.HandleFunc("/scrolling", scrolling)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -536,6 +537,50 @@ func accessibilityState(w http.ResponseWriter, r *http.Request) {
       live.textContent = changed ? 'Accessibility state updated' : 'State idle';
       live.dataset.state = changed ? 'updated' : 'idle';
     });
+  </script>
+</body>
+</html>`)
+}
+
+func scrolling(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>E2E Scrolling</title>
+  <style>
+    html, body { margin: 0; }
+    #scroll-canvas { position: relative; width: 2400px; height: 2200px; background: linear-gradient(135deg, #fff, #eef); }
+    #scrolling-ready { position: absolute; top: 16px; left: 16px; margin: 0; }
+    #outer-scroll { position: absolute; top: 80px; left: 80px; width: 360px; height: 260px; overflow: auto; border: 2px solid #345; }
+    #outer-content { position: relative; width: 900px; height: 750px; }
+    #inner-scroll { position: absolute; top: 140px; left: 180px; width: 240px; height: 160px; overflow: auto; border: 2px solid #678; }
+    #inner-content { position: relative; width: 720px; height: 520px; }
+    #nested-end-marker { position: absolute; right: 0; bottom: 0; }
+    #viewport-end-marker { position: absolute; top: 2050px; left: 2250px; width: 120px; height: 80px; }
+  </style>
+</head>
+<body>
+  <main id="scroll-canvas">
+    <h1 id="scrolling-ready">Scrolling fixture</h1>
+    <section id="outer-scroll" aria-label="Outer scrolling container">
+      <div id="outer-content">
+        <section id="inner-scroll" aria-label="Inner scrolling container">
+          <div id="inner-content">
+            <span id="nested-end-marker">Nested end</span>
+          </div>
+        </section>
+      </div>
+    </section>
+    <div id="viewport-end-marker">Viewport end</div>
+  </main>
+  <script>
+    const outer = document.getElementById('outer-scroll');
+    const inner = document.getElementById('inner-scroll');
+    outer.scrollTo(40, 50);
+    inner.scrollTo(60, 70);
+    document.getElementById('scrolling-ready').dataset.initialized = 'true';
   </script>
 </body>
 </html>`)

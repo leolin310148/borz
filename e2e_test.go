@@ -1052,6 +1052,115 @@ func TestE2ECLIAccessibilityState(t *testing.T) {
 	requireNotContains(t, reset.Snapshot, "Revealed accessibility details", "reset accessibility state snapshot")
 }
 
+func TestE2ECLINestedScrolling(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/scrolling", "--new", "--wait-for", `[data-initialized="true"]`, "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("scrolling open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	runE2EJSON(t, env, "viewport", "800x600", "--dpr", "1", "--tab", tab, "--json")
+	runE2EJSON(t, env, "eval", `(() => {
+      window.scrollTo(0, 0);
+      document.querySelector('#outer-scroll').scrollTo(40, 50);
+      document.querySelector('#inner-scroll').scrollTo(60, 70);
+      return true;
+    })()`, "--tab", tab, "--json")
+	runE2EJSON(t, env, "wait", "150", "--tab", tab, "--json")
+
+	check := func(label, script string) {
+		t.Helper()
+		resp := runE2EJSON(t, env, "eval", script, "--tab", tab, "--json")
+		if got, ok := resp.Data.Result.(bool); !ok || !got {
+			state := runE2EJSON(t, env, "eval", `(() => {
+          const root = document.scrollingElement;
+          const outer = document.querySelector('#outer-scroll');
+          const inner = document.querySelector('#inner-scroll');
+          const marker = document.querySelector('#viewport-end-marker').getBoundingClientRect();
+          return {
+            x: scrollX, y: scrollY,
+            maxX: root.scrollWidth - innerWidth, maxY: root.scrollHeight - innerHeight,
+            outerX: outer.scrollLeft, outerY: outer.scrollTop,
+            innerX: inner.scrollLeft, innerY: inner.scrollTop,
+            marker: { left: marker.left, top: marker.top, right: marker.right, bottom: marker.bottom }
+          };
+        })()`, "--tab", tab, "--json")
+			t.Fatalf("%s state check = %#v, want true; positions = %#v", label, resp.Data.Result, state.Data.Result)
+		}
+	}
+	nestedUnchanged := `
+      const outer = document.querySelector('#outer-scroll');
+      const inner = document.querySelector('#inner-scroll');
+      const nestedStable = outer.scrollLeft === 40 && outer.scrollTop === 50 && inner.scrollLeft === 60 && inner.scrollTop === 70;`
+	check("initial", `(() => {`+nestedUnchanged+`
+      const marker = document.querySelector('#viewport-end-marker').getBoundingClientRect();
+      const markerVisible = marker.left >= 0 && marker.top >= 0 && marker.right <= innerWidth && marker.bottom <= innerHeight;
+      return scrollX === 0 && scrollY === 0 && nestedStable && !markerVisible;
+    })()`)
+
+	// The default distance is 300px; the remaining directional commands use
+	// explicit distances so both parsing paths and every axis are exercised.
+	runE2EJSON(t, env, "scroll", "down", "--tab", tab, "--json")
+	runE2EJSON(t, env, "wait", "150", "--tab", tab, "--json")
+	runE2EJSON(t, env, "scroll", "right", "220", "--tab", tab, "--json")
+	runE2EJSON(t, env, "wait", "150", "--tab", tab, "--json")
+	runE2EJSON(t, env, "scroll", "up", "125", "--tab", tab, "--json")
+	runE2EJSON(t, env, "wait", "150", "--tab", tab, "--json")
+	runE2EJSON(t, env, "scroll", "left", "70", "--tab", tab, "--json")
+	runE2EJSON(t, env, "wait", "150", "--tab", tab, "--json")
+	check("directional pixels", `(() => {`+nestedUnchanged+`
+      return scrollX === 150 && scrollY === 175 && nestedStable;
+    })()`)
+
+	for _, direction := range []string{"down", "right"} {
+		runE2EJSON(t, env, "scroll", direction, "10000", "--tab", tab, "--json")
+		runE2EJSON(t, env, "wait", "150", "--tab", tab, "--json")
+	}
+	check("maximum", `(() => {`+nestedUnchanged+`
+      const root = document.scrollingElement;
+      const marker = document.querySelector('#viewport-end-marker').getBoundingClientRect();
+      const markerVisible = marker.left >= 0 && marker.top >= 0 && marker.right <= innerWidth && marker.bottom <= innerHeight;
+      return scrollX === root.scrollWidth - innerWidth && scrollY === root.scrollHeight - innerHeight && nestedStable && markerVisible;
+    })()`)
+	for _, direction := range []string{"down", "right"} {
+		runE2EJSON(t, env, "scroll", direction, "10000", "--tab", tab, "--json")
+		runE2EJSON(t, env, "wait", "150", "--tab", tab, "--json")
+	}
+	check("stable maximum", `(() => {
+      const root = document.scrollingElement;
+      return scrollX === root.scrollWidth - innerWidth && scrollY === root.scrollHeight - innerHeight;
+    })()`)
+
+	for _, direction := range []string{"up", "left", "up", "left"} {
+		runE2EJSON(t, env, "scroll", direction, "10000", "--tab", tab, "--json")
+		runE2EJSON(t, env, "wait", "150", "--tab", tab, "--json")
+	}
+	check("stable origin", `(() => {`+nestedUnchanged+`
+      return scrollX === 0 && scrollY === 0 && nestedStable;
+    })()`)
+}
+
 func TestE2ECLISnapshotModes(t *testing.T) {
 	skipUnlessE2E(t)
 
