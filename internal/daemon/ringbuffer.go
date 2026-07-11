@@ -48,6 +48,18 @@ func (rb *RingBuffer[T]) Find(match func(*T) bool) *T {
 	return nil
 }
 
+// FindLast returns the newest stored element matching match.
+func (rb *RingBuffer[T]) FindLast(match func(*T) bool) *T {
+	for i := 0; i < rb.count; i++ {
+		index := (rb.head - 1 - i + rb.capacity) % rb.capacity
+		item := &rb.items[index]
+		if match(item) {
+			return item
+		}
+	}
+	return nil
+}
+
 // ToSlice returns all stored elements in insertion order (oldest first).
 func (rb *RingBuffer[T]) ToSlice() []T {
 	if rb.count == 0 {

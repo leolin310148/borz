@@ -362,6 +362,51 @@ func TestHandleSessionEvent_NetworkFlow(t *testing.T) {
 	}))
 }
 
+func TestHandleSessionEvent_NetworkRedirectFlow(t *testing.T) {
+	c := NewCdpConnection("h", 1, NewTabStateManager())
+	tab := c.TabManager.AddTab("T1")
+
+	c.handleSessionEvent("T1", "Network.requestWillBeSent", rawMsg(t, map[string]interface{}{
+		"params": map[string]interface{}{
+			"requestId": "R1",
+			"request":   map[string]interface{}{"url": "https://ex.test/start", "method": "GET"},
+			"type":      "Document",
+		},
+	}))
+	c.handleSessionEvent("T1", "Network.requestWillBeSent", rawMsg(t, map[string]interface{}{
+		"params": map[string]interface{}{
+			"requestId": "R1",
+			"request":   map[string]interface{}{"url": "https://ex.test/final", "method": "GET"},
+			"type":      "Document",
+			"redirectResponse": map[string]interface{}{
+				"status":     302,
+				"statusText": "Found",
+				"headers":    map[string]interface{}{"Location": "/final"},
+				"mimeType":   "text/html",
+			},
+		},
+	}))
+	c.handleSessionEvent("T1", "Network.responseReceived", rawMsg(t, map[string]interface{}{
+		"params": map[string]interface{}{
+			"requestId": "R1",
+			"response": map[string]interface{}{
+				"status": 200, "statusText": "OK", "headers": map[string]interface{}{}, "mimeType": "text/html",
+			},
+		},
+	}))
+
+	requests := tab.GetNetworkRequests(QueryOptions{}).Items
+	if len(requests) != 2 {
+		t.Fatalf("redirect requests = %+v, want two hops", requests)
+	}
+	if requests[0].Status == nil || *requests[0].Status != 302 || requests[0].ResponseHeaders["Location"] != "/final" {
+		t.Fatalf("redirect source request = %+v", requests[0])
+	}
+	if requests[1].Status == nil || *requests[1].Status != 200 || requests[1].URL != "https://ex.test/final" {
+		t.Fatalf("redirect destination request = %+v", requests[1])
+	}
+}
+
 func TestHandleSessionEvent_ConsoleAndExceptions(t *testing.T) {
 	c := NewCdpConnection("h", 1, NewTabStateManager())
 	tab := c.TabManager.AddTab("T1")

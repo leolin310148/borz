@@ -69,6 +69,32 @@ func TestHandlerServesNetworkEndpoints(t *testing.T) {
 	}
 }
 
+func TestHandlerServesRedirectChain(t *testing.T) {
+	h := Handler()
+	for _, step := range []struct {
+		path     string
+		status   int
+		location string
+	}{
+		{path: "/redirect/start", status: http.StatusFound, location: "/redirect/middle"},
+		{path: "/redirect/middle", status: http.StatusTemporaryRedirect, location: "/redirect/final"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, step.path, nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != step.status || rec.Header().Get("Location") != step.location {
+			t.Errorf("%s response = status %d location %q, want %d %q", step.path, rec.Code, rec.Header().Get("Location"), step.status, step.location)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/redirect/final", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `id="redirect-ready"`) || !strings.Contains(rec.Body.String(), "E2E Redirect Final") {
+		t.Fatalf("redirect final response = status %d body %.200q", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHandlerAdditionalPagesAndNotFound(t *testing.T) {
 	h := Handler()
 	for _, path := range []string{"/page2", "/tab", "/frame.html"} {

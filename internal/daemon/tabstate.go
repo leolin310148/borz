@@ -177,7 +177,7 @@ func (ts *TabState) findNetworkRequest(requestID string) *protocol.NetworkReques
 	if requestID == "" {
 		return nil
 	}
-	return ts.NetworkRequests.Find(func(info *protocol.NetworkRequestInfo) bool {
+	return ts.NetworkRequests.FindLast(func(info *protocol.NetworkRequestInfo) bool {
 		return info.RequestID == requestID
 	})
 }

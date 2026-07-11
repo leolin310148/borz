@@ -67,6 +67,9 @@ func Handler() http.Handler {
 	mux.HandleFunc("/shadow-dom", shadowDOM)
 	mux.HandleFunc("/accessibility-state", accessibilityState)
 	mux.HandleFunc("/scrolling", scrolling)
+	mux.HandleFunc("/redirect/start", redirectStart)
+	mux.HandleFunc("/redirect/middle", redirectMiddle)
+	mux.HandleFunc("/redirect/final", redirectFinal)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -589,6 +592,19 @@ func scrolling(w http.ResponseWriter, r *http.Request) {
 func tabPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, `<!doctype html><html><head><title>E2E Verify Tab</title></head><body><h1 id="tab-ready">Tab page</h1></body></html>`)
+}
+
+func redirectStart(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/redirect/middle", http.StatusFound)
+}
+
+func redirectMiddle(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/redirect/final", http.StatusTemporaryRedirect)
+}
+
+func redirectFinal(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html><html><head><title>E2E Redirect Final</title></head><body><h1 id="redirect-ready">Redirect chain complete</h1></body></html>`)
 }
 
 func frame(w http.ResponseWriter, r *http.Request) {

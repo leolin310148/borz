@@ -555,10 +555,21 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 				Headers  json.RawMessage `json:"headers"`
 				PostData string          `json:"postData"`
 			} `json:"request"`
+			RedirectResponse *struct {
+				Status     int             `json:"status"`
+				StatusText string          `json:"statusText"`
+				Headers    json.RawMessage `json:"headers"`
+				MimeType   string          `json:"mimeType"`
+			} `json:"redirectResponse"`
 			Type      string  `json:"type"`
 			Timestamp float64 `json:"timestamp"`
 		}
 		if json.Unmarshal(paramsRaw, &params) == nil && params.RequestID != "" {
+			if params.RedirectResponse != nil {
+				status := params.RedirectResponse.Status
+				tab.UpdateNetworkResponse(params.RequestID, &status, params.RedirectResponse.StatusText,
+					normalizeHeaders(params.RedirectResponse.Headers), params.RedirectResponse.MimeType)
+			}
 			tab.AddNetworkRequest(params.RequestID, protocol.NetworkRequestInfo{
 				URL:            params.Request.URL,
 				Method:         params.Request.Method,

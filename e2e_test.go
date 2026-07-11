@@ -1307,6 +1307,83 @@ func TestE2ECLINetworkDiagnostics(t *testing.T) {
 	}
 }
 
+func TestE2ECLIRedirectChain(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	baseURL := site.URL()
+	tab := runE2EJSON(t, env, "open", baseURL+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	if tab == "" {
+		t.Fatal("redirect fixture open response did not include a short tab id")
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	runE2EJSON(t, env, "network", "clear", "--tab", tab, "--json")
+	runE2EJSON(t, env, "open", baseURL+"/redirect/start", "--tab", tab, "--wait-for", "#redirect-ready", "--timeout", "10000", "--json")
+	if finalURL := runE2EJSON(t, env, "get", "url", "--tab", tab, "--json").Data.Value; finalURL != baseURL+"/redirect/final" {
+		t.Fatalf("redirect final URL = %q", finalURL)
+	}
+	if title := runE2EJSON(t, env, "get", "title", "--tab", tab, "--json").Data.Value; title != "E2E Redirect Final" {
+		t.Fatalf("redirect final title = %q", title)
+	}
+
+	requests := runE2EJSON(t, env, "network", "requests", "--filter", "/redirect/", "--tab", tab, "--json").Data.NetworkRequests
+	wantRedirects := map[string]struct {
+		status   int
+		location string
+	}{
+		baseURL + "/redirect/start":  {status: http.StatusFound, location: "/redirect/middle"},
+		baseURL + "/redirect/middle": {status: http.StatusTemporaryRedirect, location: "/redirect/final"},
+	}
+	for url, want := range wantRedirects {
+		found := false
+		for _, request := range requests {
+			if request.URL != url {
+				continue
+			}
+			found = true
+			location := ""
+			for name, value := range request.ResponseHeaders {
+				if strings.EqualFold(name, "Location") {
+					location = value
+				}
+			}
+			if request.Status == nil || *request.Status != want.status || location != want.location {
+				t.Fatalf("redirect network record for %s = %+v, want status %d location %q", url, request, want.status, want.location)
+			}
+		}
+		if !found {
+			t.Fatalf("redirect network records missing %s: %+v", url, requests)
+		}
+	}
+
+	runE2EJSON(t, env, "back", "--tab", tab, "--wait-for", "#ready", "--timeout", "5000", "--json")
+	if backURL := runE2EJSON(t, env, "get", "url", "--tab", tab, "--json").Data.Value; backURL != baseURL+"/" {
+		t.Fatalf("back from redirect URL = %q, want home", backURL)
+	}
+	runE2EJSON(t, env, "forward", "--tab", tab, "--wait-for", "#redirect-ready", "--timeout", "10000", "--json")
+	if forwardURL := runE2EJSON(t, env, "get", "url", "--tab", tab, "--json").Data.Value; forwardURL != baseURL+"/redirect/final" {
+		t.Fatalf("forward through redirect URL = %q, want final URL", forwardURL)
+	}
+}
+
 func TestE2ECLITabDiagnosticsIsolation(t *testing.T) {
 	skipUnlessE2E(t)
 
