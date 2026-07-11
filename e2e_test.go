@@ -1307,6 +1307,85 @@ func TestE2ECLINetworkDiagnostics(t *testing.T) {
 	}
 }
 
+func TestE2ECLIStreamingNetworkFailures(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("streaming network open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	runE2EJSON(t, env, "network", "clear", "--tab", tab, "--json")
+	stream := runE2EJSON(t, env, "eval", `await fetch('/api/network/stream').then(response => response.text())`, "--tab", tab, "--json")
+	if stream.Data.Result != "stream-chunk-one\nstream-chunk-two\n" {
+		t.Fatalf("stream response = %#v", stream.Data.Result)
+	}
+	streamRequests := runE2EJSON(t, env, "network", "requests", "--filter", "/api/network/stream", "--with-body", "--tab", tab, "--json").Data.NetworkRequests
+	if len(streamRequests) != 1 || streamRequests[0].Status == nil || *streamRequests[0].Status != http.StatusOK || streamRequests[0].Failed || streamRequests[0].ResponseBody != "stream-chunk-one\nstream-chunk-two\n" {
+		t.Fatalf("stream network lifecycle = %+v", streamRequests)
+	}
+
+	aborted := runE2EJSON(t, env, "eval", `await fetch('/api/network/abort').then(response => response.text()).then(
+		value => ({value}), error => ({name: error.name, message: error.message})
+	)`, "--tab", tab, "--json")
+	abortResult, ok := aborted.Data.Result.(map[string]interface{})
+	if !ok || abortResult["name"] != "TypeError" || abortResult["message"] == "" {
+		t.Fatalf("aborted fetch result = %#v", aborted.Data.Result)
+	}
+	abortRequests := runE2EJSON(t, env, "network", "requests", "--filter", "/api/network/abort", "--tab", tab, "--json").Data.NetworkRequests
+	if len(abortRequests) != 1 || abortRequests[0].Status == nil || *abortRequests[0].Status != http.StatusOK || !abortRequests[0].Failed || abortRequests[0].FailureReason == "" {
+		t.Fatalf("aborted network lifecycle = %+v", abortRequests)
+	}
+
+	timedOut := runE2EJSON(t, env, "eval", `await (async () => {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), 75);
+		try {
+			await fetch('/api/network/stream?case=timeout', {signal: controller.signal}).then(response => response.text());
+			return {completed: true};
+		} catch (error) {
+			return {name: error.name, message: error.message};
+		} finally {
+			clearTimeout(timer);
+		}
+	})()`, "--tab", tab, "--json")
+	timeoutResult, ok := timedOut.Data.Result.(map[string]interface{})
+	if !ok || timeoutResult["name"] != "AbortError" || timeoutResult["message"] == "" {
+		t.Fatalf("timed out stream result = %#v", timedOut.Data.Result)
+	}
+	timeoutRequests := runE2EJSON(t, env, "network", "requests", "--filter", "case=timeout", "--tab", tab, "--json").Data.NetworkRequests
+	if len(timeoutRequests) != 1 || !timeoutRequests[0].Failed || !strings.Contains(timeoutRequests[0].FailureReason, "ERR_ABORTED") {
+		t.Fatalf("timed out network lifecycle = %+v", timeoutRequests)
+	}
+
+	// A failed transfer must not poison the daemon or the tab's browser context.
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, "document.title", "E2E Verify Home")
+	ping := runE2EJSON(t, env, "eval", `await fetch('/api/ping?after=failed-transfer').then(response => response.json()).then(value => value.ok)`, "--tab", tab, "--json")
+	if ping.Data.Result != "true" {
+		t.Fatalf("post-failure ping result = %#v", ping.Data.Result)
+	}
+}
+
 func TestE2ECLIRedirectChain(t *testing.T) {
 	skipUnlessE2E(t)
 

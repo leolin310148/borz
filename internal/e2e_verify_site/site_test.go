@@ -67,6 +67,35 @@ func TestHandlerServesNetworkEndpoints(t *testing.T) {
 	if rec.Code != http.StatusAccepted || time.Since(started) < 250*time.Millisecond {
 		t.Fatalf("network slow status=%d elapsed=%s", rec.Code, time.Since(started))
 	}
+
+	ts := httptest.NewServer(h)
+	t.Cleanup(ts.Close)
+	started = time.Now()
+	resp, err := http.Get(ts.URL + "/api/network/stream")
+	if err != nil {
+		t.Fatalf("network stream: %v", err)
+	}
+	streamBody, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read network stream: %v", err)
+	}
+	if len(resp.TransferEncoding) != 1 || resp.TransferEncoding[0] != "chunked" {
+		t.Fatalf("network stream transfer encoding=%v, want chunked", resp.TransferEncoding)
+	}
+	if got := string(streamBody); got != "stream-chunk-one\nstream-chunk-two\n" || time.Since(started) < 250*time.Millisecond {
+		t.Fatalf("network stream body=%q elapsed=%s", got, time.Since(started))
+	}
+
+	resp, err = http.Get(ts.URL + "/api/network/abort")
+	if err != nil {
+		t.Fatalf("network abort response: %v", err)
+	}
+	abortBody, readErr := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if string(abortBody) != "partial-response" || readErr == nil {
+		t.Fatalf("network abort body=%q readErr=%v, want partial body and read failure", abortBody, readErr)
+	}
 }
 
 func TestHandlerServesFetchEndpoints(t *testing.T) {

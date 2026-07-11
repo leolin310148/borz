@@ -80,6 +80,8 @@ func Handler() http.Handler {
 	mux.HandleFunc("/api/data", jsonEndpoint(map[string]string{"message": "hello from e2e verify site"}))
 	mux.HandleFunc("/api/network/echo", networkEcho)
 	mux.HandleFunc("/api/network/slow", networkSlow)
+	mux.HandleFunc("/api/network/stream", networkStream)
+	mux.HandleFunc("/api/network/abort", networkAbort)
 	mux.HandleFunc("/api/fetch/get", fetchRequest)
 	mux.HandleFunc("/api/fetch/post", fetchRequest)
 	mux.HandleFunc("/api/fetch/put", fetchRequest)
@@ -712,6 +714,38 @@ func networkSlow(w http.ResponseWriter, r *http.Request) {
 	case <-r.Context().Done():
 		return
 	}
+}
+
+func networkStream(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, "stream-chunk-one\n")
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	timer := time.NewTimer(300 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		_, _ = io.WriteString(w, "stream-chunk-two\n")
+	case <-r.Context().Done():
+	}
+}
+
+func networkAbort(w http.ResponseWriter, _ *http.Request) {
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "connection hijacking unavailable", http.StatusInternalServerError)
+		return
+	}
+	conn, rw, err := hijacker.Hijack()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	const partial = "partial-response"
+	_, _ = fmt.Fprintf(rw, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(partial)+64, partial)
+	_ = rw.Flush()
 }
 
 func fetchRequest(w http.ResponseWriter, r *http.Request) {
