@@ -4266,6 +4266,157 @@ func TestE2ECLITracingArtifact(t *testing.T) {
 	}
 }
 
+func TestE2ECLIOperationalLogsPrivacy(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	t.Setenv("BORZ_SESSION_ID", "e2e-operational-logs")
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	const (
+		sessionID       = "e2e-operational-logs"
+		querySecret     = "query-secret-e2e47"
+		scriptSecret    = "script-secret-e2e47"
+		formSecret      = "form-secret-e2e47"
+		headerName      = "X-E2E47-Secret"
+		headerSecret    = "header-secret-e2e47"
+		clipboardSecret = "clipboard-secret-e2e47"
+	)
+	baseURL := site.URL()
+	openResp := runE2EJSON(t, env, "open", baseURL+"/?private_query="+querySecret,
+		"--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json")
+	if snapshot.Data.SnapshotData == nil {
+		t.Fatalf("operational-log snapshot returned no snapshot data: %+v", snapshot.Data)
+	}
+	inputRef := refByName(t, snapshot.Data.SnapshotData, "E2E text input")
+	runE2EJSON(t, env, "fill", inputRef, formSecret, "--tab", tab, "--json")
+	evalScript := `window.__e2e47Secret = "` + scriptSecret + `"; true`
+	runE2EJSON(t, env, "eval", evalScript, "--tab", tab, "--json")
+	runE2EJSON(t, env, "fetch", baseURL+"/api/ping?private_fetch="+querySecret,
+		"--header", headerName+": "+headerSecret, "--tab", tab, "--json")
+	runE2EJSON(t, env, "clipboard-write", clipboardSecret, "--tab", tab, "--json")
+	runE2EJSON(t, env, "wait", "40", "--tab", tab, "--json")
+
+	failed := runE2EJSONResponse(t, env, "click", "e999999", "--tab", tab, "--json")
+	if failed.Success {
+		t.Fatalf("missing-ref click unexpectedly succeeded: %+v", failed)
+	}
+
+	tail := runE2ECLI(t, env, "logs", "tail", "--lines", "500", "--json")
+	statsOut := runE2ECLI(t, env, "logs", "stats", "--since", "1h", "--json")
+	for label, secret := range map[string]string{
+		"URL query name": "private_query",
+		"URL query":      querySecret,
+		"eval script":    scriptSecret,
+		"form text":      formSecret,
+		"header name":    headerName,
+		"header value":   headerSecret,
+		"clipboard text": clipboardSecret,
+	} {
+		requireNotContains(t, tail+statsOut, secret, label+" in operational logs")
+	}
+
+	type logEntry struct {
+		Event       string `json:"event"`
+		SessionID   string `json:"session_id"`
+		RequestID   string `json:"request_id"`
+		Surface     string `json:"surface"`
+		Action      string `json:"action"`
+		DurationMS  int64  `json:"duration_ms"`
+		Success     *bool  `json:"success"`
+		ErrorCode   string `json:"error_code"`
+		TextBytes   int    `json:"text_bytes"`
+		ScriptBytes int    `json:"script_bytes"`
+	}
+	var entries []logEntry
+	if err := json.Unmarshal([]byte(tail), &entries); err != nil {
+		t.Fatalf("decode operational log tail: %v\n%s", err, tail)
+	}
+	actionCounts := map[string]int{}
+	actionFailures := map[string]int{}
+	requestIDs := map[string]bool{}
+	var foundFill, foundFailedClick, foundWait, foundEval, foundClipboard bool
+	var waitMaxMS int64
+	for _, entry := range entries {
+		if entry.Event != "command_completed" {
+			continue
+		}
+		if entry.SessionID != sessionID || entry.Surface != "cli" || entry.RequestID == "" {
+			t.Fatalf("command correlation metadata = %+v", entry)
+		}
+		if requestIDs[entry.RequestID] {
+			t.Fatalf("duplicate operational-log request id %q", entry.RequestID)
+		}
+		requestIDs[entry.RequestID] = true
+		actionCounts[entry.Action]++
+		if entry.Success != nil && !*entry.Success {
+			actionFailures[entry.Action]++
+		}
+		switch entry.Action {
+		case string(protocol.ActionFill):
+			foundFill = entry.Success != nil && *entry.Success && entry.TextBytes == len(formSecret)
+		case string(protocol.ActionClick):
+			foundFailedClick = entry.Success != nil && !*entry.Success && entry.ErrorCode == "stale_ref"
+		case string(protocol.ActionWait):
+			if entry.DurationMS > waitMaxMS {
+				waitMaxMS = entry.DurationMS
+			}
+			foundWait = entry.Success != nil && *entry.Success && entry.DurationMS >= 30
+		case string(protocol.ActionEval):
+			foundEval = foundEval || entry.ScriptBytes == len(evalScript)
+		case string(protocol.ActionClipboardWrite):
+			foundClipboard = entry.Success != nil && *entry.Success && entry.TextBytes == len(clipboardSecret)
+		}
+	}
+	if !foundFill || !foundFailedClick || !foundWait || !foundEval || !foundClipboard {
+		t.Fatalf("missing expected operational metadata: fill=%t failedClick=%t wait=%t eval=%t clipboard=%t\n%s",
+			foundFill, foundFailedClick, foundWait, foundEval, foundClipboard, tail)
+	}
+
+	var stats logStats
+	if err := json.Unmarshal([]byte(statsOut), &stats); err != nil {
+		t.Fatalf("decode operational log stats: %v\n%s", err, statsOut)
+	}
+	if stats.Commands != len(requestIDs) || stats.CommandFailures != actionFailures[string(protocol.ActionClick)] {
+		t.Fatalf("tail/stats totals differ: tail commands=%d failures=%d stats=%+v",
+			len(requestIDs), actionFailures[string(protocol.ActionClick)], stats)
+	}
+	for action, count := range actionCounts {
+		if stats.ByAction[action] != count {
+			t.Fatalf("tail/stats count for %s: tail=%d stats=%d", action, count, stats.ByAction[action])
+		}
+	}
+	clickStats := stats.ActionStats[string(protocol.ActionClick)]
+	waitStats := stats.ActionStats[string(protocol.ActionWait)]
+	if clickStats.Failures != 1 || waitStats.Count != actionCounts[string(protocol.ActionWait)] ||
+		waitStats.MaxMS != waitMaxMS || waitStats.P95MS <= 0 || stats.CommandP95MS <= 0 {
+		t.Fatalf("latency/failure stats do not match tail: click=%+v wait=%+v commandP95=%d tailWaitMax=%d",
+			clickStats, waitStats, stats.CommandP95MS, waitMaxMS)
+	}
+}
+
 func skipUnlessE2E(t *testing.T) {
 	t.Helper()
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
