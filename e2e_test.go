@@ -915,6 +915,62 @@ func TestE2ECLIClipboardWriteAndPaste(t *testing.T) {
 	}
 }
 
+func TestE2ECLIShadowDOMBoundary(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/shadow-dom", "--new", "--wait-for", `[data-shadow-ready="true"]`, "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("shadow DOM open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	// The tree snapshot and its substring selector traverse an open shadow root,
+	// while page CSS selectors remain scoped to the document unless eval enters
+	// host.shadowRoot explicitly.
+	requireEvalBool(t, env, `document.querySelector("#shadow-action-button") === null`, true)
+	requireEvalBool(t, env, `document.querySelector("#shadow-host").shadowRoot.mode === "open"`, true)
+
+	selected := runE2EJSON(t, env, "snapshot", "--interactive", "--selector", "shadow-action-button", "--tab", tab, "--json").Data.SnapshotData
+	if selected == nil || len(selected.Elements) != 1 || selected.Elements[0].Name != "Shadow action button" {
+		t.Fatalf("shadow DOM selector-filtered elements = %+v", selected)
+	}
+
+	snapshot := runE2EJSON(t, env, "snapshot", "--interactive", "--tab", tab, "--json").Data.SnapshotData
+	if snapshot == nil {
+		t.Fatal("shadow DOM snapshot returned no snapshot data")
+	}
+	requireContains(t, snapshot.Snapshot, "Shadow action button", "shadow DOM snapshot")
+	requireContains(t, snapshot.Snapshot, "Shadow text input", "shadow DOM snapshot")
+	buttonRef := refByName(t, snapshot, "Shadow action button")
+	inputRef := refByName(t, snapshot, "Shadow text input")
+
+	runE2EJSON(t, env, "click", buttonRef, "--tab", tab, "--json")
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#shadow-host").shadowRoot.querySelector("#shadow-result").textContent`, "clicked 1")
+
+	runE2EJSON(t, env, "fill", inputRef, "shadow value 純文字", "--tab", tab, "--json")
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#shadow-host").shadowRoot.querySelector("#shadow-text-input").value`, "shadow value 純文字")
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#shadow-host").shadowRoot.querySelector("#shadow-result").textContent`, "value: shadow value 純文字")
+}
+
 func TestE2ECLISnapshotModes(t *testing.T) {
 	skipUnlessE2E(t)
 

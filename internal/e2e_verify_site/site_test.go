@@ -283,6 +283,29 @@ func TestHandlerServesClipboardPage(t *testing.T) {
 	}
 }
 
+func TestHandlerServesShadowDOMPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/shadow-dom", nil)
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("shadow DOM status=%d", rec.Code)
+	}
+	for _, marker := range []string{
+		`id="shadow-host"`,
+		`attachShadow({ mode: 'open' })`,
+		`id="nested-shadow-controls"`,
+		`aria-label="Shadow action button"`,
+		`aria-label="Shadow text input"`,
+		`id="shadow-result" role="status"`,
+		`host.dataset.shadowReady = 'true'`,
+	} {
+		if !strings.Contains(rec.Body.String(), marker) {
+			t.Errorf("shadow DOM page missing %q", marker)
+		}
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {

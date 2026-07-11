@@ -64,6 +64,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/dialogs", dialogs)
 	mux.HandleFunc("/keyboard", keyboard)
 	mux.HandleFunc("/clipboard", clipboard)
+	mux.HandleFunc("/shadow-dom", shadowDOM)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -461,6 +462,40 @@ func clipboard(w http.ResponseWriter, r *http.Request) {
       inputEvent.dataset.count = String(Number(inputEvent.dataset.count) + 1);
       inputEvent.textContent = input.value;
     });
+  </script>
+</body>
+</html>`)
+}
+
+func shadowDOM(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>E2E Shadow DOM</title></head>
+<body>
+  <h1 id="shadow-page-ready">Shadow DOM fixture</h1>
+  <div id="shadow-host"></div>
+  <script>
+    const host = document.getElementById('shadow-host');
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = `+"`"+`
+      <section id="nested-shadow-controls" aria-label="Shadow controls">
+        <button id="shadow-action-button" type="button" aria-label="Shadow action button">Activate shadow action</button>
+        <label for="shadow-text-input">Shadow text input</label>
+        <input id="shadow-text-input" aria-label="Shadow text input" autocomplete="off">
+        <output id="shadow-result" role="status">shadow idle</output>
+      </section>
+    `+"`"+`;
+
+    let clicks = 0;
+    root.getElementById('shadow-action-button').addEventListener('click', () => {
+      clicks += 1;
+      root.getElementById('shadow-result').textContent = 'clicked ' + clicks;
+    });
+    root.getElementById('shadow-text-input').addEventListener('input', (event) => {
+      root.getElementById('shadow-result').textContent = 'value: ' + event.target.value;
+    });
+    host.dataset.shadowReady = 'true';
   </script>
 </body>
 </html>`)
