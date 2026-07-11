@@ -552,13 +552,15 @@ var commandHelp = map[string]cmdHelp{
 	// --- Utility / infra ---
 	"fetch": {
 		Summary: "Issue an authenticated HTTP request from inside the page (inherits cookies).",
-		Usage:   "borz fetch <url> [--method <M>] [--tab <id>]",
+		Usage:   "borz fetch <url> [--method <M>] [--header 'Name: value'] [--body <data>] [--tab <id>]",
 		Flags: []string{
-			"  --method <M>   HTTP method (default: GET)",
+			"  --method <M>          HTTP method (default: GET)",
+			"  --header <N: V>       Request header; repeat for multiple headers",
+			"  --body <data>         Raw request body (including an empty body via --body=)",
 		},
 		Examples: []string{
 			"  borz fetch https://api.github.com/user",
-			"  borz fetch https://example.com/api/x --method POST",
+			"  borz fetch https://example.com/api/x --method POST --header 'Content-Type: application/json' --body '{\"ok\":true}'",
 		},
 		Notes: "Runs as fetch(url, {credentials:'include'}) in the tab, so session cookies, " +
 			"auth headers, and CORS policy all apply. Body is returned as parsed JSON when the " +

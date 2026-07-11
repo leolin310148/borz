@@ -9,7 +9,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -78,6 +80,10 @@ func Handler() http.Handler {
 	mux.HandleFunc("/api/data", jsonEndpoint(map[string]string{"message": "hello from e2e verify site"}))
 	mux.HandleFunc("/api/network/echo", networkEcho)
 	mux.HandleFunc("/api/network/slow", networkSlow)
+	mux.HandleFunc("/api/fetch/get", fetchRequest)
+	mux.HandleFunc("/api/fetch/post", fetchRequest)
+	mux.HandleFunc("/api/fetch/put", fetchRequest)
+	mux.HandleFunc("/api/fetch/status", fetchRequest)
 	return mux
 }
 
@@ -706,4 +712,60 @@ func networkSlow(w http.ResponseWriter, r *http.Request) {
 	case <-r.Context().Done():
 		return
 	}
+}
+
+func fetchRequest(w http.ResponseWriter, r *http.Request) {
+	endpoint := strings.TrimPrefix(r.URL.Path, "/api/fetch/")
+	wantMethod := map[string]string{
+		"get": http.MethodGet, "post": http.MethodPost, "put": http.MethodPut,
+		"status": http.MethodGet,
+	}[endpoint]
+	if wantMethod == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != wantMethod {
+		w.Header().Set("Allow", wantMethod)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "read request body", http.StatusBadRequest)
+		return
+	}
+	status := http.StatusOK
+	if endpoint == "status" {
+		status = http.StatusUnprocessableEntity
+	}
+
+	var jsonBody interface{}
+	if strings.Contains(r.Header.Get("Content-Type"), "application/json") && len(rawBody) > 0 {
+		if err := json.Unmarshal(rawBody, &jsonBody); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+	}
+	var formBody url.Values
+	if strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		formBody, err = url.ParseQuery(string(rawBody))
+		if err != nil {
+			http.Error(w, "invalid form body", http.StatusBadRequest)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"method":       r.Method,
+		"header":       r.Header.Get("X-E2E-Header"),
+		"secondHeader": r.Header.Get("X-E2E-Second"),
+		"contentType":  r.Header.Get("Content-Type"),
+		"cookie":       r.Header.Get("Cookie"),
+		"rawBody":      string(rawBody),
+		"jsonBody":     jsonBody,
+		"formBody":     formBody,
+	})
 }

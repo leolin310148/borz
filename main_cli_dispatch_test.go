@@ -463,9 +463,12 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 				t.Fatalf("trace output = %q", out)
 			}
 		}},
-		{name: "fetch", args: []string{"fetch", "https://api.test", "--method", " post "}, action: protocol.ActionEval, check: func(t *testing.T, req protocol.Request, out string) {
+		{name: "fetch", args: []string{"fetch", "https://api.test", "--method", " post ", "--header", "Content-Type: application/json", "--header", "X-Test: value", "--body", `{"ok":true}`}, action: protocol.ActionEval, check: func(t *testing.T, req protocol.Request, out string) {
 			if !strings.Contains(req.Script, `fetch("https://api.test"`) || !strings.Contains(req.Script, `method: "POST"`) {
 				t.Fatalf("fetch script = %q", req.Script)
+			}
+			if !strings.Contains(req.Script, `[["Content-Type","application/json"],["X-Test","value"]]`) || !strings.Contains(req.Script, `body: "{\"ok\":true}"`) {
+				t.Fatalf("fetch script headers/body = %q", req.Script)
 			}
 			if !strings.Contains(req.Script, `(?:[\w.-]+\+)?json`) || !strings.Contains(req.Script, `text.trim() === '' ? null`) {
 				t.Fatalf("fetch script does not handle +json or empty JSON bodies: %q", req.Script)

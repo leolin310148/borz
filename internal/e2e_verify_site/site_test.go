@@ -69,6 +69,62 @@ func TestHandlerServesNetworkEndpoints(t *testing.T) {
 	}
 }
 
+func TestHandlerServesFetchEndpoints(t *testing.T) {
+	h := Handler()
+	for _, tt := range []struct {
+		name        string
+		method      string
+		path        string
+		contentType string
+		body        string
+		wantStatus  int
+	}{
+		{name: "get", method: http.MethodGet, path: "/api/fetch/get", wantStatus: http.StatusOK},
+		{name: "post json", method: http.MethodPost, path: "/api/fetch/post", contentType: "application/json", body: `{"message":"測試","nested":{"ok":true}}`, wantStatus: http.StatusOK},
+		{name: "put form", method: http.MethodPut, path: "/api/fetch/put", contentType: "application/x-www-form-urlencoded", body: "name=borz+e2e&tag=one&tag=two", wantStatus: http.StatusOK},
+		{name: "non-2xx", method: http.MethodGet, path: "/api/fetch/status", wantStatus: http.StatusUnprocessableEntity},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+			req.Header.Set("X-E2E-Header", "fixture-header")
+			req.AddCookie(&http.Cookie{Name: "e2e_fetch_cookie", Value: "same-origin"})
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("%s status=%d, want %d; body=%s", tt.path, rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			var got map[string]interface{}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("%s JSON: %v", tt.path, err)
+			}
+			if got["method"] != tt.method || got["header"] != "fixture-header" || !strings.Contains(got["cookie"].(string), "e2e_fetch_cookie=same-origin") {
+				t.Fatalf("%s response=%+v", tt.path, got)
+			}
+			if tt.name == "post json" {
+				body := got["jsonBody"].(map[string]interface{})
+				if body["message"] != "測試" || body["nested"].(map[string]interface{})["ok"] != true {
+					t.Fatalf("JSON body=%+v", body)
+				}
+			}
+			if tt.name == "put form" {
+				form := got["formBody"].(map[string]interface{})
+				if form["name"].([]interface{})[0] != "borz e2e" || len(form["tag"].([]interface{})) != 2 {
+					t.Fatalf("form body=%+v", form)
+				}
+			}
+		})
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/fetch/post", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != http.MethodPost {
+		t.Fatalf("wrong-method response = status %d allow %q", rec.Code, rec.Header().Get("Allow"))
+	}
+}
+
 func TestHandlerServesRedirectChain(t *testing.T) {
 	h := Handler()
 	for _, step := range []struct {

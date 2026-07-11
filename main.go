@@ -44,6 +44,7 @@ var (
 
 var cliValueFlags = []string{
 	"-d", "--depth", "-s", "--selector", "--filter", "--method", "--status", "--id",
+	"--header", "--body",
 	"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url",
 	"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for",
 	"--timeout", "--pre-delay", "--post-delay",
@@ -880,10 +881,32 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 		method = strings.ToUpper(strings.TrimSpace(v))
 	}
 
-	// Build fetch script
+	headers := make([][2]string, 0)
+	for _, raw := range getAllArgValues(rawArgs, "--header") {
+		name, value, ok := strings.Cut(raw, ":")
+		name = strings.TrimSpace(name)
+		if !ok || name == "" {
+			fatal("--header must use 'Name: value' format")
+			return
+		}
+		headers = append(headers, [2]string{name, strings.TrimSpace(value)})
+	}
+	body, bodySet := getArgValueOK(rawArgs, "--body")
+
+	urlJSON, _ := json.Marshal(url)
+	methodJSON, _ := json.Marshal(method)
+	headersJSON, _ := json.Marshal(headers)
+	bodyJSON, _ := json.Marshal(body)
+	bodyOption := ""
+	if bodySet {
+		bodyOption = ", body: " + string(bodyJSON)
+	}
+
+	// Build fetch script from JSON-encoded values so URLs, headers, and bodies
+	// cannot alter the JavaScript expression.
 	script := fmt.Sprintf(`(async () => {
 		try {
-			const resp = await fetch(%q, { method: %q, credentials: 'include' });
+			const resp = await fetch(%s, { method: %s, credentials: 'include', headers: %s%s });
 			const contentType = resp.headers.get('content-type') || '';
 			const isJson = /\bapplication\/(?:[\w.-]+\+)?json\b/i.test(contentType);
 			const text = await resp.text();
@@ -896,7 +919,7 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 		} catch(e) {
 			return { error: e.message };
 		}
-	})()`, url, method)
+	})()`, urlJSON, methodJSON, headersJSON, bodyOption)
 
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionEval, Script: script}
 	setTab(req, globalTabID)

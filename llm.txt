@@ -54,7 +54,7 @@ borz network [requests|clear] [--filter] [--method] [--status code|class] [--wit
 borz network requests --tail [--interval duration|ms]   # live stream of new requests (Ctrl+C to stop)
 borz console [--clear] [--filter] [--tail]  # --tail streams new messages
 borz errors [--clear] [--filter] [--tail]   # --tail streams new JS errors
-borz fetch <url> [--method POST]             # authenticated HTTP via page
+borz fetch <url> [--method POST] [--header 'Name: value'] [--body data]  # authenticated HTTP via page
 borz tab                                     # list; "tab new", "tab 2", "tab close 1"
 borz frame <selector> | main                 # iframe switching
 borz dialog accept|dismiss [text]

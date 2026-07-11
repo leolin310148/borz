@@ -2057,6 +2057,91 @@ async function() {
 	}
 }
 
+func TestE2ECLIFetchRequests(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	baseURL := site.URL()
+	opened := runE2EJSON(t, env, "open", baseURL+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := opened.Data.Tab
+	if tab == "" {
+		t.Fatalf("open response did not include tab: %+v", opened.Data)
+	}
+	t.Cleanup(func() { runE2EJSON(t, env, "close", "--tab", tab, "--json") })
+
+	runE2EJSON(t, env, "eval", `document.cookie = "e2e_fetch_cookie=same-origin; Path=/; SameSite=Lax"`, "--tab", tab, "--json")
+	fetchResult := func(path string, args ...string) map[string]interface{} {
+		t.Helper()
+		command := []string{"fetch", baseURL + path}
+		command = append(command, args...)
+		command = append(command, "--tab", tab, "--json")
+		resp := runE2EJSON(t, env, command...)
+		result, ok := resp.Data.Result.(map[string]interface{})
+		if !ok {
+			t.Fatalf("borz fetch %s result = %#v", path, resp.Data.Result)
+		}
+		return result
+	}
+	bodyOf := func(result map[string]interface{}) map[string]interface{} {
+		t.Helper()
+		body, ok := result["body"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("fetch body = %#v", result)
+		}
+		return body
+	}
+
+	get := fetchResult("/api/fetch/get", "--header", "X-E2E-Header: get-value", "--header", "X-E2E-Second: second-value")
+	getBody := bodyOf(get)
+	if get["status"] != float64(http.StatusOK) || getBody["method"] != http.MethodGet || getBody["header"] != "get-value" || getBody["secondHeader"] != "second-value" {
+		t.Fatalf("GET fetch result = %#v", get)
+	}
+	if cookie, _ := getBody["cookie"].(string); !strings.Contains(cookie, "e2e_fetch_cookie=same-origin") {
+		t.Fatalf("GET fetch did not inherit same-origin cookie: %#v", getBody)
+	}
+
+	jsonPayload := `{"message":"Unicode 測試","nested":{"count":2}}`
+	post := fetchResult("/api/fetch/post", "--method", "POST", "--header", "Content-Type: application/json", "--body", jsonPayload)
+	postBody := bodyOf(post)
+	decodedJSON, ok := postBody["jsonBody"].(map[string]interface{})
+	if !ok || postBody["method"] != http.MethodPost || postBody["rawBody"] != jsonPayload || decodedJSON["message"] != "Unicode 測試" || decodedJSON["nested"].(map[string]interface{})["count"] != float64(2) {
+		t.Fatalf("POST JSON fetch result = %#v", post)
+	}
+
+	formPayload := "name=borz+e2e&tag=one&tag=two"
+	put := fetchResult("/api/fetch/put", "--method", "PUT", "--header", "Content-Type: application/x-www-form-urlencoded", "--body", formPayload)
+	putBody := bodyOf(put)
+	form, ok := putBody["formBody"].(map[string]interface{})
+	if !ok || putBody["method"] != http.MethodPut || form["name"].([]interface{})[0] != "borz e2e" || len(form["tag"].([]interface{})) != 2 {
+		t.Fatalf("PUT form fetch result = %#v", put)
+	}
+
+	non2xx := fetchResult("/api/fetch/status")
+	if non2xx["status"] != float64(http.StatusUnprocessableEntity) || bodyOf(non2xx)["method"] != http.MethodGet {
+		t.Fatalf("non-2xx fetch result = %#v", non2xx)
+	}
+
+	failure := fetchResult("/api/fetch/get", "--method", "TRACE")
+	if message, ok := failure["error"].(string); !ok || strings.TrimSpace(message) == "" {
+		t.Fatalf("failed fetch did not return a structured error: %#v", failure)
+	}
+}
+
 func TestE2EMCPStdioAgainstVerifySite(t *testing.T) {
 	skipUnlessE2E(t)
 
