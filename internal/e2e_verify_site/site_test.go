@@ -95,6 +95,41 @@ func TestHandlerServesRedirectChain(t *testing.T) {
 	}
 }
 
+func TestHandlerServesURLFidelityRoutes(t *testing.T) {
+	h := Handler()
+	for _, target := range []string{
+		"/url-fidelity?name=%E6%B8%AC%E8%A9%A6",
+		"/url-fidelity/%E8%B7%AF%E5%BE%91?name=%E6%B8%AC%E8%A9%A6#%E7%89%87%E6%AE%B5",
+	} {
+		t.Run(target, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, target, nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s status=%d", target, rec.Code)
+			}
+			for _, marker := range []string{
+				`id="url-fidelity-ready"`,
+				`id="url-path"`,
+				`id="url-query"`,
+				`id="url-fragment"`,
+				`currentURL.searchParams.get('name')`,
+			} {
+				if !strings.Contains(rec.Body.String(), marker) {
+					t.Errorf("%s missing %q", target, marker)
+				}
+			}
+		})
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/url-fidelity/missing", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown URL fidelity route status=%d", rec.Code)
+	}
+}
+
 func TestHandlerAdditionalPagesAndNotFound(t *testing.T) {
 	h := Handler()
 	for _, path := range []string{"/page2", "/tab", "/frame.html"} {

@@ -1384,6 +1384,84 @@ func TestE2ECLIRedirectChain(t *testing.T) {
 	}
 }
 
+func TestE2ECLIURLFidelity(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	token := "e2e-url-fidelity-token"
+	env, serverURL := startE2EServer(t, home, token)
+	baseURL := site.URL()
+	exactURL := baseURL + "/url-fidelity?case=exact"
+	queryURL := baseURL + "/url-fidelity/%E8%B7%AF%E5%BE%91?case=query&name=%E6%B8%AC%E8%A9%A6+%F0%9F%9A%80&reserved=%26%3D%2F%3F"
+	fragmentURL := queryURL + "#%E7%89%87%E6%AE%B5-%F0%9F%8C%9F"
+
+	exactTab := runE2EJSON(t, env, "open", exactURL, "--new", "--wait-for", "#url-fidelity-ready", "--timeout", "10000", "--json").Data.Tab
+	if exactTab == "" {
+		t.Fatal("exact URL open response did not include a short tab id")
+	}
+	runE2EJSON(t, env, "eval", `window.__borzURLReuseSentinel = "preserved"`, "--tab", exactTab, "--json")
+	reused := runE2EJSON(t, env, "open", exactURL, "--wait-for", "#url-fidelity-ready", "--timeout", "5000", "--json")
+	if reused.Data.Tab != exactTab {
+		t.Fatalf("exact URL open selected tab %q, want %q", reused.Data.Tab, exactTab)
+	}
+	if sentinel := runE2EJSON(t, env, "eval", `window.__borzURLReuseSentinel`, "--tab", exactTab, "--json").Data.Result; sentinel != "preserved" {
+		t.Fatalf("exact URL reuse reloaded page state: result=%#v", sentinel)
+	}
+
+	queryTab := runE2EJSON(t, env, "open", queryURL, "--wait-for", "#url-fidelity-ready", "--timeout", "10000", "--json").Data.Tab
+	fragmentTab := runE2EJSON(t, env, "open", fragmentURL, "--wait-for", "#url-fidelity-ready", "--timeout", "10000", "--json").Data.Tab
+	if queryTab == "" || fragmentTab == "" || queryTab == exactTab || fragmentTab == exactTab || fragmentTab == queryTab {
+		t.Fatalf("query and fragment URLs did not create distinct tabs: exact=%q query=%q fragment=%q", exactTab, queryTab, fragmentTab)
+	}
+	for _, tab := range []string{exactTab, queryTab, fragmentTab} {
+		tab := tab
+		t.Cleanup(func() {
+			runE2ERESTJSON(t, serverURL, token, "/v1/close", map[string]interface{}{"tab": tab})
+		})
+	}
+
+	for _, tc := range []struct {
+		tab string
+		url string
+	}{
+		{tab: exactTab, url: exactURL},
+		{tab: queryTab, url: queryURL},
+		{tab: fragmentTab, url: fragmentURL},
+	} {
+		if got := runE2EJSON(t, env, "get", "url", "--tab", tc.tab, "--json").Data.Value; got != tc.url {
+			t.Fatalf("CLI get url for tab %s = %q, want %q", tc.tab, got, tc.url)
+		}
+	}
+
+	if got := runE2EJSON(t, env, "eval", `document.querySelector("#url-unicode-param").textContent`, "--tab", queryTab, "--json").Data.Result; got != "測試 🚀" {
+		t.Fatalf("decoded Unicode query parameter = %#v", got)
+	}
+	if got := runE2EJSON(t, env, "eval", `document.querySelector("#url-reserved-param").textContent`, "--tab", queryTab, "--json").Data.Result; got != "&=/?" {
+		t.Fatalf("decoded reserved query parameter = %#v", got)
+	}
+
+	restURL := runE2ERESTJSON(t, serverURL, token, "/v1/get", map[string]interface{}{
+		"attribute": "url", "tab": fragmentTab,
+	})
+	if restURL.Data.Tab != fragmentTab || restURL.Data.Value != fragmentURL {
+		t.Fatalf("REST get url = tab %q value %q, want tab %q value %q", restURL.Data.Tab, restURL.Data.Value, fragmentTab, fragmentURL)
+	}
+}
+
 func TestE2ECLITabDiagnosticsIsolation(t *testing.T) {
 	skipUnlessE2E(t)
 

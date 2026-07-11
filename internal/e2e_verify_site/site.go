@@ -56,6 +56,8 @@ func Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", root)
 	mux.HandleFunc("/page2", pageTwo)
+	mux.HandleFunc("/url-fidelity", urlFidelity)
+	mux.HandleFunc("/url-fidelity/", urlFidelity)
 	mux.HandleFunc("/spa", spa)
 	mux.HandleFunc("/spa/", spa)
 	mux.HandleFunc("/delayed-render", delayedRender)
@@ -169,6 +171,39 @@ func root(w http.ResponseWriter, r *http.Request) {
 func pageTwo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, `<!doctype html><html><head><title>E2E Verify Page Two</title></head><body><h1 id="page-two-ready">Page Two</h1><a href="/">Back home</a></body></html>`)
+}
+
+func urlFidelity(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/url-fidelity" && r.URL.Path != "/url-fidelity/路徑" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>E2E URL Fidelity</title>
+</head>
+<body>
+  <h1 id="url-fidelity-ready">URL fidelity ready</h1>
+  <dl>
+    <dt>Path</dt><dd id="url-path"></dd>
+    <dt>Query</dt><dd id="url-query"></dd>
+    <dt>Fragment</dt><dd id="url-fragment"></dd>
+    <dt>Unicode parameter</dt><dd id="url-unicode-param"></dd>
+    <dt>Reserved parameter</dt><dd id="url-reserved-param"></dd>
+  </dl>
+  <script>
+    const currentURL = new URL(window.location.href);
+    document.getElementById('url-path').textContent = currentURL.pathname;
+    document.getElementById('url-query').textContent = currentURL.search;
+    document.getElementById('url-fragment').textContent = currentURL.hash;
+    document.getElementById('url-unicode-param').textContent = currentURL.searchParams.get('name') || '';
+    document.getElementById('url-reserved-param').textContent = currentURL.searchParams.get('reserved') || '';
+  </script>
+</body>
+</html>`)
 }
 
 func spa(w http.ResponseWriter, r *http.Request) {
