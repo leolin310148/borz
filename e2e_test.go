@@ -2222,6 +2222,91 @@ async function() {
 	}
 }
 
+func TestE2ECLIEvalOptions(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	opened := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := opened.Data.Tab
+	if tab == "" {
+		t.Fatalf("open response did not include tab: %+v", opened.Data)
+	}
+	t.Cleanup(func() { runE2EJSON(t, env, "close", "--tab", tab, "--json") })
+
+	scriptPath := filepath.Join(t.TempDir(), "eval-options.js")
+	script := `window.__borzEvalState = {
+  unicode: user.name,
+  nested: payload.levels[0].values[1],
+  emptyString,
+  emptyListLength: emptyList.length,
+  emptyObjectKeys: Object.keys(emptyObject).length,
+  nullValue
+}`
+	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+		t.Fatalf("write eval script: %v", err)
+	}
+
+	fileResp := runE2EJSON(t, env,
+		"eval", "--file", scriptPath,
+		"--json-arg", `user={"name":"Unicode 雪人 ☃️"}`,
+		"--json-arg", `payload={"levels":[{"values":["",42]}]}`,
+		"--json-arg", `emptyString=""`,
+		"--json-arg", `emptyList=[]`,
+		"--json-arg", `emptyObject={}`,
+		"--json-arg", `nullValue=null`,
+		"--tab", tab, "--json",
+	)
+	result, ok := fileResp.Data.Result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("eval --file result = %#v", fileResp.Data.Result)
+	}
+	if result["unicode"] != "Unicode 雪人 ☃️" || result["nested"] != float64(42) ||
+		result["emptyString"] != "" || result["emptyListLength"] != float64(0) ||
+		result["emptyObjectKeys"] != float64(0) || result["nullValue"] != nil {
+		t.Fatalf("eval --file JSON args result = %#v", result)
+	}
+
+	unwrapped := runE2ECLI(t, env, "eval", "window.__borzEvalState.unicode", "--tab", tab, "--unwrap")
+	if got := strings.TrimSpace(unwrapped); got != "Unicode 雪人 ☃️" {
+		t.Fatalf("eval --unwrap = %q", got)
+	}
+
+	awaited := runE2ECLI(t, env, "eval", `await Promise.resolve(window.__borzEvalState.nested)`, "--tab", tab, "--unwrap")
+	if got := strings.TrimSpace(awaited); got != "42" {
+		t.Fatalf("top-level await result = %q", got)
+	}
+
+	noAutoAwait := runE2EJSONResponse(t, env, "eval", `await Promise.resolve("should not run")`, "--no-auto-await", "--tab", tab, "--json")
+	if noAutoAwait.Success {
+		t.Fatalf("eval --no-auto-await unexpectedly succeeded: %+v", noAutoAwait)
+	}
+	requireContains(t, noAutoAwait.Error, "SyntaxError", "eval --no-auto-await error")
+	requireContains(t, noAutoAwait.Error, "await", "eval --no-auto-await error")
+
+	scriptError := runE2EJSONResponse(t, env, "eval", `(() => { throw new Error("e2e-eval-intentional") })()`, "--tab", tab, "--json")
+	if scriptError.Success {
+		t.Fatalf("throwing eval unexpectedly succeeded: %+v", scriptError)
+	}
+	requireContains(t, scriptError.Error, "Error: e2e-eval-intentional", "eval script error")
+
+	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, "window.__borzEvalState.unicode", "Unicode 雪人 ☃️")
+}
+
 func TestE2ECLIFetchRequests(t *testing.T) {
 	skipUnlessE2E(t)
 
