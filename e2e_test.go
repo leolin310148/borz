@@ -2077,6 +2077,151 @@ func TestE2EDaemonReconnectRecovery(t *testing.T) {
 	}
 }
 
+func TestE2ENamedProfileIsolation(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	bin := filepath.Join(t.TempDir(), "borz")
+	build := exec.Command("go", "build", "-o", bin, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build borz e2e binary: %v\n%s", err, out)
+	}
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	ep, err := client.DiscoverCDPPort()
+	if err != nil {
+		t.Fatalf("discover Chrome CDP endpoint: %v", err)
+	}
+	cdpURL := fmt.Sprintf("http://%s:%d", ep.Host, ep.Port)
+	profiles := []string{"e2e-isolation-a", "e2e-isolation-b"}
+	run := func(profile string, args ...string) string {
+		t.Helper()
+		args = append(args, "--profile", profile)
+		cmd := exec.Command(bin, args...)
+		cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("borz %s failed: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return string(out)
+	}
+	runJSON := func(profile string, args ...string) protocol.Response {
+		t.Helper()
+		out := run(profile, args...)
+		var resp protocol.Response
+		if err := json.Unmarshal([]byte(out), &resp); err != nil {
+			t.Fatalf("borz %s returned non-JSON response: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		if !resp.Success || resp.Data == nil {
+			t.Fatalf("borz %s returned unsuccessful response: %+v", strings.Join(args, " "), resp)
+		}
+		return resp
+	}
+	daemonPath := func(profile string) string {
+		return filepath.Join(home, "profiles", profile, "daemon.json")
+	}
+	readDaemon := func(profile string) protocol.DaemonInfo {
+		t.Helper()
+		raw, err := os.ReadFile(daemonPath(profile))
+		if err != nil {
+			t.Fatalf("read daemon state for profile %q: %v", profile, err)
+		}
+		var info protocol.DaemonInfo
+		if err := json.Unmarshal(raw, &info); err != nil {
+			t.Fatalf("decode daemon state for profile %q: %v", profile, err)
+		}
+		return info
+	}
+
+	tabs := make(map[string]string)
+	t.Cleanup(func() {
+		for _, profile := range profiles {
+			if tab := tabs[profile]; tab != "" {
+				cmd := exec.Command(bin, "close", "--tab", tab, "--json", "--profile", profile)
+				cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+				_ = cmd.Run()
+			}
+			if raw, readErr := os.ReadFile(daemonPath(profile)); readErr == nil {
+				var info protocol.DaemonInfo
+				_ = json.Unmarshal(raw, &info)
+				cmd := exec.Command(bin, "daemon", "shutdown", "--profile", profile)
+				cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+				_ = cmd.Run()
+				if info.PID > 0 && !client.WaitForProcessExit(info.PID, 3*time.Second) {
+					if process, findErr := os.FindProcess(info.PID); findErr == nil {
+						_ = process.Kill()
+					}
+				}
+			}
+		}
+	})
+
+	tabs[profiles[0]] = runJSON(profiles[0], "open", site.URL()+"/spa", "--new", "--wait-for", `#spa-ready[data-route="home"]`, "--timeout", "10000", "--json").Data.Tab
+	tabs[profiles[1]] = runJSON(profiles[1], "open", site.URL()+"/page2", "--new", "--wait-for", "#page-two-ready", "--timeout", "10000", "--json").Data.Tab
+	if tabs[profiles[0]] == "" || tabs[profiles[1]] == "" || tabs[profiles[0]] == tabs[profiles[1]] {
+		t.Fatalf("profile tabs are not distinct: %+v", tabs)
+	}
+
+	firstDaemon := readDaemon(profiles[0])
+	secondDaemon := readDaemon(profiles[1])
+	if firstDaemon.PID <= 0 || secondDaemon.PID <= 0 || firstDaemon.PID == secondDaemon.PID || firstDaemon.Port == secondDaemon.Port || firstDaemon.Token == secondDaemon.Token {
+		t.Fatalf("profile daemon metadata is not isolated: first=%+v second=%+v", firstDaemon, secondDaemon)
+	}
+
+	runJSON(profiles[0], "eval", `window.__borzProfileMarker = "profile-a"`, "--json")
+	runJSON(profiles[1], "eval", `window.__borzProfileMarker = "profile-b"`, "--json")
+	requireEvalStringFromResponse(t, runJSON(profiles[0], "eval", `window.__borzProfileMarker + ":" + document.title`, "--json"), "profile-a:E2E SPA Home")
+	requireEvalStringFromResponse(t, runJSON(profiles[1], "eval", `window.__borzProfileMarker + ":" + document.title`, "--json"), "profile-b:E2E Verify Page Two")
+
+	firstBaseline := runJSON(profiles[0], "snapshot", "--diff", "--json").Data.SnapshotDiffData
+	secondBaseline := runJSON(profiles[1], "snapshot", "--diff", "--json").Data.SnapshotDiffData
+	if firstBaseline == nil || !firstBaseline.BaselineReset || secondBaseline == nil || !secondBaseline.BaselineReset {
+		t.Fatalf("profiles did not establish independent diff baselines: first=%+v second=%+v", firstBaseline, secondBaseline)
+	}
+	runJSON(profiles[0], "eval", `document.querySelector('[data-spa-route="details"]').setAttribute("aria-disabled", "true")`, "--json")
+	firstDiff := runJSON(profiles[0], "snapshot", "--diff", "--json").Data.SnapshotDiffData
+	if firstDiff == nil || firstDiff.BaselineReset || len(firstDiff.Added) != 0 || len(firstDiff.Removed) != 0 || len(firstDiff.Changed) != 1 {
+		t.Fatalf("first profile mutation diff = %+v, want exactly one changed node", firstDiff)
+	}
+	secondUnchanged := runJSON(profiles[1], "snapshot", "--diff", "--json").Data.SnapshotDiffData
+	if secondUnchanged == nil || secondUnchanged.BaselineReset || secondUnchanged.Stats.Added != 0 || secondUnchanged.Stats.Removed != 0 || secondUnchanged.Stats.Changed != 0 {
+		t.Fatalf("first profile disturbed second profile baseline: %+v", secondUnchanged)
+	}
+
+	runJSON(profiles[0], "close", "--tab", tabs[profiles[0]], "--json")
+	tabs[profiles[0]] = ""
+	requireContains(t, run(profiles[0], "daemon", "shutdown"), "Daemon stopped", "first profile shutdown")
+	if !client.WaitForProcessExit(firstDaemon.PID, 5*time.Second) {
+		t.Fatalf("first profile daemon pid %d leaked after shutdown", firstDaemon.PID)
+	}
+	if _, err := os.Stat(daemonPath(profiles[0])); !os.IsNotExist(err) {
+		t.Fatalf("first profile daemon state remained after shutdown: %v", err)
+	}
+	if !client.IsProcessAlive(secondDaemon.PID) {
+		t.Fatalf("second profile daemon pid %d exited with first profile", secondDaemon.PID)
+	}
+	requireEvalStringFromResponse(t, runJSON(profiles[1], "eval", `window.__borzProfileMarker + ":" + document.title`, "--json"), "profile-b:E2E Verify Page Two")
+
+	runJSON(profiles[1], "close", "--tab", tabs[profiles[1]], "--json")
+	tabs[profiles[1]] = ""
+	requireContains(t, run(profiles[1], "daemon", "shutdown"), "Daemon stopped", "second profile shutdown")
+	if !client.WaitForProcessExit(secondDaemon.PID, 5*time.Second) {
+		t.Fatalf("second profile daemon pid %d leaked after shutdown", secondDaemon.PID)
+	}
+	if _, err := os.Stat(daemonPath(profiles[1])); !os.IsNotExist(err) {
+		t.Fatalf("second profile daemon state remained after shutdown: %v", err)
+	}
+}
+
 func requireEvalStringFromResponse(t *testing.T, resp protocol.Response, want string) {
 	t.Helper()
 	if resp.Data == nil {
