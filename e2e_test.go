@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -3729,6 +3730,109 @@ func TestE2EMCPErrorPathsAgainstVerifySite(t *testing.T) {
 	if valid != `"clicked 1"` {
 		t.Fatalf("valid MCP call after errors = %q, want %q", valid, `"clicked 1"`)
 	}
+
+	if err := mcpClient.Close(); err != nil {
+		t.Fatalf("close MCP stdio client and wait for server exit: %v", err)
+	}
+	closed = true
+}
+
+func TestE2EEvalSurfaceParity(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	const token = "e2e-eval-parity-token"
+	env, serverURL := startE2EServer(t, home, token)
+	opened := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := opened.Data.Tab
+	if tab == "" {
+		t.Fatalf("eval parity open response did not include tab: %+v", opened.Data)
+	}
+	t.Cleanup(func() {
+		runE2ERESTJSON(t, serverURL, token, "/v1/close", map[string]interface{}{"tab": tab})
+	})
+
+	stdio := transport.NewStdio(os.Args[0], []string{
+		"BORZ_E2E_HELPER=1",
+		"BORZ_HOME=" + home,
+	}, "-test.run=TestE2ECLIHelper", "--", "mcp")
+	mcpClient := mcpclient.NewClient(stdio)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := mcpClient.Start(ctx); err != nil {
+		t.Fatalf("start MCP stdio client: %v", err)
+	}
+	closed := false
+	t.Cleanup(func() {
+		if !closed {
+			_ = mcpClient.Close()
+		}
+	})
+
+	initRequest := mcpprotocol.InitializeRequest{}
+	initRequest.Params.ProtocolVersion = mcpprotocol.LATEST_PROTOCOL_VERSION
+	initRequest.Params.ClientInfo = mcpprotocol.Implementation{Name: "borz-e2e-eval-parity", Version: "test"}
+	if _, err := mcpClient.Initialize(ctx, initRequest); err != nil {
+		t.Fatalf("initialize MCP stdio server: %v", err)
+	}
+
+	const topLevelAwait = `await Promise.resolve({surface: "parity", unicode: "等待 🚀", nested: {value: 43}})`
+	cliResult := runE2EJSON(t, env, "eval", topLevelAwait, "--tab", tab, "--json").Data.Result
+
+	mcpText := callE2EMCPTool(t, ctx, mcpClient, "browser_eval", map[string]interface{}{
+		"script": topLevelAwait, "tab": tab,
+	})
+	var mcpResult interface{}
+	if err := json.Unmarshal([]byte(mcpText), &mcpResult); err != nil {
+		t.Fatalf("decode MCP eval result %q: %v", mcpText, err)
+	}
+
+	status, rawREST := runE2ERESTJSONResponse(t, serverURL, token, "/v1/eval", map[string]interface{}{
+		"script": topLevelAwait, "tab": tab,
+	})
+	if status != http.StatusBadRequest || rawREST.Success {
+		t.Fatalf("REST top-level await without wrapper = status %d, response %+v", status, rawREST)
+	}
+	requireContains(t, rawREST.Error, "SyntaxError", "unwrapped REST eval error")
+	requireContains(t, rawREST.Error, "await", "unwrapped REST eval error")
+
+	restResult := runE2ERESTJSON(t, serverURL, token, "/v1/eval", map[string]interface{}{
+		"script": `(async () => ({surface: "parity", unicode: "等待 🚀", nested: {value: await Promise.resolve(43)}}))()`,
+		"tab":    tab,
+	}).Data.Result
+	if !reflect.DeepEqual(cliResult, mcpResult) || !reflect.DeepEqual(cliResult, restResult) {
+		t.Fatalf("eval surface results differ: CLI=%#v MCP=%#v REST=%#v", cliResult, mcpResult, restResult)
+	}
+
+	cliOptOut := runE2EJSONResponse(t, env, "eval", topLevelAwait, "--no-auto-await", "--tab", tab, "--json")
+	if cliOptOut.Success {
+		t.Fatalf("CLI eval opt-out unexpectedly succeeded: %+v", cliOptOut)
+	}
+	requireContains(t, cliOptOut.Error, "SyntaxError", "CLI eval opt-out error")
+	requireContains(t, cliOptOut.Error, "await", "CLI eval opt-out error")
+
+	mcpOptOut, err := callMCPTool(ctx, mcpClient, "browser_eval", map[string]interface{}{
+		"script": topLevelAwait, "tab": tab, "noAutoAwait": true,
+	})
+	if err != nil {
+		t.Fatalf("call MCP eval opt-out: %v", err)
+	}
+	requireE2EMCPErrorText(t, mcpOptOut, "SyntaxError", "MCP eval opt-out error")
+	requireE2EMCPErrorText(t, mcpOptOut, "await", "MCP eval opt-out error")
 
 	if err := mcpClient.Close(); err != nil {
 		t.Fatalf("close MCP stdio client and wait for server exit: %v", err)
