@@ -898,6 +898,129 @@ func TestE2ECLINetworkDiagnostics(t *testing.T) {
 	}
 }
 
+func TestE2ECLITabDiagnosticsIsolation(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	tabOne := runE2EJSON(t, env, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json").Data.Tab
+	tabTwo := runE2EJSON(t, env, "open", site.URL()+"/page2", "--new", "--wait-for", "#page-two-ready", "--timeout", "10000", "--json").Data.Tab
+	if tabOne == "" || tabTwo == "" || tabOne == tabTwo {
+		t.Fatalf("diagnostics tabs are not distinct: tab one=%q tab two=%q", tabOne, tabTwo)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tabOne, "--json")
+		runE2ECLI(t, env, "close", "--tab", tabTwo, "--json")
+	})
+
+	clearE2EDiagnostics(t, env, tabOne)
+	clearE2EDiagnostics(t, env, tabTwo)
+	emitE2EDiagnostics(t, env, tabOne, "e2e-diag-tab-one")
+	emitE2EDiagnostics(t, env, tabTwo, "e2e-diag-tab-two")
+	requireE2EDiagnostics(t, env, tabOne, "e2e-diag-tab-one", "e2e-diag-tab-two", "")
+	requireE2EDiagnostics(t, env, tabTwo, "e2e-diag-tab-two", "e2e-diag-tab-one", "")
+
+	clearE2EDiagnostics(t, env, tabOne)
+	requireNoE2EDiagnostics(t, env, tabOne, "")
+	requireE2EDiagnostics(t, env, tabTwo, "e2e-diag-tab-two", "e2e-diag-tab-one", "")
+
+	clearE2EDiagnostics(t, env, tabOne)
+	clearE2EDiagnostics(t, env, tabTwo)
+	for _, tc := range []struct {
+		tab   string
+		label string
+	}{
+		{tabOne, "e2e-diag-tab-one"},
+		{tabTwo, "e2e-diag-tab-two"},
+	} {
+		emitE2EDiagnostics(t, env, tc.tab, tc.label+"-old")
+		emitE2EDiagnostics(t, env, tc.tab, tc.label+"-new")
+	}
+	requireE2EDiagnostics(t, env, tabOne, "e2e-diag-tab-one-new", "e2e-diag-tab-two-new", "last_action")
+	requireE2EDiagnostics(t, env, tabTwo, "e2e-diag-tab-two-new", "e2e-diag-tab-one-new", "last_action")
+}
+
+func clearE2EDiagnostics(t *testing.T, env e2eDaemonEnv, tab string) {
+	t.Helper()
+	runE2EJSON(t, env, "console", "--clear", "--tab", tab, "--json")
+	runE2EJSON(t, env, "errors", "--clear", "--tab", tab, "--json")
+	runE2EJSON(t, env, "network", "clear", "--tab", tab, "--json")
+}
+
+func emitE2EDiagnostics(t *testing.T, env e2eDaemonEnv, tab, label string) {
+	t.Helper()
+	script := fmt.Sprintf(`console.log(%q);
+		setTimeout(() => { throw new Error(%q); }, 0);
+		await fetch(%q);
+		true`, label, label, "/api/ping?diagnostics="+label)
+	runE2EJSON(t, env, "eval", script, "--tab", tab, "--json")
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		resp := runE2EJSON(t, env, "errors", "--filter", label, "--tab", tab, "--json")
+		if len(resp.Data.JSErrors) == 1 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for JavaScript error %q on tab %s", label, tab)
+}
+
+func requireE2EDiagnostics(t *testing.T, env e2eDaemonEnv, tab, own, other, since string) {
+	t.Helper()
+	args := func(command ...string) []string {
+		command = append(command, "--filter", "e2e-diag-", "--tab", tab)
+		if since != "" {
+			command = append(command, "--since", since)
+		}
+		return append(command, "--json")
+	}
+
+	console := runE2EJSON(t, env, args("console")...).Data.ConsoleMessages
+	if len(console) != 1 || !strings.Contains(console[0].Text, own) || strings.Contains(console[0].Text, other) {
+		t.Fatalf("console diagnostics for tab %s = %+v, want only %q", tab, console, own)
+	}
+	errors := runE2EJSON(t, env, args("errors")...).Data.JSErrors
+	if len(errors) != 1 || !strings.Contains(errors[0].Message, own) || strings.Contains(errors[0].Message, other) {
+		t.Fatalf("error diagnostics for tab %s = %+v, want only %q", tab, errors, own)
+	}
+	network := runE2EJSON(t, env, args("network", "requests")...).Data.NetworkRequests
+	if len(network) != 1 || !strings.Contains(network[0].URL, own) || strings.Contains(network[0].URL, other) {
+		t.Fatalf("network diagnostics for tab %s = %+v, want only %q", tab, network, own)
+	}
+}
+
+func requireNoE2EDiagnostics(t *testing.T, env e2eDaemonEnv, tab, since string) {
+	t.Helper()
+	args := []string{"--filter", "e2e-diag-", "--tab", tab}
+	if since != "" {
+		args = append(args, "--since", since)
+	}
+	if got := runE2EJSON(t, env, append([]string{"console"}, append(args, "--json")...)...).Data.ConsoleMessages; len(got) != 0 {
+		t.Fatalf("console clear left diagnostics on tab %s: %+v", tab, got)
+	}
+	if got := runE2EJSON(t, env, append([]string{"errors"}, append(args, "--json")...)...).Data.JSErrors; len(got) != 0 {
+		t.Fatalf("errors clear left diagnostics on tab %s: %+v", tab, got)
+	}
+	if got := runE2EJSON(t, env, append([]string{"network", "requests"}, append(args, "--json")...)...).Data.NetworkRequests; len(got) != 0 {
+		t.Fatalf("network clear left diagnostics on tab %s: %+v", tab, got)
+	}
+}
+
 func TestE2EClientModeAgainstServer(t *testing.T) {
 	skipUnlessE2E(t)
 
