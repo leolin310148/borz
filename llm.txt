@@ -40,7 +40,7 @@ borz click <ref>                             # refs come from snapshot
 borz fill <ref> <text>                       # clear + fill
 borz type <ref> <text>                       # append
 borz upload <ref> <file...>                  # attach files to <input type=file> (paths on daemon host)
-borz press <key>                             # Enter, Tab, ArrowDown, Escape, ...
+borz press <key> [--modifiers <csv>]         # Enter, Tab, ArrowDown; modifiers: alt,ctrl,meta,shift
 borz clipboard-write <text> [--paste]        # set clipboard; --paste fires Ctrl+Shift+V (atomic terminal paste)
 borz term-text                               # xterm.js buffer text incl. scrollback (replaces screenshot OCR)
 borz eval <script>                           # JS in page context, returns JSON

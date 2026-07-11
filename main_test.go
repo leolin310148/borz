@@ -37,6 +37,20 @@ func TestIsRemoteBind(t *testing.T) {
 	}
 }
 
+func TestParsePressModifiers(t *testing.T) {
+	got, err := parsePressModifiers("ctrl, Alt,shift")
+	if err != nil {
+		t.Fatalf("parsePressModifiers: %v", err)
+	}
+	want := []string{"ctrl", "alt", "shift"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parsePressModifiers = %v, want %v", got, want)
+	}
+	if _, err := parsePressModifiers("ctrl,hyper"); err == nil || !strings.Contains(err.Error(), "hyper") {
+		t.Fatalf("invalid modifier error = %v", err)
+	}
+}
+
 func TestServerOptionsFromArgs(t *testing.T) {
 	t.Setenv("BORZ_SERVER_HOST", "")
 	t.Setenv("BB_BROWSER_SERVER_HOST", "")

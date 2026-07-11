@@ -136,13 +136,14 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"press": {
 		Summary: "Dispatch a single key press to the active element.",
-		Usage:   "borz press <key> [--tab <id>]" + waitForUsageSuffix,
+		Usage:   "borz press <key> [--modifiers <csv>] [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{
 			"  borz press Enter",
 			"  borz press Escape",
 			"  borz press ArrowDown",
+			"  borz press Tab --modifiers shift",
 		},
-		Notes: "Key names follow KeyboardEvent.key (e.g. 'Enter', 'Tab', 'ArrowLeft', 'a').",
+		Notes: "Key names follow KeyboardEvent.key (e.g. 'Enter', 'Tab', 'ArrowLeft', 'a').\nModifiers are a comma-separated combination of alt, ctrl, meta, and shift.",
 	},
 	"clipboard-write": {
 		Summary: "Write text to the browser clipboard, optionally pasting it into a terminal.",

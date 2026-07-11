@@ -62,6 +62,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/async-action", asyncAction)
 	mux.HandleFunc("/file-upload", fileUpload)
 	mux.HandleFunc("/dialogs", dialogs)
+	mux.HandleFunc("/keyboard", keyboard)
 	mux.HandleFunc("/tab", tabPage)
 	mux.HandleFunc("/frame.html", frame)
 	mux.HandleFunc("/api/ping", jsonEndpoint(map[string]string{"ok": "true", "source": "e2e_verify_site"}))
@@ -370,6 +371,66 @@ func dialogs(w http.ResponseWriter, r *http.Request) {
     document.getElementById('prompt-button').addEventListener('click', () => {
       const result = prompt('E2E prompt', 'default prompt');
       document.getElementById('prompt-result').textContent = 'prompt: ' + result;
+    });
+  </script>
+</body>
+</html>`)
+}
+
+func keyboard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>E2E Keyboard</title></head>
+<body>
+  <h1 id="keyboard-ready">Keyboard fixture</h1>
+  <label for="focus-first">First focus stop</label>
+  <input id="focus-first" aria-label="First focus stop" autocomplete="off">
+  <button id="enter-button" type="button">Enter activation</button>
+  <button id="space-button" type="button">Space activation</button>
+  <button id="open-panel" type="button">Open dismissible panel</button>
+  <section id="dismissible-panel" aria-label="Dismissible panel" hidden>Press Escape to dismiss</section>
+
+  <div id="arrow-list" role="listbox" tabindex="0" aria-label="Arrow choices" aria-activedescendant="arrow-one">
+    <div id="arrow-one" role="option" aria-selected="true">Choice one</div>
+    <div id="arrow-two" role="option" aria-selected="false">Choice two</div>
+    <div id="arrow-three" role="option" aria-selected="false">Choice three</div>
+  </div>
+
+  <output id="activation-result">none</output>
+  <output id="arrow-result">Choice one</output>
+  <output id="key-event-data">none</output>
+  <script>
+    const activationResult = document.getElementById('activation-result');
+    document.getElementById('enter-button').addEventListener('click', () => { activationResult.textContent = 'enter activated'; });
+    document.getElementById('space-button').addEventListener('click', () => { activationResult.textContent = 'space activated'; });
+
+    const panel = document.getElementById('dismissible-panel');
+    document.getElementById('open-panel').addEventListener('click', () => { panel.hidden = false; });
+
+    const list = document.getElementById('arrow-list');
+    const options = Array.from(list.querySelectorAll('[role=option]'));
+    let selected = 0;
+    list.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      event.preventDefault();
+      selected = (selected + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+      options.forEach((option, index) => option.setAttribute('aria-selected', String(index === selected)));
+      list.setAttribute('aria-activedescendant', options[selected].id);
+      document.getElementById('arrow-result').textContent = options[selected].textContent;
+    });
+
+    document.addEventListener('keydown', (event) => {
+      document.getElementById('key-event-data').textContent = JSON.stringify({
+        key: event.key,
+        target: event.target.id,
+        alt: event.altKey,
+        ctrl: event.ctrlKey,
+        meta: event.metaKey,
+        shift: event.shiftKey
+      });
+      if (event.key === 'Escape') panel.hidden = true;
+      if (event.altKey || event.ctrlKey || event.metaKey) event.preventDefault();
     });
   </script>
 </body>

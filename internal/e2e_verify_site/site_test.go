@@ -234,6 +234,31 @@ func TestHandlerServesDialogsPage(t *testing.T) {
 	}
 }
 
+func TestHandlerServesKeyboardPage(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/keyboard", nil)
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("keyboard status=%d", rec.Code)
+	}
+	for _, marker := range []string{
+		`id="keyboard-ready"`,
+		`aria-label="First focus stop"`,
+		`id="enter-button"`,
+		`id="space-button"`,
+		`id="dismissible-panel"`,
+		`role="listbox"`,
+		`event.key === 'ArrowDown'`,
+		`event.key === 'Escape'`,
+		`shift: event.shiftKey`,
+	} {
+		if !strings.Contains(rec.Body.String(), marker) {
+			t.Errorf("keyboard page missing %q", marker)
+		}
+	}
+}
+
 func TestStartAndClose(t *testing.T) {
 	site, err := Start("")
 	if err != nil {

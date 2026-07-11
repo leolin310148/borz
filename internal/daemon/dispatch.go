@@ -1456,17 +1456,30 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			return failResp(req.ID, "missing key parameter")
 		}
 		seq := tab.RecordAction()
-		cdp.SessionCommand(target.ID, "Input.dispatchKeyEvent", map[string]interface{}{
-			"type": "keyDown", "key": req.Key,
-		})
-		if len(req.Key) == 1 {
-			cdp.SessionCommand(target.ID, "Input.dispatchKeyEvent", map[string]interface{}{
-				"type": "char", "text": req.Key, "key": req.Key,
-			})
+		def := resolveKey(req.Key)
+		mods := modifierMask(req.Modifiers)
+		send := func(eventType string, withText bool) error {
+			params := map[string]interface{}{"type": eventType, "key": def.Key, "modifiers": mods}
+			if def.Code != "" {
+				params["code"] = def.Code
+			}
+			if def.KeyCode > 0 {
+				params["windowsVirtualKeyCode"] = def.KeyCode
+				params["nativeVirtualKeyCode"] = def.KeyCode
+			}
+			if withText && def.Text != "" {
+				params["text"] = def.Text
+				params["unmodifiedText"] = def.Text
+			}
+			_, err := cdp.SessionCommand(target.ID, "Input.dispatchKeyEvent", params)
+			return err
 		}
-		cdp.SessionCommand(target.ID, "Input.dispatchKeyEvent", map[string]interface{}{
-			"type": "keyUp", "key": req.Key,
-		})
+		if err := send("keyDown", true); err != nil {
+			return failResp(req.ID, err)
+		}
+		if err := send("keyUp", false); err != nil {
+			return failResp(req.ID, err)
+		}
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionScroll:

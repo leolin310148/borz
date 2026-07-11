@@ -767,6 +767,74 @@ func TestE2ECLIDialogHandling(t *testing.T) {
 	requireEvalString(t, env, `document.querySelector("#prompt-result").textContent`, "prompt: ")
 }
 
+func TestE2ECLIKeyboardInteraction(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/keyboard", "--new", "--wait-for", "#keyboard-ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("keyboard open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+	tabArgs := []string{"--tab", tab}
+	eval := func(script, want string) {
+		requireEvalStringWithPrefix(t, env, tabArgs, script, want)
+	}
+	press := func(key string, extra ...string) {
+		args := []string{"press", key, "--tab", tab, "--json"}
+		args = append(args, extra...)
+		runE2EJSON(t, env, args...)
+	}
+
+	eval(`document.activeElement.blur(); document.activeElement.id`, "")
+	press("Tab")
+	eval(`document.activeElement.id`, "focus-first")
+	press("Tab")
+	eval(`document.activeElement.id`, "enter-button")
+	press("Tab", "--modifiers", "shift")
+	eval(`document.activeElement.id`, "focus-first")
+
+	eval(`document.querySelector("#enter-button").focus(); document.activeElement.id`, "enter-button")
+	press("Enter")
+	eval(`document.querySelector("#activation-result").textContent`, "enter activated")
+	eval(`document.querySelector("#space-button").focus(); document.activeElement.id`, "space-button")
+	press("Space")
+	eval(`document.querySelector("#activation-result").textContent`, "space activated")
+
+	eval(`document.querySelector("#open-panel").click(); String(document.querySelector("#dismissible-panel").hidden)`, "false")
+	press("Escape")
+	eval(`String(document.querySelector("#dismissible-panel").hidden)`, "true")
+
+	eval(`document.querySelector("#arrow-list").focus(); document.activeElement.id`, "arrow-list")
+	press("ArrowDown")
+	eval(`document.querySelector("#arrow-result").textContent`, "Choice two")
+	press("ArrowDown")
+	eval(`document.querySelector("#arrow-list").getAttribute("aria-activedescendant")`, "arrow-three")
+	press("ArrowUp")
+	eval(`document.querySelector("#arrow-result").textContent`, "Choice two")
+
+	press("k", "--modifiers", "ctrl,alt,shift")
+	eval(`document.querySelector("#key-event-data").textContent`, `{"key":"k","target":"arrow-list","alt":true,"ctrl":true,"meta":false,"shift":true}`)
+}
+
 func TestE2ECLISnapshotModes(t *testing.T) {
 	skipUnlessE2E(t)
 

@@ -47,6 +47,7 @@ var cliValueFlags = []string{
 	"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url",
 	"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for",
 	"--timeout", "--pre-delay", "--post-delay",
+	"--modifiers",
 	"--lines",
 	"--json-arg", "--interval", "--limit", "--title", "--parent",
 	"--filename", "--state", "--name", "--display-name", "--description", "--out",
@@ -436,7 +437,11 @@ func main() {
 		if len(cmdArgs) == 0 {
 			fatal("Usage: borz press <key>")
 		}
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionPress, Key: cmdArgs[0]}
+		modifiers, err := parsePressModifiers(getArgValue(args, "--modifiers"))
+		if err != nil {
+			fatal(err.Error())
+		}
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionPress, Key: cmdArgs[0], Modifiers: modifiers}
 		setTab(req, globalTabID)
 		applyCLIWaitFor(req, args)
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
@@ -1870,6 +1875,23 @@ func getArgValueOK(args []string, flag string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func parsePressModifiers(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var modifiers []string
+	for _, part := range strings.Split(raw, ",") {
+		modifier := strings.ToLower(strings.TrimSpace(part))
+		switch modifier {
+		case "alt", "ctrl", "meta", "shift":
+			modifiers = append(modifiers, modifier)
+		default:
+			return nil, fmt.Errorf("--modifiers contains unsupported modifier %q", part)
+		}
+	}
+	return modifiers, nil
 }
 
 // getAllArgValues collects every value of a repeatable flag, preserving the

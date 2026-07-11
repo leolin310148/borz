@@ -718,9 +718,29 @@ func TestDispatch_Press(t *testing.T) {
 	setupOnePage(f, "T1", "https://a", "A")
 	c := connectCdp(t, f)
 
-	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionPress, Key: "a"})
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionPress, Key: "Tab", Modifiers: []string{"ctrl", "shift"}})
 	if !resp.Success {
 		t.Fatalf("press: %+v", resp)
+	}
+	var keyEvents []map[string]interface{}
+	for _, call := range f.Calls() {
+		if call.Method != "Input.dispatchKeyEvent" {
+			continue
+		}
+		var params map[string]interface{}
+		if err := json.Unmarshal(call.Params, &params); err != nil {
+			t.Fatalf("decode key event: %v", err)
+		}
+		keyEvents = append(keyEvents, params)
+	}
+	if len(keyEvents) != 2 {
+		t.Fatalf("press key events = %d, want keyDown/keyUp: %+v", len(keyEvents), keyEvents)
+	}
+	if keyEvents[0]["type"] != "keyDown" || keyEvents[0]["key"] != "Tab" || keyEvents[0]["code"] != "Tab" || keyEvents[0]["modifiers"] != float64(10) || keyEvents[0]["windowsVirtualKeyCode"] != float64(9) {
+		t.Fatalf("press keyDown params = %+v", keyEvents[0])
+	}
+	if keyEvents[1]["type"] != "keyUp" || keyEvents[1]["modifiers"] != float64(10) {
+		t.Fatalf("press keyUp params = %+v", keyEvents[1])
 	}
 	// Press without a key -> error.
 	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionPress})
