@@ -4417,6 +4417,143 @@ func TestE2ECLIOperationalLogsPrivacy(t *testing.T) {
 	}
 }
 
+func TestE2ELegacyCompatibility(t *testing.T) {
+	skipUnlessE2E(t)
+
+	ep, err := client.DiscoverCDPPort()
+	if err != nil {
+		t.Fatalf("discover Chrome CDP endpoint: %v", err)
+	}
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	binDir := t.TempDir()
+	borzBin := filepath.Join(binDir, "borz")
+	shimBin := filepath.Join(binDir, "bb-browser")
+	for _, build := range []struct {
+		output string
+		pkg    string
+	}{
+		{output: borzBin, pkg: "."},
+		{output: shimBin, pkg: "./cmd/bb-browser-shim"},
+	} {
+		cmd := exec.Command("go", "build", "-o", build.output, build.pkg)
+		if out, buildErr := cmd.CombinedOutput(); buildErr != nil {
+			t.Fatalf("build %s: %v\n%s", build.pkg, buildErr, out)
+		}
+	}
+
+	userHome := t.TempDir()
+	legacyHome := filepath.Join(userHome, ".bb-browser")
+	currentHome := filepath.Join(userHome, ".borz")
+	if err := os.Mkdir(legacyHome, 0o755); err != nil {
+		t.Fatalf("create legacy config directory: %v", err)
+	}
+	const markerContents = "legacy config survived migration\n"
+	if err := os.WriteFile(filepath.Join(legacyHome, "migration-marker"), []byte(markerContents), 0o600); err != nil {
+		t.Fatalf("write legacy migration marker: %v", err)
+	}
+
+	profile := "e2e-legacy-compat"
+	legacyEnv := make([]string, 0, len(os.Environ())+6)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "HOME=") || strings.HasPrefix(entry, "PATH=") ||
+			strings.HasPrefix(entry, "BORZ_HOME=") || strings.HasPrefix(entry, "BB_BROWSER_HOME=") ||
+			strings.HasPrefix(entry, "BORZ_CDP_URL=") || strings.HasPrefix(entry, "BB_BROWSER_CDP_URL=") ||
+			strings.HasPrefix(entry, "BORZ_PROFILE=") || strings.HasPrefix(entry, "BB_BROWSER_PROFILE=") ||
+			strings.HasPrefix(entry, "BORZ_TAB_IDLE_TIMEOUT=") || strings.HasPrefix(entry, "BB_BROWSER_TAB_IDLE_TIMEOUT=") {
+			continue
+		}
+		legacyEnv = append(legacyEnv, entry)
+	}
+	legacyEnv = append(legacyEnv,
+		"HOME="+userHome,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		fmt.Sprintf("BB_BROWSER_CDP_URL=http://%s:%d", ep.Host, ep.Port),
+		"BB_BROWSER_PROFILE="+profile,
+		"BB_BROWSER_TAB_IDLE_TIMEOUT=0",
+		"BB_BROWSER_E2E=1",
+	)
+
+	run := func(binary string, args ...string) (string, string) {
+		t.Helper()
+		cmd := exec.Command(binary, args...)
+		cmd.Env = legacyEnv
+		cmd.Stdin = strings.NewReader("")
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("%s %s failed: %v\nstdout:\n%s\nstderr:\n%s", binary, strings.Join(args, " "), err, stdout.String(), stderr.String())
+		}
+		return stdout.String(), stderr.String()
+	}
+
+	daemonPath := filepath.Join(currentHome, "profiles", profile, "daemon.json")
+	var tab string
+	t.Cleanup(func() {
+		if tab != "" {
+			cmd := exec.Command(borzBin, "close", "--tab", tab, "--json")
+			cmd.Env = legacyEnv
+			_ = cmd.Run()
+		}
+		if raw, readErr := os.ReadFile(daemonPath); readErr == nil {
+			var info protocol.DaemonInfo
+			_ = json.Unmarshal(raw, &info)
+			cmd := exec.Command(borzBin, "daemon", "shutdown")
+			cmd.Env = legacyEnv
+			_ = cmd.Run()
+			if info.PID > 0 && !client.WaitForProcessExit(info.PID, 3*time.Second) {
+				if process, findErr := os.FindProcess(info.PID); findErr == nil {
+					_ = process.Kill()
+				}
+			}
+		}
+	})
+
+	stdout, stderr := run(shimBin, "open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	requireContains(t, stderr, "bb-browser is deprecated", "shim stderr")
+	requireNotContains(t, stdout, "deprecated", "shim JSON stdout")
+	var openResp protocol.Response
+	if err := json.Unmarshal([]byte(stdout), &openResp); err != nil {
+		t.Fatalf("shim stdout is not a JSON response: %v\n%s", err, stdout)
+	}
+	if !openResp.Success || openResp.Data == nil || openResp.Data.Tab == "" {
+		t.Fatalf("shim open response = %+v", openResp)
+	}
+	tab = openResp.Data.Tab
+
+	migratedMarker, err := os.ReadFile(filepath.Join(currentHome, "migration-marker"))
+	if err != nil || string(migratedMarker) != markerContents {
+		t.Fatalf("migrated config marker = %q, %v", migratedMarker, err)
+	}
+	if _, err := os.Stat(legacyHome); !os.IsNotExist(err) {
+		t.Fatalf("legacy config directory still exists after migration: %v", err)
+	}
+	rawDaemon, err := os.ReadFile(daemonPath)
+	if err != nil {
+		t.Fatalf("legacy profile did not select isolated daemon path: %v", err)
+	}
+	var info protocol.DaemonInfo
+	if err := json.Unmarshal(rawDaemon, &info); err != nil || info.PID <= 0 {
+		t.Fatalf("decode legacy profile daemon state: info=%+v err=%v", info, err)
+	}
+
+	run(borzBin, "close", "--tab", tab, "--json")
+	tab = ""
+	run(borzBin, "daemon", "shutdown")
+	if !client.WaitForProcessExit(info.PID, 5*time.Second) {
+		t.Fatalf("legacy profile daemon pid %d leaked after shutdown", info.PID)
+	}
+}
+
 func skipUnlessE2E(t *testing.T) {
 	t.Helper()
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
