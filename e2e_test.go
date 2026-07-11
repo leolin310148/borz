@@ -1954,6 +1954,140 @@ func TestE2ECLIPerActionTabTargeting(t *testing.T) {
 	requireSecondActive("all explicitly targeted actions")
 }
 
+func TestE2EDaemonReconnectRecovery(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	profile := "e2e-recovery"
+	bin := filepath.Join(t.TempDir(), "borz")
+	build := exec.Command("go", "build", "-o", bin, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build borz e2e binary: %v\n%s", err, out)
+	}
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	ep, err := client.DiscoverCDPPort()
+	if err != nil {
+		t.Fatalf("discover Chrome CDP endpoint: %v", err)
+	}
+	cdpURL := fmt.Sprintf("http://%s:%d", ep.Host, ep.Port)
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command(bin, args...)
+		cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("borz %s failed: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return string(out)
+	}
+	runJSON := func(args ...string) protocol.Response {
+		t.Helper()
+		out := run(args...)
+		var resp protocol.Response
+		if err := json.Unmarshal([]byte(out), &resp); err != nil {
+			t.Fatalf("borz %s returned non-JSON response: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		if !resp.Success || resp.Data == nil {
+			t.Fatalf("borz %s returned unsuccessful response: %+v", strings.Join(args, " "), resp)
+		}
+		return resp
+	}
+	daemonPath := filepath.Join(home, "profiles", profile, "daemon.json")
+	readDaemon := func() protocol.DaemonInfo {
+		t.Helper()
+		raw, err := os.ReadFile(daemonPath)
+		if err != nil {
+			t.Fatalf("read isolated daemon state: %v", err)
+		}
+		var info protocol.DaemonInfo
+		if err := json.Unmarshal(raw, &info); err != nil {
+			t.Fatalf("decode isolated daemon state: %v", err)
+		}
+		return info
+	}
+
+	var tab string
+	t.Cleanup(func() {
+		if tab != "" {
+			cmd := exec.Command(bin, "close", "--profile", profile, "--tab", tab, "--json")
+			cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+			_ = cmd.Run()
+		}
+		if raw, err := os.ReadFile(daemonPath); err == nil {
+			var info protocol.DaemonInfo
+			_ = json.Unmarshal(raw, &info)
+			cmd := exec.Command(bin, "daemon", "shutdown", "--profile", profile)
+			cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+			_ = cmd.Run()
+			if info.PID > 0 && !client.WaitForProcessExit(info.PID, 3*time.Second) {
+				if process, findErr := os.FindProcess(info.PID); findErr == nil {
+					_ = process.Kill()
+				}
+			}
+		}
+	})
+
+	opened := runJSON("open", site.URL()+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--profile", profile, "--json")
+	tab = opened.Data.Tab
+	if tab == "" {
+		t.Fatalf("initial browser work returned no tab: %+v", opened.Data)
+	}
+	requireEvalStringFromResponse(t, runJSON("eval", `document.title`, "--tab", tab, "--profile", profile, "--json"), "E2E Verify Home")
+	first := readDaemon()
+	if first.PID <= 0 || !client.IsProcessAlive(first.PID) {
+		t.Fatalf("initial isolated daemon is not alive: %+v", first)
+	}
+
+	requireContains(t, run("daemon", "shutdown", "--profile", profile), "Daemon stopped", "daemon shutdown")
+	if !client.WaitForProcessExit(first.PID, 5*time.Second) {
+		t.Fatalf("initial daemon pid %d did not exit after clean shutdown", first.PID)
+	}
+	if _, err := os.Stat(daemonPath); !os.IsNotExist(err) {
+		t.Fatalf("daemon state remained after shutdown: %v", err)
+	}
+
+	snapshot := runJSON("snapshot", "-i", "--tab", tab, "--profile", profile, "--json")
+	second := readDaemon()
+	if second.PID <= 0 || second.PID == first.PID || !client.IsProcessAlive(second.PID) {
+		t.Fatalf("CLI action did not start a distinct healthy daemon: first=%+v second=%+v", first, second)
+	}
+	status := run("daemon", "status", "--profile", profile)
+	requireContains(t, status, `"running": true`, "restarted daemon status")
+	requireContains(t, status, `"cdpConnected": true`, "restarted daemon status")
+
+	clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
+	runJSON("click", clickRef, "--tab", tab, "--profile", profile, "--json")
+	requireEvalStringFromResponse(t, runJSON("eval", `document.querySelector("#clicked-result").textContent`, "--tab", tab, "--profile", profile, "--json"), "clicked 1")
+
+	runJSON("close", "--tab", tab, "--profile", profile, "--json")
+	tab = ""
+	requireContains(t, run("daemon", "shutdown", "--profile", profile), "Daemon stopped", "restarted daemon shutdown")
+	if !client.WaitForProcessExit(second.PID, 5*time.Second) {
+		t.Fatalf("restarted daemon pid %d leaked after shutdown", second.PID)
+	}
+}
+
+func requireEvalStringFromResponse(t *testing.T, resp protocol.Response, want string) {
+	t.Helper()
+	if resp.Data == nil {
+		t.Fatalf("eval result had no data, want %q", want)
+	}
+	got, ok := resp.Data.Result.(string)
+	if !ok || got != want {
+		t.Fatalf("eval result = %#v, want %q", resp.Data.Result, want)
+	}
+}
+
 func TestE2ECLIDelaySemantics(t *testing.T) {
 	skipUnlessE2E(t)
 
