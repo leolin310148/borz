@@ -1381,6 +1381,121 @@ func TestE2ERESTAgainstServer(t *testing.T) {
 	}
 }
 
+func TestE2ESiteAdapterTrustAgainstVerifySite(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	verifySite, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = verifySite.Close(ctx)
+	})
+
+	adapterDir := filepath.Join(home, "bb-sites", "e2e")
+	if err := os.MkdirAll(adapterDir, 0o755); err != nil {
+		t.Fatalf("create community adapter directory: %v", err)
+	}
+	adapterPath := filepath.Join(adapterDir, "verify.js")
+	baseURL := verifySite.URL()
+	writeAdapter := func(version string) {
+		t.Helper()
+		adapter := fmt.Sprintf(`/* @meta
+{
+  "name": "e2e/verify",
+  "description": "Local E2E fixture adapter",
+  "domain": "127.0.0.1",
+  "startUrl": %q,
+  "args": {},
+  "readOnly": false
+}
+*/
+async function() {
+  const version = %q;
+  document.body.dataset.e2eAdapterVersion = version;
+  return {version, title: document.title, origin: location.origin};
+}`, baseURL+"/", version)
+		if err := os.WriteFile(adapterPath, []byte(adapter), 0o644); err != nil {
+			t.Fatalf("write community adapter %q: %v", version, err)
+		}
+	}
+	writeAdapter("trusted-v1")
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", baseURL+"/", "--new", "--wait-for", "#ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("fixture open response did not include a tab: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+	type adapterInfo struct {
+		SHA256  string `json:"sha256"`
+		Source  string `json:"source"`
+		Trusted bool   `json:"trusted"`
+	}
+	readInfo := func() adapterInfo {
+		t.Helper()
+		out := runE2ECLI(t, env, "site", "info", "e2e/verify", "--json")
+		var info adapterInfo
+		if err := json.Unmarshal([]byte(out), &info); err != nil {
+			t.Fatalf("decode site info: %v\n%s", err, out)
+		}
+		return info
+	}
+
+	initial := readInfo()
+	if initial.SHA256 == "" || initial.Source != "community" || initial.Trusted {
+		t.Fatalf("initial adapter info = %+v, want untrusted community adapter with SHA256", initial)
+	}
+	_, untrustedOut := runE2ECLIError(t, env, "site", "run", "e2e/verify", "--tab", tab, "--json")
+	requireContains(t, untrustedOut, "not trusted yet", "untrusted adapter error")
+	requireContains(t, untrustedOut, initial.SHA256, "untrusted adapter error")
+
+	trustOut := runE2ECLI(t, env, "site", "trust", "e2e/verify")
+	requireContains(t, trustOut, initial.SHA256, "site trust output")
+	trusted := readInfo()
+	if trusted.SHA256 != initial.SHA256 || !trusted.Trusted {
+		t.Fatalf("trusted adapter info = %+v, want trusted SHA256 %q", trusted, initial.SHA256)
+	}
+
+	firstRun := runE2EJSON(t, env, "site", "run", "e2e/verify", "--tab", tab, "--json")
+	firstResult, ok := firstRun.Data.Result.(map[string]interface{})
+	if !ok || fmt.Sprint(firstResult["version"]) != "trusted-v1" || fmt.Sprint(firstResult["title"]) != "E2E Verify Home" || fmt.Sprint(firstResult["origin"]) != baseURL {
+		t.Fatalf("trusted adapter result = %#v, want version trusted-v1, title E2E Verify Home, origin %q", firstRun.Data.Result, baseURL)
+	}
+	if firstRun.Data.Tab != tab {
+		t.Fatalf("trusted adapter tab = %q, want fixture tab %q", firstRun.Data.Tab, tab)
+	}
+
+	writeAdapter("changed-version-two")
+	changed := readInfo()
+	if changed.SHA256 == "" || changed.SHA256 == initial.SHA256 || changed.Trusted {
+		t.Fatalf("changed adapter info = %+v, want a new untrusted SHA256", changed)
+	}
+	_, changedOut := runE2ECLIError(t, env, "site", "run", "e2e/verify", "--tab", tab, "--json")
+	requireContains(t, changedOut, "changed hash", "changed adapter error")
+	requireContains(t, changedOut, initial.SHA256, "changed adapter error")
+	requireContains(t, changedOut, changed.SHA256, "changed adapter error")
+
+	forcedRun := runE2EJSON(t, env, "site", "run", "e2e/verify", "--tab", tab, "--force", "--json")
+	forcedResult, ok := forcedRun.Data.Result.(map[string]interface{})
+	if !ok || fmt.Sprint(forcedResult["version"]) != "changed-version-two" {
+		t.Fatalf("forced changed adapter result = %#v", forcedRun.Data.Result)
+	}
+	if afterForce := readInfo(); afterForce.Trusted || afterForce.SHA256 != changed.SHA256 {
+		t.Fatalf("one-off force unexpectedly changed trust state: %+v", afterForce)
+	}
+}
+
 func TestE2EMCPStdioAgainstVerifySite(t *testing.T) {
 	skipUnlessE2E(t)
 
@@ -1698,6 +1813,7 @@ func runE2ECLIError(t *testing.T, env e2eDaemonEnv, args ...string) (error, stri
 		"BORZ_E2E_HELPER=1",
 		"BORZ_HOME="+env.home,
 	)
+	cmd.Stdin = strings.NewReader("")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("borz %s unexpectedly succeeded:\n%s", strings.Join(args, " "), string(out))
