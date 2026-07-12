@@ -446,6 +446,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, 200, map[string]interface{}{
 		"running":         true,
 		"cdpConnected":    s.cdp.Connected(),
+		"cdpHost":         s.cdp.Host,
+		"cdpPort":         s.cdp.Port,
 		"uptime":          s.uptime(),
 		"currentSeq":      s.cdp.TabManager.CurrentSeq(),
 		"currentTargetId": s.cdp.GetCurrentTargetID(),

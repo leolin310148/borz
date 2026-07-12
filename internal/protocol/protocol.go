@@ -428,6 +428,8 @@ type DaemonInfo struct {
 type DaemonStatus struct {
 	Running         bool        `json:"running"`
 	CDPConnected    bool        `json:"cdpConnected"`
+	CDPHost         string      `json:"cdpHost,omitempty"`
+	CDPPort         int         `json:"cdpPort,omitempty"`
 	Uptime          int         `json:"uptime"`
 	CurrentSeq      int         `json:"currentSeq,omitempty"`
 	CurrentTargetID string      `json:"currentTargetId,omitempty"`

@@ -265,6 +265,9 @@ func TestHandleStatus(t *testing.T) {
 	if body["version"] != "test-version" {
 		t.Fatalf("version: %+v", body)
 	}
+	if body["cdpHost"] != s.cdp.Host || int(body["cdpPort"].(float64)) != s.cdp.Port {
+		t.Fatalf("CDP endpoint: %+v", body)
+	}
 	tabs, ok := body["tabs"].([]interface{})
 	if !ok || len(tabs) != 1 {
 		t.Fatalf("tabs: %+v", body["tabs"])

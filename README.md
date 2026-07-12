@@ -172,7 +172,7 @@ When you run any command, `borz`:
 2. **Sends the command** as an HTTP request to the daemon
 3. **The daemon translates** the command into CDP protocol calls and returns the result
 
-The daemon runs in the background and auto-discovers your browser. You don't need to manage it manually.
+The daemon runs in the background and auto-discovers your browser. You don't need to manage it manually. If a Borz-managed Chrome exits while the local daemon survives, the next CLI or MCP command relaunches Chrome on the daemon's existing CDP port and reconnects automatically; custom and remote CDP endpoints remain caller-managed.
 
 ## MCP Server
 

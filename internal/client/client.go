@@ -34,7 +34,8 @@ var (
 	cachedProfile       string
 
 	// discoverCDPPort is indirected so tests can bypass real CDP discovery.
-	discoverCDPPort = DiscoverCDPPort
+	discoverCDPPort            = DiscoverCDPPort
+	launchManagedBrowserAtPort = launchManagedBrowser
 
 	osExecutable            = os.Executable
 	execCommand             = exec.Command
@@ -377,6 +378,60 @@ func warnDaemonVersionMismatch(daemonVersion string) {
 	fmt.Fprintf(os.Stderr, "Warning: borz daemon is version %s, but CLI is version %s; run `borz daemon stop` to refresh when convenient.\n", daemonVersion, localVersion)
 }
 
+func daemonVersionMatches(daemonVersion string) bool {
+	return localVersion == "" || daemonVersion == "" || localVersion == daemonVersion
+}
+
+// recoverDisconnectedDaemon starts the managed browser on the exact endpoint
+// already configured in a running daemon. This avoids the stuck state where
+// the daemon survives a browser exit but EnsureDaemon previously treated the
+// daemon's HTTP liveness as sufficient.
+//
+// Recovery is deliberately limited to known local managed-browser endpoints.
+// A remote/custom CDP endpoint remains under the caller's control, and a
+// daemon version mismatch stays warning-only without changing lifecycle.
+func recoverDisconnectedDaemon(status protocol.DaemonStatus) error {
+	if status.CDPConnected || status.CDPPort <= 0 || status.CDPPort > 65535 || !daemonVersionMatches(status.Version) {
+		return nil
+	}
+
+	host := strings.TrimSpace(status.CDPHost)
+	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return nil
+	}
+
+	managedEndpoint := false
+	if data, err := os.ReadFile(config.ManagedPortFile()); err == nil {
+		if port, parseErr := strconv.Atoi(strings.TrimSpace(string(data))); parseErr == nil && port == status.CDPPort {
+			managedEndpoint = true
+		}
+	}
+	if !managedEndpoint || canConnect(host, status.CDPPort) {
+		return nil
+	}
+
+	started := time.Now()
+	logClientEvent("info", "browser_recovery_started", observability.Fields{})
+	if _, err := launchManagedBrowserAtPort(status.CDPPort); err != nil {
+		logClientEvent("warn", "browser_recovery_failed", observability.Fields{
+			DurationMS: time.Since(started).Milliseconds(), ErrorCode: "browser_not_found",
+		})
+		return fmt.Errorf("borz: running daemon lost Chrome at %s:%d and managed browser recovery failed: %w", host, status.CDPPort, err)
+	}
+	logClientEvent("info", "browser_recovery_completed", observability.Fields{
+		DurationMS: time.Since(started).Milliseconds(),
+	})
+	return nil
+}
+
+func adoptRunningDaemon(info *protocol.DaemonInfo, status protocol.DaemonStatus) error {
+	warnDaemonVersionMismatch(status.Version)
+	cachedInfo = info
+	cachedProfile = config.Profile()
+	daemonReady = true
+	return recoverDisconnectedDaemon(status)
+}
+
 // EnsureDaemon makes sure the daemon is running and ready.
 func EnsureDaemon() error {
 	if cachedProfile != config.Profile() {
@@ -391,8 +446,7 @@ func EnsureDaemon() error {
 			var status protocol.DaemonStatus
 			json.Unmarshal(raw, &status)
 			if status.Running {
-				warnDaemonVersionMismatch(status.Version)
-				return nil
+				return adoptRunningDaemon(cachedInfo, status)
 			}
 		}
 		daemonReady = false
@@ -411,11 +465,7 @@ func EnsureDaemon() error {
 				var status protocol.DaemonStatus
 				json.Unmarshal(raw, &status)
 				if status.Running {
-					warnDaemonVersionMismatch(status.Version)
-					cachedInfo = info
-					cachedProfile = config.Profile()
-					daemonReady = true
-					return nil
+					return adoptRunningDaemon(info, status)
 				}
 			}
 		}

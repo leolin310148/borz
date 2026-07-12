@@ -176,6 +176,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 - **Site adapters run on the daemon's filesystem**, not the client's. A remote client invoking `/v1/sites/*` or `browser_site_run` gets whatever adapters the server has in `~/.borz/sites` or `~/.borz/bb-sites` (community, pulled via `borz site update`). When no tab is specified, adapters reuse or open their domain first; explicit tabs still enforce the domain guard unless `force` is set.
 - **Network/console/error buffers are per-tab rings.** Use `--since last_action` for incremental queries.
 - **Operational logs are persistent and privacy-safe by default.** `borz logs tail` shows recent tool/action outcomes; `borz logs stats --since 7d` aggregates failures and latency. Raw field text, scripts, clipboard data, headers, URL queries, snapshots, and response bodies are never logged.
+- **A surviving local daemon recovers its managed browser automatically.** If Chrome exits while the daemon remains alive, the next CLI/MCP command relaunches the managed browser on the daemon's existing CDP port and reconnects. Custom/remote CDP endpoints are never launched locally.
 - **The optional Chrome extension unlocks browser-level APIs CDP cannot see.** Use it for all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser-level event streams. Commands and MCP tools report a clear "no extension connected" error when it is missing.
 
 ## Minimal end-to-end example

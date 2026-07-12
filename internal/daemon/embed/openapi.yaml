@@ -1394,6 +1394,8 @@ components:
       properties:
         running: { type: boolean }
         cdpConnected: { type: boolean }
+        cdpHost: { type: string, description: CDP host configured for this daemon }
+        cdpPort: { type: integer, description: CDP port configured for this daemon }
         uptime: { type: integer }
         currentSeq: { type: integer }
         currentTargetId: { type: string }

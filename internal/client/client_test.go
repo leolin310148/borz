@@ -3,6 +3,8 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -1138,6 +1140,127 @@ func TestEnsureDaemon_UsesExistingDaemonJSON(t *testing.T) {
 	}
 	if cachedInfo == nil || !daemonReady {
 		t.Fatalf("daemon state not cached: cachedInfo=%+v daemonReady=%v", cachedInfo, daemonReady)
+	}
+}
+
+func TestEnsureDaemon_RecoversManagedBrowserForRunningDaemon(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+
+	const cdpPort = 34567
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		fmt.Fprintf(w, `{"running":true,"cdpConnected":false,"cdpHost":"127.0.0.1","cdpPort":%d,"version":"test"}`, cdpPort)
+	}))
+	defer ts.Close()
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	if err := config.SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(config.ManagedBrowserDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.ManagedPortFile(), []byte(strconv.Itoa(cdpPort)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info := infoForServer(t, ts, "")
+	data, _ := json.Marshal(info)
+	if err := os.WriteFile(config.DaemonJSONPath(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	oldCanConnect := canConnect
+	oldLaunch := launchManagedBrowserAtPort
+	canConnect = func(string, int) bool { return false }
+	launchedPort := 0
+	launchManagedBrowserAtPort = func(port int) (*CDPEndpoint, error) {
+		launchedPort = port
+		return &CDPEndpoint{Host: "127.0.0.1", Port: port}, nil
+	}
+	t.Cleanup(func() {
+		canConnect = oldCanConnect
+		launchManagedBrowserAtPort = oldLaunch
+	})
+
+	SetLocalVersion("test")
+	if err := EnsureDaemon(); err != nil {
+		t.Fatalf("EnsureDaemon: %v", err)
+	}
+	if launchedPort != cdpPort {
+		t.Fatalf("managed browser launched on port %d, want %d", launchedPort, cdpPort)
+	}
+	if cachedInfo == nil || !daemonReady {
+		t.Fatalf("daemon should remain adopted: cachedInfo=%+v ready=%v", cachedInfo, daemonReady)
+	}
+}
+
+func TestRecoverDisconnectedDaemonSkipsUnmanagedAndMismatchedEndpoints(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
+
+	oldCanConnect := canConnect
+	oldLaunch := launchManagedBrowserAtPort
+	canConnect = func(string, int) bool { return false }
+	launches := 0
+	launchManagedBrowserAtPort = func(port int) (*CDPEndpoint, error) {
+		launches++
+		return &CDPEndpoint{Host: "127.0.0.1", Port: port}, nil
+	}
+	t.Cleanup(func() {
+		canConnect = oldCanConnect
+		launchManagedBrowserAtPort = oldLaunch
+	})
+
+	SetLocalVersion("new")
+	statuses := []protocol.DaemonStatus{
+		{Running: true, CDPHost: "chrome.internal", CDPPort: config.DefaultCDPPort, Version: "new"},
+		{Running: true, CDPHost: "127.0.0.1", CDPPort: 33333, Version: "new"},
+		{Running: true, CDPHost: "127.0.0.1", CDPPort: config.DefaultCDPPort, Version: "new"},
+		{Running: true, CDPHost: "127.0.0.1", CDPPort: config.DefaultCDPPort, Version: "old"},
+		{Running: true, CDPConnected: true, CDPHost: "127.0.0.1", CDPPort: config.DefaultCDPPort, Version: "new"},
+	}
+	for _, status := range statuses {
+		if err := recoverDisconnectedDaemon(status); err != nil {
+			t.Fatalf("recoverDisconnectedDaemon(%+v): %v", status, err)
+		}
+	}
+	if launches != 0 {
+		t.Fatalf("unexpected managed browser launches: %d", launches)
+	}
+}
+
+func TestRecoverDisconnectedDaemonReportsLaunchFailure(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
+	if err := os.MkdirAll(config.ManagedBrowserDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.ManagedPortFile(), []byte(strconv.Itoa(config.DefaultCDPPort)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	oldCanConnect := canConnect
+	oldLaunch := launchManagedBrowserAtPort
+	canConnect = func(string, int) bool { return false }
+	launchManagedBrowserAtPort = func(int) (*CDPEndpoint, error) {
+		return nil, errors.New("launch failed")
+	}
+	t.Cleanup(func() {
+		canConnect = oldCanConnect
+		launchManagedBrowserAtPort = oldLaunch
+	})
+
+	err := recoverDisconnectedDaemon(protocol.DaemonStatus{
+		Running: true, CDPHost: "127.0.0.1", CDPPort: config.DefaultCDPPort,
+	})
+	if err == nil || !strings.Contains(err.Error(), "managed browser recovery failed") {
+		t.Fatalf("recovery error = %v", err)
 	}
 }
 
