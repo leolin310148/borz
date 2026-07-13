@@ -617,7 +617,7 @@ var commandHelp = map[string]cmdHelp{
 			"  --cdp-host <h>         Chrome DevTools host (default 127.0.0.1)",
 			"  --cdp-port <p>         Chrome DevTools port (default 19825)",
 			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
-			"                         (default 30, 0=disable; env BORZ_TAB_IDLE_TIMEOUT)",
+			"                         (flag > env BORZ_TAB_IDLE_TIMEOUT > profile idleTabTimeout > 30; 0=disable)",
 		},
 		Notes: "For a remote-accessible server with auth, use 'borz server' instead.",
 	},
@@ -635,7 +635,7 @@ var commandHelp = map[string]cmdHelp{
 			"  --cdp-host <h>         Chrome DevTools host (default 127.0.0.1)",
 			"  --cdp-port <p>         Chrome DevTools port (default 19825)",
 			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
-			"                         (default 30, 0=disable; env BORZ_TAB_IDLE_TIMEOUT)",
+			"                         (flag > env BORZ_TAB_IDLE_TIMEOUT > profile idleTabTimeout > 30; 0=disable)",
 		},
 		Examples: []string{
 			"  borz server --host 127.0.0.1",
@@ -687,11 +687,13 @@ var commandHelp = map[string]cmdHelp{
 			"  --cdp <url|host:port>    Transport: attach to an existing CDP endpoint",
 			"  --remote <url>           Transport: talk HTTP to a remote borz server",
 			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
+			"  --idle-tab-timeout <m>   Idle-tab auto-close in minutes for managed/cdp",
+			"                           (0=disable, 'default'=unset; invalid for remote)",
 			"  --no-check               Save without probing the target",
 		},
 		Examples: []string{
 			"  borz profile add mini --remote http://100.116.143.73:13333 --token \"$BORZ_TOKEN\"",
-			"  borz profile add mdt --cdp 127.0.0.1:19845",
+			"  borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0",
 			"  borz profile add clean --managed",
 			"  borz --profile mini open https://example.com",
 			"  BORZ_PROFILE=mdt borz snapshot",
@@ -700,7 +702,9 @@ var commandHelp = map[string]cmdHelp{
 			"names (including 'default') resolve to the managed transport — today's\n" +
 			"behaviour. cdp profiles never launch a browser: if the endpoint is down the\n" +
 			"command fails instead of silently starting a managed Chrome. remote profiles\n" +
-			"run no local daemon at all. profiles.json is stored with 0600 permissions\n" +
+			"run no local daemon at all. idleTabTimeout is carried onto auto-spawned\n" +
+			"daemons; precedence is --idle-tab-timeout flag > BORZ_TAB_IDLE_TIMEOUT env >\n" +
+			"profile > default 30. profiles.json is stored with 0600 permissions\n" +
 			"because it can hold bearer tokens; show/list never print them.",
 	},
 	"profile.list": {
@@ -713,25 +717,28 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"profile.add": {
 		Summary: "Declare a new profile with exactly one transport.",
-		Usage:   "borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--no-check]",
+		Usage:   "borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--idle-tab-timeout <m>] [--no-check]",
 		Flags: []string{
 			"  --managed                borz launches and owns a local Chrome (default behaviour)",
 			"  --cdp <url|host:port>    Attach to an existing CDP endpoint; never launches a browser",
 			"  --remote <url>           Route commands to a remote borz server; no local daemon",
 			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
+			"  --idle-tab-timeout <m>   Idle-tab auto-close in minutes (0=disable); managed/cdp only",
 			"  --no-check               Skip probing (/status for remote, /json/version for cdp)",
 		},
 		Examples: []string{
 			"  borz profile add mini --remote http://server:13333 --token \"$BORZ_TOKEN\"",
-			"  borz profile add mdt --cdp 127.0.0.1:19845 --no-check",
+			"  borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0",
 		},
 	},
 	"profile.set": {
-		Summary: "Edit a declared profile: switch transport or update its token/target.",
-		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--no-check]",
+		Summary: "Edit a declared profile: switch transport or update its token/target/idle timeout.",
+		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--idle-tab-timeout <m|default>] [--no-check]",
 		Examples: []string{
 			"  borz profile set mini --token \"$NEW_TOKEN\"",
 			"  borz profile set mdt --cdp 127.0.0.1:9222",
+			"  borz profile set mdt --idle-tab-timeout 0        # never auto-close its tabs",
+			"  borz profile set mdt --idle-tab-timeout default  # back to flag/env/30",
 		},
 	},
 	"profile.rm": {

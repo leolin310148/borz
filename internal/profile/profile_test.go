@@ -341,19 +341,82 @@ func TestParseCDPEndpoint(t *testing.T) {
 }
 
 func TestFileJSONShapeMatchesDesign(t *testing.T) {
+	zero := 0
 	f := &File{Version: 1, Profiles: map[string]Entry{
-		"mdt": {Transport: "cdp", CDPURL: "http://127.0.0.1:19845"},
+		"mdt": {Transport: "cdp", CDPURL: "http://127.0.0.1:19845", IdleTabTimeout: &zero},
 	}}
 	data, err := json.Marshal(f)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	for _, want := range []string{`"version":1`, `"transport":"cdp"`, `"cdpUrl":"http://127.0.0.1:19845"`} {
+	for _, want := range []string{`"version":1`, `"transport":"cdp"`, `"cdpUrl":"http://127.0.0.1:19845"`, `"idleTabTimeout":0`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("serialized file missing %q:\n%s", want, data)
 		}
 	}
 	if strings.Contains(string(data), "cdpHost") || strings.Contains(string(data), "token") {
 		t.Fatalf("zero fields should be omitted:\n%s", data)
+	}
+
+	// nil pointer (undeclared) is omitted; the explicit 0 above must survive a
+	// round-trip because 0 means "disabled", not "unset".
+	plain, err := json.Marshal(Entry{Transport: "managed"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(plain), "idleTabTimeout") {
+		t.Fatalf("unset idleTabTimeout should be omitted:\n%s", plain)
+	}
+	var back File
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := back.Profiles["mdt"].IdleTabTimeout; got == nil || *got != 0 {
+		t.Fatalf("idleTabTimeout=0 lost in round-trip: %v", got)
+	}
+}
+
+func TestResolveTargetIdleTabTimeout(t *testing.T) {
+	home := setHome(t)
+
+	// managed and cdp entries carry the field into the Target.
+	writeProfiles(t, home, `{"version":1,"profiles":{
+		"mdt":   {"transport":"cdp","cdpUrl":"http://127.0.0.1:19845","idleTabTimeout":0},
+		"slow":  {"transport":"managed","idleTabTimeout":90},
+		"plain": {"transport":"managed"}}}`)
+	target, err := ResolveTarget("mdt")
+	if err != nil {
+		t.Fatalf("ResolveTarget(mdt): %v", err)
+	}
+	if target.IdleTabTimeout == nil || *target.IdleTabTimeout != 0 {
+		t.Fatalf("cdp IdleTabTimeout = %v, want 0", target.IdleTabTimeout)
+	}
+	target, err = ResolveTarget("slow")
+	if err != nil {
+		t.Fatalf("ResolveTarget(slow): %v", err)
+	}
+	if target.IdleTabTimeout == nil || *target.IdleTabTimeout != 90 {
+		t.Fatalf("managed IdleTabTimeout = %v, want 90", target.IdleTabTimeout)
+	}
+	target, err = ResolveTarget("plain")
+	if err != nil {
+		t.Fatalf("ResolveTarget(plain): %v", err)
+	}
+	if target.IdleTabTimeout != nil {
+		t.Fatalf("undeclared IdleTabTimeout = %v, want nil", *target.IdleTabTimeout)
+	}
+
+	// remote profiles reject the field loudly instead of silently ignoring it.
+	writeProfiles(t, home, `{"version":1,"profiles":{"mini":{"transport":"remote","url":"http://10.0.0.1:13333","idleTabTimeout":0}}}`)
+	_, err = ResolveTarget("mini")
+	if err == nil || !strings.Contains(err.Error(), "idleTabTimeout does not apply to the remote transport") {
+		t.Fatalf("remote + idleTabTimeout error = %v, want explicit rejection", err)
+	}
+
+	// Negative values are invalid on every transport.
+	writeProfiles(t, home, `{"version":1,"profiles":{"mdt":{"transport":"cdp","cdpUrl":"http://127.0.0.1:19845","idleTabTimeout":-1}}}`)
+	_, err = ResolveTarget("mdt")
+	if err == nil || !strings.Contains(err.Error(), "idleTabTimeout must be >= 0") {
+		t.Fatalf("negative idleTabTimeout error = %v, want validation error", err)
 	}
 }

@@ -4,10 +4,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/protocol"
 )
@@ -607,6 +609,12 @@ func TestSetSince(t *testing.T) {
 }
 
 func TestResolveIdleTabTimeout(t *testing.T) {
+	// Isolate from any real ~/.borz/profiles.json: the profile layer sits
+	// between the env and the default.
+	t.Setenv("BORZ_HOME", t.TempDir())
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
 	// Default when neither flag nor env present.
 	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
 	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
@@ -660,5 +668,68 @@ func TestResolveIdleTabTimeout(t *testing.T) {
 	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "abc")
 	if got := resolveIdleTabTimeout(nil); got != config.DefaultIdleTabCloseMinutes {
 		t.Errorf("garbage env: got %d, want %d", got, config.DefaultIdleTabCloseMinutes)
+	}
+}
+
+func TestResolveIdleTabTimeoutProfileLayer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	writeProfiles := func(entry string) {
+		t.Helper()
+		content := `{"version":1,"profiles":{"mdt":` + entry + `}}`
+		if err := os.WriteFile(filepath.Join(home, "profiles.json"), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// ResetForTests drops the memoized target AND the active profile,
+		// so the profile must be re-selected afterwards.
+		client.ResetForTests()
+		if err := config.SetProfile("mdt"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Profile layer beats the default.
+	writeProfiles(`{"transport":"cdp","cdpHost":"127.0.0.1","cdpPort":19845,"idleTabTimeout":0}`)
+	if got := resolveIdleTabTimeout(nil); got != 0 {
+		t.Errorf("profile idleTabTimeout=0: got %d, want 0", got)
+	}
+	writeProfiles(`{"transport":"managed","idleTabTimeout":7}`)
+	if got := resolveIdleTabTimeout(nil); got != 7 {
+		t.Errorf("profile idleTabTimeout=7: got %d, want 7", got)
+	}
+
+	// Env still beats the profile.
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "20")
+	if got := resolveIdleTabTimeout(nil); got != 20 {
+		t.Errorf("env over profile: got %d, want 20", got)
+	}
+
+	// Flag still beats both.
+	if got := resolveIdleTabTimeout([]string{"--idle-tab-timeout", "5"}); got != 5 {
+		t.Errorf("flag over env+profile: got %d, want 5", got)
+	}
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+
+	// A profile without the field falls through to the default.
+	writeProfiles(`{"transport":"cdp","cdpHost":"127.0.0.1","cdpPort":19845}`)
+	if got := resolveIdleTabTimeout(nil); got != config.DefaultIdleTabCloseMinutes {
+		t.Errorf("profile without field: got %d, want %d", got, config.DefaultIdleTabCloseMinutes)
+	}
+
+	// A broken registry falls through to the default rather than failing.
+	if err := os.WriteFile(filepath.Join(home, "profiles.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client.ResetForTests()
+	if err := config.SetProfile("mdt"); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveIdleTabTimeout(nil); got != config.DefaultIdleTabCloseMinutes {
+		t.Errorf("broken registry: got %d, want %d", got, config.DefaultIdleTabCloseMinutes)
 	}
 }

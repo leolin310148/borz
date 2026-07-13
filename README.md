@@ -353,9 +353,10 @@ zero-config behaviour described above.
 borz profile list                       # name, transport, target (tokens never shown)
 borz profile show mini
 borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN"
-borz profile add mdt --cdp 127.0.0.1:19845
+borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0
 borz profile add clean --managed
 borz profile set mini --token "$NEW_TOKEN"
+borz profile set mdt --idle-tab-timeout default   # clear the field again
 borz profile rm mdt
 ```
 
@@ -369,7 +370,7 @@ In `profiles.json` a cdp endpoint is spelled `cdpUrl`, or alternatively
   "version": 1,
   "profiles": {
     "mini": { "transport": "remote", "url": "http://100.116.143.73:13333", "token": "..." },
-    "mdt":  { "transport": "cdp", "cdpUrl": "http://127.0.0.1:19845" }
+    "mdt":  { "transport": "cdp", "cdpUrl": "http://127.0.0.1:19845", "idleTabTimeout": 0 }
   }
 }
 ```
@@ -381,6 +382,13 @@ Behaviour worth knowing:
   silently starting a managed Chrome.
 - A `remote` profile runs **no local daemon**; `borz daemon status --profile
   mini` says so instead of pretending one exists.
+- `idleTabTimeout` (minutes, `0` = never auto-close idle tabs) applies to
+  `managed` and `cdp` profiles and rides along when the CLI auto-spawns the
+  daemon — useful for a cdp target you don't own and must never reap.
+  Precedence: `--idle-tab-timeout` flag > `BORZ_TAB_IDLE_TIMEOUT` env >
+  profile > default 30. Setting it on a `remote` profile is an error (the
+  server owns tab lifecycle). The effective value shows up as
+  `idleTabCloseMinutes` in `borz daemon status`.
 - `daemon.json`, the managed `browser/user-data` dir, and `browser/cdp-port`
   remain per-profile **runtime state** — do not hand-edit them into
   `profiles.json`.

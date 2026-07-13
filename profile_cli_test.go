@@ -131,6 +131,80 @@ func TestProfileCLIAddListShowSetRemove(t *testing.T) {
 	}
 }
 
+func TestProfileCLIIdleTabTimeout(t *testing.T) {
+	setupProfileHome(t)
+	idleOf := func(name string) *int {
+		t.Helper()
+		registry, err := borzprofile.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return registry.Profiles[name].IdleTabTimeout
+	}
+
+	out := runProfileCLI(t, "profile", "add", "mdt", "--cdp", "127.0.0.1:19845", "--idle-tab-timeout", "0", "--no-check")
+	if !strings.Contains(out, `Profile "mdt" added`) {
+		t.Fatalf("add output = %q", out)
+	}
+	if got := idleOf("mdt"); got == nil || *got != 0 {
+		t.Fatalf("stored idleTabTimeout = %v, want 0", got)
+	}
+
+	out = runProfileCLI(t, "profile", "list")
+	if !strings.Contains(out, "[idleTabTimeout=0]") {
+		t.Fatalf("list should surface the idle timeout:\n%s", out)
+	}
+	out = runProfileCLI(t, "profile", "show", "mdt")
+	if !strings.Contains(out, "Idle tab timeout: 0 (idle-tab auto-close disabled)") {
+		t.Fatalf("show output = %q", out)
+	}
+	out = runProfileCLI(t, "profile", "show", "mdt", "--json")
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("show --json: %v\n%s", err, out)
+	}
+	if payload["idleTabTimeout"] != float64(0) {
+		t.Fatalf("show payload = %+v", payload)
+	}
+
+	// set adjusts the field without touching the transport.
+	runProfileCLI(t, "profile", "set", "mdt", "--idle-tab-timeout", "12", "--no-check")
+	if got := idleOf("mdt"); got == nil || *got != 12 {
+		t.Fatalf("idleTabTimeout after set = %v, want 12", got)
+	}
+	out = runProfileCLI(t, "profile", "show", "mdt")
+	if !strings.Contains(out, "Idle tab timeout: 12 minutes") {
+		t.Fatalf("show output = %q", out)
+	}
+
+	// Switching between managed and cdp keeps the field.
+	runProfileCLI(t, "profile", "set", "mdt", "--managed")
+	if got := idleOf("mdt"); got == nil || *got != 12 {
+		t.Fatalf("idleTabTimeout after managed switch = %v, want 12", got)
+	}
+	runProfileCLI(t, "profile", "set", "mdt", "--cdp", "127.0.0.1:9222", "--no-check")
+	if got := idleOf("mdt"); got == nil || *got != 12 {
+		t.Fatalf("idleTabTimeout after cdp switch = %v, want 12", got)
+	}
+
+	// Switching to remote drops the field (it does not apply there).
+	runProfileCLI(t, "profile", "set", "mdt", "--remote", "http://10.8.8.8:1111", "--no-check")
+	if got := idleOf("mdt"); got != nil {
+		t.Fatalf("idleTabTimeout should be dropped on remote switch, got %v", *got)
+	}
+
+	// 'default' clears the field so flag/env/default decide again.
+	runProfileCLI(t, "profile", "set", "mdt", "--cdp", "127.0.0.1:9222", "--idle-tab-timeout", "5", "--no-check")
+	runProfileCLI(t, "profile", "set", "mdt", "--idle-tab-timeout", "default", "--no-check")
+	if got := idleOf("mdt"); got != nil {
+		t.Fatalf("idleTabTimeout after 'default' = %v, want unset", *got)
+	}
+	out = runProfileCLI(t, "profile", "show", "mdt")
+	if !strings.Contains(out, "Idle tab timeout: default (30 minutes") {
+		t.Fatalf("show output = %q", out)
+	}
+}
+
 func TestProfileCLIErrors(t *testing.T) {
 	setupProfileHome(t)
 
@@ -143,6 +217,9 @@ func TestProfileCLIErrors(t *testing.T) {
 		{[]string{"profile", "add", "x", "--managed", "--cdp", "127.0.0.1:1"}, "mutually exclusive"},
 		{[]string{"profile", "add", "x", "--managed", "--token", "t"}, "--token only applies to remote profiles"},
 		{[]string{"profile", "add", "x", "--cdp", "not a url", "--no-check"}, "invalid cdpUrl"},
+		{[]string{"profile", "add", "x", "--remote", "http://10.0.0.1:1", "--idle-tab-timeout", "0", "--no-check"}, "does not apply to the remote transport"},
+		{[]string{"profile", "add", "x", "--cdp", "127.0.0.1:1", "--idle-tab-timeout", "-3", "--no-check"}, "--idle-tab-timeout must be"},
+		{[]string{"profile", "add", "x", "--cdp", "127.0.0.1:1", "--idle-tab-timeout", "soon", "--no-check"}, "--idle-tab-timeout must be"},
 		{[]string{"profile", "set", "ghost", "--managed"}, "not declared"},
 		{[]string{"profile", "rm", "ghost"}, "not declared"},
 		{[]string{"profile", "show"}, "Usage: borz profile show"},

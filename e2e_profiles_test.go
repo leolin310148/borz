@@ -98,16 +98,20 @@ func TestE2EProfileCDPTransportAttachesWithoutLaunching(t *testing.T) {
 		t.Fatalf("build borz e2e binary: %v\n%s", buildErr, out)
 	}
 
+	// idleTabTimeout=0 declares "never reap this target's tabs"; the CLI
+	// auto-spawn must hand it to the daemon it starts.
 	const profileName = "e2e-cdp-attach"
 	writeE2EProfiles(t, home, fmt.Sprintf(
-		`{"version":1,"profiles":{%q:{"transport":"cdp","cdpUrl":"http://%s:%d"}}}`,
+		`{"version":1,"profiles":{%q:{"transport":"cdp","cdpUrl":"http://%s:%d","idleTabTimeout":0}}}`,
 		profileName, ep.Host, ep.Port,
 	))
 
 	run := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command(bin, args...)
-		cmd.Env = append(os.Environ(), "BORZ_HOME="+home)
+		// Neutralize any ambient env override so the profile layer decides.
+		cmd.Env = append(os.Environ(), "BORZ_HOME="+home,
+			"BORZ_TAB_IDLE_TIMEOUT=", "BB_BROWSER_TAB_IDLE_TIMEOUT=")
 		out, runErr := cmd.CombinedOutput()
 		if runErr != nil {
 			t.Fatalf("borz %s failed: %v\n%s", strings.Join(args, " "), runErr, out)
@@ -163,6 +167,8 @@ func TestE2EProfileCDPTransportAttachesWithoutLaunching(t *testing.T) {
 	status := run("daemon", "status", "--profile", profileName)
 	requireContains(t, status, fmt.Sprintf(`"cdpPort": %d`, ep.Port), "cdp profile daemon status")
 	requireContains(t, status, `"cdpConnected": true`, "cdp profile daemon status")
+	// ...the auto-spawned daemon must run with the profile's idleTabTimeout...
+	requireContains(t, status, `"idleTabCloseMinutes": 0`, "cdp profile daemon status")
 	// ...and it must never have launched a managed browser of its own.
 	if _, err := os.Stat(filepath.Join(home, "profiles", profileName, "browser")); !os.IsNotExist(err) {
 		t.Fatalf("cdp profile grew a managed browser dir: %v", err)

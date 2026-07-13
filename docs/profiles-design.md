@@ -51,7 +51,8 @@ the registry *of* profiles.
     },
     "mdt": {
       "transport": "cdp",
-      "cdpUrl": "http://127.0.0.1:19845"
+      "cdpUrl": "http://127.0.0.1:19845",
+      "idleTabTimeout": 0
     }
   }
 }
@@ -61,8 +62,8 @@ the registry *of* profiles.
 
 | `transport` | Meaning | Local daemon? | Fields |
 | --- | --- | --- | --- |
-| `managed` | borz launches and owns a Chrome under the profile's `browser/user-data`. Today's default behaviour. | yes (auto-spawn) | — |
-| `cdp` | Attach to an **existing** CDP endpoint (e.g. a Chrome started with `--remote-debugging-port`, possibly reached over an SSH tunnel). The endpoint is finally *persisted*. | yes (auto-spawn, pointed at that endpoint) | `cdpUrl`, or `cdpHost` + `cdpPort` |
+| `managed` | borz launches and owns a Chrome under the profile's `browser/user-data`. Today's default behaviour. | yes (auto-spawn) | `idleTabTimeout` (optional) |
+| `cdp` | Attach to an **existing** CDP endpoint (e.g. a Chrome started with `--remote-debugging-port`, possibly reached over an SSH tunnel). The endpoint is finally *persisted*. | yes (auto-spawn, pointed at that endpoint) | `cdpUrl`, or `cdpHost` + `cdpPort`; `idleTabTimeout` (optional) |
 | `remote` | Talk HTTP to a remote `borz server`. No browser and no daemon locally. | **no** | `url`, `token` |
 
 `cdpUrl` is the preferred spelling (it subsumes `BORZ_CDP_URL`); accept
@@ -73,6 +74,31 @@ inconsistently.
 An **absent** `profiles.json`, or a profile name not present in it, means
 `{"transport": "managed"}` — i.e. today's behaviour. Users who never touch
 profiles must see zero change.
+
+### `idleTabTimeout` (added after the initial rollout)
+
+"Never auto-close this target's tabs" is a property of the *target*, not of
+whoever happens to start the daemon. The motivating case is a `cdp` profile
+attached (over an SSH tunnel) to a browser we do not own that carries live SSO
+sessions: it must run with the idle-tab reaper disabled, and before this field
+existed that guarantee lived in a launchd plist passing `--idle-tab-timeout 0`
+— exactly the kind of config-outside-the-config this design is meant to kill.
+If the plist's daemon wasn't up, a CLI auto-spawn silently reverted to the
+30-minute default and reaped someone else's tabs.
+
+- Optional per-profile field, in **minutes**; `0` disables auto-close.
+  Meaningful for `managed` and `cdp`. On `remote` profiles it is **rejected**
+  at validation (the server owns tab lifecycle) — never silently ignored.
+- Precedence: `--idle-tab-timeout` flag > `BORZ_TAB_IDLE_TIMEOUT` env >
+  profile `idleTabTimeout` > default 30. The flag/env behaviour is unchanged.
+- Auto-spawn (`internal/client`) passes `--idle-tab-timeout <n>` to the daemon
+  it starts when the profile declares the field — unless the env var is set,
+  in which case the flag is omitted so the inherited env keeps outranking the
+  profile inside the daemon's own resolution.
+- The daemon also resolves the profile layer itself (it knows its `--profile`),
+  so a hand-started `borz daemon --profile mdt` honours the field too.
+- The effective value is observable: daemon `GET /status` reports
+  `idleTabCloseMinutes`.
 
 ### What does NOT move into this file
 
@@ -130,6 +156,8 @@ borz profile add <name> --remote <url> --token <t>
 borz profile add <name> --cdp <url|host:port>
 borz profile add <name> --managed
 borz profile set <name> --token <t>     # edit fields in place
+borz profile add <name> --cdp <hp> --idle-tab-timeout 0   # never reap this target's tabs
+borz profile set <name> --idle-tab-timeout <m|default>    # 'default' clears the field
 borz profile rm <name>
 ```
 

@@ -1444,6 +1444,85 @@ func TestEnsureDaemon_CDPProfileSpawnsDaemonAtDeclaredEndpoint(t *testing.T) {
 	}
 }
 
+func TestEnsureDaemon_CDPProfileCarriesIdleTabTimeoutToSpawn(t *testing.T) {
+	// spawnArgs runs one EnsureDaemon auto-spawn against a cdp profile whose
+	// entry declares idleTabTimeout=0 and returns the daemon argv.
+	spawnArgs := func(t *testing.T) []string {
+		t.Helper()
+		resetState()
+		t.Cleanup(resetState)
+		home := t.TempDir()
+		t.Setenv("BORZ_HOME", home)
+		content := `{"version":1,"profiles":{"mdt":{"transport":"cdp","cdpHost":"127.0.0.1","cdpPort":19845,"idleTabTimeout":0}}}`
+		if err := os.WriteFile(filepath.Join(home, "profiles.json"), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := config.SetProfile("mdt"); err != nil {
+			t.Fatal(err)
+		}
+
+		statusRunning := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(`{"running":true}`))
+		}))
+		t.Cleanup(statusRunning.Close)
+		runningInfo := infoForServer(t, statusRunning, "")
+
+		oldCanConnect := canConnect
+		oldExecutable := osExecutable
+		oldCommand := execCommand
+		canConnect = func(host string, port int) bool { return true }
+		osExecutable = func() (string, error) { return "/bin/echo", nil }
+		var daemonArgs []string
+		execCommand = func(_ string, args ...string) *exec.Cmd {
+			daemonArgs = append([]string(nil), args...)
+			return exec.Command("/bin/sh", "-c", "exit 0")
+		}
+		t.Cleanup(func() {
+			canConnect = oldCanConnect
+			osExecutable = oldExecutable
+			execCommand = oldCommand
+		})
+
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			_ = os.MkdirAll(filepath.Dir(config.DaemonJSONPath()), 0o755)
+			data, _ := json.Marshal(runningInfo)
+			_ = os.WriteFile(config.DaemonJSONPath(), data, 0o600)
+		}()
+
+		if err := EnsureDaemon(); err != nil {
+			t.Fatalf("EnsureDaemon: %v", err)
+		}
+		return daemonArgs
+	}
+
+	hasIdleFlag := func(args []string) (string, bool) {
+		for i, a := range args {
+			if a == "--idle-tab-timeout" && i+1 < len(args) {
+				return args[i+1], true
+			}
+		}
+		return "", false
+	}
+
+	t.Run("profile value rides along", func(t *testing.T) {
+		t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+		t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
+		args := spawnArgs(t)
+		if v, ok := hasIdleFlag(args); !ok || v != "0" {
+			t.Fatalf("daemon args should carry --idle-tab-timeout 0, got %v", args)
+		}
+	})
+
+	t.Run("env set: flag omitted so env keeps outranking the profile", func(t *testing.T) {
+		t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "5")
+		args := spawnArgs(t)
+		if _, ok := hasIdleFlag(args); ok {
+			t.Fatalf("daemon args must omit --idle-tab-timeout when the env var is set, got %v", args)
+		}
+	})
+}
+
 func TestEnsureDaemon_RemoteProfileHasNoLocalDaemon(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)

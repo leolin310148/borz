@@ -92,10 +92,16 @@ with `--profile <name>` or `BORZ_PROFILE`. Undeclared names (including
 
 ```bash
 borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN"
-borz profile add mdt --cdp 127.0.0.1:19845
+borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0
 borz --profile mini open https://example.com     # HTTP to the Mini server
 BORZ_PROFILE=mdt borz snapshot                   # tunnel-attached Chrome
 ```
+
+Optional `idleTabTimeout` (minutes, 0 = never auto-close idle tabs) on
+`managed`/`cdp` profiles is honoured by auto-spawned daemons; precedence is
+`--idle-tab-timeout` flag > `BORZ_TAB_IDLE_TIMEOUT` env > profile > 30.
+It is rejected on `remote` profiles. Verify via `idleTabCloseMinutes` in
+`borz daemon status`.
 
 Deprecated but still working: `--remote` = `--profile remote`; `borz client
 setup` writes the `remote` profile; a legacy `~/.borz/client.json` is migrated

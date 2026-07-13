@@ -958,9 +958,10 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 }
 
 // resolveIdleTabTimeout returns the idle-tab-close threshold in minutes.
-// Precedence: --idle-tab-timeout flag > BORZ_TAB_IDLE_TIMEOUT env >
-// config.DefaultIdleTabCloseMinutes. 0 disables the reaper. Negative values
-// are clamped to 0. Non-numeric inputs fall back to the next source.
+// Precedence: --idle-tab-timeout flag > BORZ_TAB_IDLE_TIMEOUT env > the
+// active profile's idleTabTimeout > config.DefaultIdleTabCloseMinutes.
+// 0 disables the reaper. Negative flag/env values are clamped to 0.
+// Non-numeric inputs fall back to the next source.
 func resolveIdleTabTimeout(rawArgs []string) int {
 	if v := getArgValue(rawArgs, "--idle-tab-timeout"); v != "" {
 		if n, ok := parseIdleTabTimeout(v); ok {
@@ -971,6 +972,9 @@ func resolveIdleTabTimeout(rawArgs []string) int {
 		if n, ok := parseIdleTabTimeout(v); ok {
 			return n
 		}
+	}
+	if target, err := client.ActiveTarget(); err == nil && target.IdleTabTimeout != nil {
+		return *target.IdleTabTimeout
 	}
 	return config.DefaultIdleTabCloseMinutes
 }

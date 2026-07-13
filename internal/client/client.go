@@ -460,6 +460,13 @@ func EnsureDaemon() error {
 		"--cdp-host", cdpInfo.Host,
 		"--cdp-port", strconv.Itoa(cdpInfo.Port),
 	}
+	// The profile's idleTabTimeout rides along so an auto-spawned daemon
+	// honours it without a hand-crafted service definition. The env var
+	// outranks the profile and the daemon inherits our environment, so the
+	// flag is omitted whenever the env is set — the daemon resolves it.
+	if target.IdleTabTimeout != nil && config.Env("BORZ_TAB_IDLE_TIMEOUT", "BB_BROWSER_TAB_IDLE_TIMEOUT") == "" {
+		args = append(args, "--idle-tab-timeout", strconv.Itoa(*target.IdleTabTimeout))
+	}
 	if config.Profile() != "" {
 		args = append(args, "--profile", config.Profile(), "--port", strconv.Itoa(daemonPort))
 	}

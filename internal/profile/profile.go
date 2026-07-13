@@ -49,6 +49,10 @@ type Target struct {
 	Kind   TransportKind
 	Remote RemoteTarget // set when Kind == TransportRemote
 	CDP    CDPTarget    // set when Kind == TransportCDP
+	// IdleTabTimeout is the profile's idle-tab auto-close threshold in
+	// minutes (0 disables it). nil means the profile does not declare one,
+	// so the flag/env/default chain decides. Never set for remote targets.
+	IdleTabTimeout *int
 }
 
 // Entry is one declared profile in profiles.json.
@@ -59,6 +63,10 @@ type Entry struct {
 	CDPURL    string `json:"cdpUrl,omitempty"`
 	CDPHost   string `json:"cdpHost,omitempty"`
 	CDPPort   int    `json:"cdpPort,omitempty"`
+	// IdleTabTimeout, in minutes, overrides the daemon's idle-tab reaper for
+	// managed and cdp transports (0 disables auto-close). It is invalid on
+	// remote profiles: the server on the other side owns tab lifecycle.
+	IdleTabTimeout *int `json:"idleTabTimeout,omitempty"`
 }
 
 // File is the on-disk shape of profiles.json.
@@ -174,10 +182,16 @@ func ResolveTarget(name string) (Target, error) {
 
 // ResolveEntry validates one declared entry and converts it into a Target.
 func ResolveEntry(name string, entry Entry) (Target, error) {
+	if entry.IdleTabTimeout != nil && *entry.IdleTabTimeout < 0 {
+		return Target{}, fmt.Errorf("profile %q: idleTabTimeout must be >= 0 minutes (0 disables idle-tab auto-close)", name)
+	}
 	switch TransportKind(strings.TrimSpace(entry.Transport)) {
 	case TransportManaged:
-		return Target{Kind: TransportManaged}, nil
+		return Target{Kind: TransportManaged, IdleTabTimeout: entry.IdleTabTimeout}, nil
 	case TransportRemote:
+		if entry.IdleTabTimeout != nil {
+			return Target{}, fmt.Errorf("profile %q: idleTabTimeout does not apply to the remote transport (the server owns tab lifecycle) — remove it", name)
+		}
 		normalized, err := NormalizeServerURL(entry.URL)
 		if err != nil {
 			return Target{}, fmt.Errorf("profile %q: %w", name, err)
@@ -188,7 +202,7 @@ func ResolveEntry(name string, entry Entry) (Target, error) {
 		if err != nil {
 			return Target{}, fmt.Errorf("profile %q: %w", name, err)
 		}
-		return Target{Kind: TransportCDP, CDP: cdp}, nil
+		return Target{Kind: TransportCDP, CDP: cdp, IdleTabTimeout: entry.IdleTabTimeout}, nil
 	case "":
 		return Target{}, fmt.Errorf("profile %q: missing transport (expected managed, cdp, or remote)", name)
 	default:

@@ -435,4 +435,7 @@ type DaemonStatus struct {
 	CurrentTargetID string      `json:"currentTargetId,omitempty"`
 	Tabs            interface{} `json:"tabs,omitempty"`
 	Version         string      `json:"version,omitempty"`
+	// IdleTabCloseMinutes is the daemon's effective idle-tab reaper
+	// threshold; 0 means auto-close is disabled.
+	IdleTabCloseMinutes int `json:"idleTabCloseMinutes"`
 }
