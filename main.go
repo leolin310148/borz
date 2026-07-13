@@ -49,7 +49,7 @@ var cliValueFlags = []string{
 	"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url",
 	"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for",
 	"--timeout", "--pre-delay", "--post-delay",
-	"--modifiers",
+	"--modifiers", "--commands",
 	"--lines",
 	"--json-arg", "--interval", "--limit", "--title", "--parent", "--cdp", "--as",
 	"--filename", "--state", "--name", "--display-name", "--description", "--out",
@@ -466,7 +466,8 @@ func main() {
 		if err != nil {
 			fatal(err.Error())
 		}
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionPress, Key: cmdArgs[0], Modifiers: modifiers}
+		commands := parsePressCommands(getArgValue(args, "--commands"))
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionPress, Key: cmdArgs[0], Modifiers: modifiers, Commands: commands}
 		setTab(req, globalTabID)
 		applyCLIWaitFor(req, args)
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
@@ -563,6 +564,14 @@ func main() {
 
 	case "window", "windows":
 		handleWindows(cmdArgs, jsonOutput, args)
+
+	// --- Page (tab-level emulation) ---
+	case "page":
+		handlePage(cmdArgs, jsonOutput, globalTabID)
+
+	// --- File chooser (native file-picker dialog) ---
+	case "filechooser":
+		handleFileChooser(cmdArgs, jsonOutput, globalTabID)
 
 	// --- Frame ---
 	case "frame":
@@ -787,6 +796,32 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
 			fmt.Println("Tab closed")
 		})
+	case "front":
+		tabID := getArgValue(rawArgs, "--id")
+		if tabID == "" && len(cmdArgs) > 1 {
+			tabID = cmdArgs[1]
+		}
+		if tabID == "" && globalTabID != "" {
+			tabID = globalTabID
+		}
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionTabFront}
+		if tabID != "" {
+			req.TabID = tabID
+		}
+		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+			if resp.Data == nil {
+				return
+			}
+			visibility := ""
+			if result, ok := resp.Data.Result.(map[string]interface{}); ok {
+				visibility, _ = result["visibilityState"].(string)
+			}
+			if visibility != "" {
+				fmt.Printf("Brought to front: %s (visibilityState: %s)\n", resp.Data.URL, visibility)
+			} else {
+				fmt.Printf("Brought to front: %s\n", resp.Data.URL)
+			}
+		})
 	default:
 		// "tab <n>" - select by index
 		if idx, err := strconv.Atoi(sub); err == nil {
@@ -801,6 +836,91 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 			fatal(unknownSubcommandHint("tab", sub))
 		}
 	}
+}
+
+// --- Page handling (tab-level emulation) ---
+
+func handlePage(cmdArgs []string, jsonOutput bool, globalTabID string) {
+	if len(cmdArgs) == 0 {
+		fatal("Usage: borz page visibility [visible|hidden|reset]")
+	}
+	switch cmdArgs[0] {
+	case "visibility":
+		state := ""
+		if len(cmdArgs) > 1 {
+			state = strings.ToLower(strings.TrimSpace(cmdArgs[1]))
+			switch state {
+			case "visible", "hidden", "reset":
+			default:
+				fatal("page visibility state must be visible, hidden, or reset")
+			}
+		}
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionPageVisibility, Visibility: state}
+		setTab(req, globalTabID)
+		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+			if resp.Data == nil {
+				return
+			}
+			result, _ := resp.Data.Result.(map[string]interface{})
+			current, _ := result["visibilityState"].(string)
+			override, _ := result["override"].(string)
+			switch {
+			case state == "" && override != "":
+				fmt.Printf("visibilityState: %s (overridden: %s)\n", current, override)
+			case state == "":
+				fmt.Printf("visibilityState: %s\n", current)
+			case state == "reset":
+				fmt.Printf("Visibility override removed (visibilityState: %s)\n", current)
+			default:
+				fmt.Printf("Visibility override set: %s\n", state)
+			}
+		})
+	default:
+		fatal(unknownSubcommandHint("page", cmdArgs[0]))
+	}
+}
+
+// --- File chooser handling (native file-picker dialog) ---
+
+func handleFileChooser(cmdArgs []string, jsonOutput bool, globalTabID string) {
+	subCmd := "status"
+	if len(cmdArgs) > 0 {
+		subCmd = cmdArgs[0]
+	}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionFileChooser, FileChooserCommand: subCmd}
+	switch subCmd {
+	case "accept":
+		if len(cmdArgs) < 2 {
+			fatal("Usage: borz filechooser accept <file> [file...]")
+		}
+		req.Files = append([]string{}, cmdArgs[1:]...)
+	case "cancel", "disarm", "status":
+	default:
+		fatal(unknownSubcommandHint("filechooser", subCmd))
+	}
+	setTab(req, globalTabID)
+	sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		if resp.Data == nil {
+			return
+		}
+		result, _ := resp.Data.Result.(map[string]interface{})
+		armed, _ := result["armed"].(bool)
+		action, _ := result["action"].(string)
+		switch subCmd {
+		case "accept":
+			fmt.Printf("File chooser armed: next dialog receives %d file(s)\n", len(req.Files))
+		case "cancel":
+			fmt.Println("File chooser armed: next dialog will be cancelled")
+		case "disarm":
+			fmt.Println("File chooser disarmed")
+		default:
+			if armed {
+				fmt.Printf("File chooser armed: %s\n", action)
+			} else {
+				fmt.Println("File chooser not armed")
+			}
+		}
+	})
 }
 
 // --- Network handling ---
@@ -2038,6 +2158,22 @@ func parsePressModifiers(raw string) ([]string, error) {
 		}
 	}
 	return modifiers, nil
+}
+
+// parsePressCommands splits a comma-separated --commands value into CDP
+// editing command names (e.g. "selectAll,copy"). Values are passed through
+// verbatim — the daemon forwards them to Input.dispatchKeyEvent.
+func parsePressCommands(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var commands []string
+	for _, part := range strings.Split(raw, ",") {
+		if cmd := strings.TrimSpace(part); cmd != "" {
+			commands = append(commands, cmd)
+		}
+	}
+	return commands
 }
 
 // getAllArgValues collects every value of a repeatable flag, preserving the

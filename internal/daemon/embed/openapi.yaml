@@ -270,6 +270,70 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
+  /v1/filechooser:
+    post:
+      tags: [interaction]
+      summary: Pre-arm a handler for the next native file-picker dialog
+      description: |
+        Wraps CDP `Page.setInterceptFileChooserDialog` + `Page.fileChooserOpened`.
+        Arm with `command=accept` BEFORE clicking the element that opens the
+        picker; the native dialog is suppressed and the chooser is fulfilled
+        with `files` via `DOM.setFileInputFiles`. Use for sites that create
+        the file input dynamically or open the OS dialog directly (no
+        `<input type=file>` in the DOM to target with /v1/upload). Arming is
+        one-shot. Paths are resolved on the daemon's filesystem.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    command:
+                      type: string
+                      enum: [accept, cancel, disarm, status]
+                      default: status
+                    files:
+                      type: array
+                      items: { type: string }
+                      description: Absolute file paths on the daemon host (required for accept).
+                    file:
+                      type: string
+                      description: Single-file convenience alias for `files`.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/page/visibility:
+    post:
+      tags: [interaction]
+      summary: Override what the page believes about its own visibility
+      description: |
+        Makes `document.visibilityState` / `document.hidden` report the given
+        state and fires a synthetic `visibilitychange` event, so pages that
+        gate work on visibility (uploads, polling, timers) run while the
+        browser window is backgrounded or minimized. Also emulates focus and
+        sets the web lifecycle state to active (best-effort). The override
+        persists across navigations in the tab until `reset`. Note: this
+        cannot un-throttle requestAnimationFrame / compositor rendering — use
+        /v1/tabs/front to really unhide the window when that matters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    visibility:
+                      type: string
+                      enum: [visible, hidden, reset]
+                      description: Omit to report status only.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
   /v1/press:
     post:
       tags: [input]
@@ -293,6 +357,16 @@ paths:
                       items:
                         type: string
                         enum: [alt, ctrl, meta, shift]
+                    commands:
+                      type: array
+                      items: { type: string }
+                      description: |
+                        CDP editing commands sent with the keyDown event
+                        (e.g. `selectAll`, `copy`, `paste`). Synthesized key
+                        events never reach the browser-process shortcut layer
+                        (macOS handles Cmd+A/C/X/V there), so editing combos
+                        need this. Well-known `meta` combos are auto-mapped
+                        when omitted.
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
@@ -324,6 +398,10 @@ paths:
                     modifiers:
                       type: array
                       items: { type: string, enum: [alt, ctrl, meta, shift] }
+                    commands:
+                      type: array
+                      items: { type: string }
+                      description: Editing commands sent with keyDown (e.g. `selectAll`).
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
@@ -822,6 +900,26 @@ paths:
               properties:
                 tabId: { $ref: "#/components/schemas/TabID" }
                 index: { type: integer }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/tabs/front:
+    post:
+      tags: [tabs]
+      summary: Bring a tab to the real OS foreground
+      description: |
+        Restores the Chrome window if minimized (`Browser.setWindowBounds`),
+        activates the tab (`Target.activateTarget`) and focuses the page
+        (`Page.bringToFront`). Unlike /v1/tabs/select this targets the OS
+        window level, so `document.visibilityState` becomes `visible` and
+        background throttling stops. The response result reports the window
+        state and the page's resulting visibilityState.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TabTarget"
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 

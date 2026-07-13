@@ -53,6 +53,17 @@ type TabState struct {
 	// Dialog auto-handler config.
 	DialogHandler *DialogHandler
 
+	// FileChooser auto-handler config (armed by ActionFileChooser, consumed
+	// on Page.fileChooserOpened).
+	FileChooserHandler *FileChooserHandler
+
+	// VisibilityOverride tracks an active page-visibility override:
+	// "visible" or "hidden", empty when no override is set. ScriptID is the
+	// Page.addScriptToEvaluateOnNewDocument identifier that re-applies the
+	// override after navigation, so reset can remove it.
+	VisibilityOverride       string
+	VisibilityOverrideScript string
+
 	nextSeq func() int
 }
 
@@ -74,6 +85,52 @@ func (ts *TabState) ConsumeDialogHandler() *DialogHandler {
 	handler := ts.DialogHandler
 	ts.DialogHandler = nil
 	return handler
+}
+
+// FileChooserHandler configures automatic file-picker dialog handling.
+// Accept=true fulfills the dialog with Files via DOM.setFileInputFiles;
+// Accept=false cancels it. One-shot: consumed by the first dialog.
+type FileChooserHandler struct {
+	Accept bool
+	Files  []string
+}
+
+func (ts *TabState) SetFileChooserHandler(handler *FileChooserHandler) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.FileChooserHandler = handler
+}
+
+func (ts *TabState) ConsumeFileChooserHandler() *FileChooserHandler {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	handler := ts.FileChooserHandler
+	ts.FileChooserHandler = nil
+	return handler
+}
+
+// PeekFileChooserHandler reports the armed handler without consuming it.
+func (ts *TabState) PeekFileChooserHandler() *FileChooserHandler {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.FileChooserHandler
+}
+
+// SetVisibilityOverride records the active visibility override state and the
+// new-document script id that keeps it alive across navigations.
+func (ts *TabState) SetVisibilityOverride(state, scriptID string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.VisibilityOverride = state
+	ts.VisibilityOverrideScript = scriptID
+}
+
+// GetVisibilityOverride returns the active override state ("" when none) and
+// its new-document script id.
+func (ts *TabState) GetVisibilityOverride() (state, scriptID string) {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.VisibilityOverride, ts.VisibilityOverrideScript
 }
 
 func newTabState(targetID, shortID string, nextSeq func() int) *TabState {

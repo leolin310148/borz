@@ -176,13 +176,33 @@ var uploadTool = mcp.NewTool("browser_upload",
 )
 
 var pressTool = mcp.NewTool("browser_press",
-	mcp.WithDescription("Press a keyboard key (e.g. Enter, Tab, ArrowDown, a, A)"),
+	mcp.WithDescription("Press a keyboard key (e.g. Enter, Tab, ArrowDown, a, A), optionally with modifiers. Editing shortcuts (select-all, copy, paste, undo) are handled in the browser process, which synthesized CDP key events bypass — use modifiers [\"meta\"] for those: well-known meta combos (a/c/x/v/z/y) are auto-translated to CDP editing commands so they work in editable content on every OS. Pass commands to set the editing commands explicitly."),
 	mcp.WithString("key", mcp.Required(), mcp.Description("Key to press (e.g. \"Enter\", \"Tab\", \"Escape\", \"ArrowDown\")")),
+	mcp.WithArray("modifiers", mcp.Description("Modifier keys held during the press: alt, ctrl, meta, shift."), mcp.Items(map[string]any{"type": "string", "enum": []string{"alt", "ctrl", "meta", "shift"}})),
+	mcp.WithArray("commands", mcp.Description("CDP editing commands sent with the keyDown event (e.g. [\"selectAll\"]). Overrides the automatic meta-combo mapping."), mcp.Items(map[string]any{"type": "string"})),
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
 	preDelayParam(),
 	postDelayParam(),
+)
+
+var fileChooserTool = mcp.NewTool("browser_filechooser",
+	mcp.WithDescription("Pre-arm a handler for the next native file-picker dialog. Call with command=accept BEFORE clicking the element that opens the picker: the OS dialog is suppressed and the chooser is fulfilled with the given files (CDP Page.setInterceptFileChooserDialog + DOM.setFileInputFiles). Use for sites that create the file input dynamically or open the OS dialog directly; when a stable <input type=file> exists in the DOM, prefer browser_upload. Arming is one-shot. Paths are resolved on the daemon's filesystem (where Chrome runs)."),
+	mcp.WithString("command", mcp.Description("accept (arm with files), cancel (arm to suppress), disarm, or status (default)"), mcp.Enum("accept", "cancel", "disarm", "status")),
+	mcp.WithArray("files", mcp.Description("Absolute file paths on the daemon host; required for command=accept."), mcp.Items(map[string]any{"type": "string"})),
+	tabParam(),
+)
+
+var tabFrontTool = mcp.NewTool("browser_tab_front",
+	mcp.WithDescription("Bring a tab to the real OS foreground: restores the Chrome window if minimized, activates the tab, and focuses the page. Unlike browser_tab_select this works at the OS window level, so document.visibilityState becomes \"visible\" and background throttling stops — required for pages that gate work on visibility (uploads, media, timers). The result reports the achieved visibilityState. If the page only needs to BELIEVE it is visible, use browser_page_visibility instead."),
+	mcp.WithString("tab", mcp.Description("Tab ID to bring to front (default: active tab)")),
+)
+
+var pageVisibilityTool = mcp.NewTool("browser_page_visibility",
+	mcp.WithDescription("Override what a page believes about its own visibility without moving any OS window. state=visible makes document.visibilityState report \"visible\", fires a synthetic visibilitychange event, emulates focus, and sets the web lifecycle state to active — so visibility-gated work (uploads, polling) runs while Chrome is backgrounded or minimized. Persists across navigations in the tab until state=reset. Omit state to report status. Cannot un-throttle requestAnimationFrame/compositor rendering — use browser_tab_front when real rendering matters."),
+	mcp.WithString("state", mcp.Description("visible, hidden (test background behavior), or reset. Omit to report the current visibilityState and any active override."), mcp.Enum("visible", "hidden", "reset")),
+	tabParam(),
 )
 
 var clipboardWriteTool = mcp.NewTool("browser_clipboard_write",

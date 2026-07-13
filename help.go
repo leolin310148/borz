@@ -139,14 +139,24 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"press": {
 		Summary: "Dispatch a single key press to the active element.",
-		Usage:   "borz press <key> [--modifiers <csv>] [--tab <id>]" + waitForUsageSuffix,
+		Usage:   "borz press <key> [--modifiers <csv>] [--commands <csv>] [--tab <id>]" + waitForUsageSuffix,
+		Flags: []string{
+			"  --modifiers <csv>   Comma-separated combination of alt, ctrl, meta, shift",
+			"  --commands <csv>    CDP editing commands sent with keyDown (e.g. selectAll,copy)",
+		},
 		Examples: []string{
 			"  borz press Enter",
 			"  borz press Escape",
-			"  borz press ArrowDown",
 			"  borz press Tab --modifiers shift",
+			"  borz press a --modifiers meta        # select all (auto-mapped to selectAll)",
+			"  borz press a --commands selectAll    # explicit editing command",
 		},
-		Notes: "Key names follow KeyboardEvent.key (e.g. 'Enter', 'Tab', 'ArrowLeft', 'a').\nModifiers are a comma-separated combination of alt, ctrl, meta, and shift.",
+		Notes: "Key names follow KeyboardEvent.key (e.g. 'Enter', 'Tab', 'ArrowLeft', 'a').\n" +
+			"Editing shortcuts (select-all, copy, paste, undo) are handled in the browser\n" +
+			"process, which synthesized CDP key events bypass — notably on macOS. Use\n" +
+			"--modifiers meta for those combos: well-known meta combos (a/c/x/v/z/y) are\n" +
+			"auto-translated to CDP editing commands so they work in editable content on\n" +
+			"every OS. Pass --commands to set the commands explicitly.",
 	},
 	"clipboard-write": {
 		Summary: "Write text to the browser clipboard, optionally pasting it into a terminal.",
@@ -392,7 +402,7 @@ var commandHelp = map[string]cmdHelp{
 
 	// --- Tabs / frames / dialogs ---
 	"tab": {
-		Summary: "List, create, switch between, or close Chrome tabs.",
+		Summary: "List, create, switch between, foreground, or close Chrome tabs.",
 		Usage:   "borz tab [subcommand]",
 		Flags: []string{
 			"  (no subcommand)       List all tabs (default)",
@@ -401,6 +411,7 @@ var commandHelp = map[string]cmdHelp{
 			"  <n>                   Switch to the tab at index <n>",
 			"  select --id <id>      Switch to the tab with the given short id",
 			"  select <n>            Switch to the tab at index <n>",
+			"  front [n|--id <id>]   Bring a tab to the real OS foreground (default: active)",
 			"  close [n|--id <id>]   Close a tab by index or short id (default: active)",
 			"  events [--tail]       Browser-level tab events (created/removed/updated/activated)",
 		},
@@ -409,6 +420,7 @@ var commandHelp = map[string]cmdHelp{
 			"  borz tab new https://github.com",
 			"  borz tab 2",
 			"  borz tab select --id abc123",
+			"  borz tab front",
 			"  borz tab close 3",
 			"  borz tab events --tail",
 		},
@@ -525,6 +537,59 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Notes: "Run this BEFORE the click/navigation that triggers the dialog. " +
 			"Default action is 'accept'. If accepting a prompt, pass the response text as the second arg.",
+	},
+	"filechooser": {
+		Summary: "Pre-arm a handler for the next native file-picker dialog.",
+		Usage:   "borz filechooser [accept <file>...|cancel|disarm|status] [--tab <id>]",
+		Flags: []string{
+			"  accept <file>...   Arm: fulfill the next file picker with these files",
+			"  cancel             Arm: suppress the next file picker without selecting files",
+			"  disarm             Drop the armed handler and stop intercepting",
+			"  status             Report whether a handler is armed (default)",
+		},
+		Examples: []string{
+			"  borz filechooser accept ./report.pdf",
+			"  borz filechooser accept ./a.png ./b.png   # multi-select picker",
+			"  borz filechooser cancel",
+			"  borz filechooser status",
+		},
+		Notes: "Run this BEFORE clicking the element that opens the picker — arming is\n" +
+			"one-shot, like 'borz dialog'. Wraps CDP Page.setInterceptFileChooserDialog +\n" +
+			"Page.fileChooserOpened + DOM.setFileInputFiles: the OS dialog never opens.\n" +
+			"Use this for sites that create the file input dynamically or open the file\n" +
+			"dialog directly; when a stable <input type=file> exists in the DOM, prefer\n" +
+			"'borz upload <ref> <file>...'. Paths are resolved on the daemon's filesystem\n" +
+			"(where Chrome runs) — for remote daemons the files must live on that host.",
+	},
+
+	// --- Page-level emulation ---
+	"page": {
+		Summary: "Tab-level page emulation controls (visibility).",
+		Usage:   "borz page visibility [visible|hidden|reset] [--tab <id>]",
+		Notes:   "See 'borz help page visibility'.",
+	},
+	"page.visibility": {
+		Summary: "Override what the page believes about its own visibility.",
+		Usage:   "borz page visibility [visible|hidden|reset] [--tab <id>]",
+		Flags: []string{
+			"  (no argument)   Report document.visibilityState and any active override",
+			"  visible         Make the page report 'visible' and fire visibilitychange",
+			"  hidden          Make the page report 'hidden' (test background behavior)",
+			"  reset           Remove the override and return to native visibility",
+		},
+		Examples: []string{
+			"  borz page visibility",
+			"  borz page visibility visible",
+			"  borz page visibility reset",
+		},
+		Notes: "Backgrounded/minimized Chrome windows report visibilityState 'hidden' and\n" +
+			"many apps gate work on it (uploads, polling, media). CDP has no native\n" +
+			"visibility override, so this overrides document.visibilityState /\n" +
+			"document.hidden in JS, fires a synthetic visibilitychange event, emulates\n" +
+			"focus, and sets the web lifecycle state to active. The override persists\n" +
+			"across navigations in the tab until reset. It cannot un-throttle\n" +
+			"requestAnimationFrame / compositor rendering — when real rendering matters,\n" +
+			"use 'borz tab front' to actually unhide the window.",
 	},
 
 	// --- Site adapters ---
@@ -934,6 +999,23 @@ var commandHelp = map[string]cmdHelp{
 			"  borz tab close 3",
 			"  borz tab close --id abc123",
 		},
+	},
+	"tab.front": {
+		Summary: "Bring a tab to the real OS foreground (default: the currently active tab).",
+		Usage:   "borz tab front [n|--id <short-id>]",
+		Examples: []string{
+			"  borz tab front",
+			"  borz tab front 2",
+			"  borz tab front --id abc123",
+		},
+		Notes: "'tab select' activates a tab inside Chrome, but a minimized or occluded\n" +
+			"window still reports document.visibilityState 'hidden' and pages throttle\n" +
+			"accordingly (uploads stall, timers slow, media pauses). 'tab front'\n" +
+			"additionally restores the Chrome window if minimized (Browser.setWindowBounds)\n" +
+			"and focuses the page (Page.bringToFront), so the page becomes really visible.\n" +
+			"The response reports the resulting visibilityState so scripts can verify.\n" +
+			"If the page must merely BELIEVE it is visible (headless-ish automation),\n" +
+			"see 'borz page visibility'.",
 	},
 	"tab.events": {
 		Summary: "Stream or list browser-level tab/window events from the Chrome extension.",

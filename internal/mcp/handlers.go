@@ -326,7 +326,15 @@ func handlePress(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResul
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	req := &protocol.Request{ID: newID(), Action: protocol.ActionPress, Key: key}
+	modifiers, errMsg := stringListArg(r, "modifiers")
+	if errMsg != "" {
+		return mcp.NewToolResultError(errMsg), nil
+	}
+	commands, errMsg := stringListArg(r, "commands")
+	if errMsg != "" {
+		return mcp.NewToolResultError(errMsg), nil
+	}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionPress, Key: key, Modifiers: modifiers, Commands: commands}
 	setTab(req, r)
 	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
@@ -334,6 +342,93 @@ func handlePress(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResul
 		return e, nil
 	}
 	return textResult(resp, fmt.Sprintf("Pressed key %q", key)), nil
+}
+
+// stringListArg reads an optional array-of-strings tool argument. Returns a
+// non-empty error message when the argument is present but malformed.
+func stringListArg(r mcp.CallToolRequest, name string) ([]string, string) {
+	raw, ok := r.GetArguments()[name]
+	if !ok || raw == nil {
+		return nil, ""
+	}
+	rawList, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Sprintf("%s must be an array of strings", name)
+	}
+	out := make([]string, 0, len(rawList))
+	for i, v := range rawList {
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Sprintf("%s[%d] must be a string", name, i)
+		}
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, ""
+}
+
+func handleFileChooser(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	command := strings.TrimSpace(r.GetString("command", "status"))
+	if command == "" {
+		command = "status"
+	}
+	files, errMsg := stringListArg(r, "files")
+	if errMsg != "" {
+		return mcp.NewToolResultError(errMsg), nil
+	}
+	if command == "accept" && len(files) == 0 {
+		return mcp.NewToolResultError("files is required for command=accept"), nil
+	}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionFileChooser, FileChooserCommand: command, Files: files}
+	setTab(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	switch command {
+	case "accept":
+		return textResult(resp, fmt.Sprintf("File chooser armed: next dialog receives %d file(s)", len(files))), nil
+	case "cancel":
+		return textResult(resp, "File chooser armed: next dialog will be cancelled"), nil
+	case "disarm":
+		return textResult(resp, "File chooser disarmed"), nil
+	default:
+		return textResult(resp, "File chooser status"), nil
+	}
+}
+
+func handleTabFront(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionTabFront}
+	setTab(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	return textResult(resp, "Brought tab to front"), nil
+}
+
+func handlePageVisibility(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	state := strings.ToLower(strings.TrimSpace(r.GetString("state", "")))
+	switch state {
+	case "", "visible", "hidden", "reset":
+	default:
+		return mcp.NewToolResultError("state must be visible, hidden, or reset"), nil
+	}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionPageVisibility, Visibility: state}
+	setTab(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	switch state {
+	case "":
+		return textResult(resp, "Page visibility status"), nil
+	case "reset":
+		return textResult(resp, "Page visibility override removed"), nil
+	default:
+		return textResult(resp, fmt.Sprintf("Page visibility override set: %s", state)), nil
+	}
 }
 
 func handleClipboardWrite(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {

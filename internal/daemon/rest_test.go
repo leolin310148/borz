@@ -487,3 +487,48 @@ func TestRESTUpload_MissingFiles(t *testing.T) {
 
 // Smoke the read loop didn't accidentally close the body reader.
 var _ io.Reader = (*errReader)(nil)
+
+func TestRestFileChooser_AcceptRequiresFiles(t *testing.T) {
+	s := newTestServer(t, "")
+	mux := http.NewServeMux()
+	s.registerRESTRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/filechooser", strings.NewReader(`{"command":"accept"}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("accept without files: got %d want 400", rec.Code)
+	}
+	assertRESTErrorEnvelope(t, rec, "files (or file) is required")
+}
+
+// The new routes must be registered (a GET yields 405, not 404) — a missing
+// mux entry would otherwise surface as a confusing "404 page not found".
+func TestRestRoutes_NewEndpointsRegistered(t *testing.T) {
+	s := newTestServer(t, "")
+	mux := http.NewServeMux()
+	s.registerRESTRoutes(mux)
+
+	for _, path := range []string{"/v1/tabs/front", "/v1/page/visibility", "/v1/filechooser"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("GET %s: got %d want 405 (route must exist and be POST-only)", path, rec.Code)
+		}
+	}
+}
+
+func TestRestBody_VisibilityAndCommands(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/x",
+		strings.NewReader(`{"visibility":"visible","commands":["selectAll"],"key":"a","modifiers":["meta"]}`))
+	body, err := readBody(req)
+	if err != nil {
+		t.Fatalf("readBody: %v", err)
+	}
+	if body.Visibility != "visible" {
+		t.Errorf("visibility = %q", body.Visibility)
+	}
+	if len(body.Commands) != 1 || body.Commands[0] != "selectAll" {
+		t.Errorf("commands = %v", body.Commands)
+	}
+}

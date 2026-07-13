@@ -739,3 +739,22 @@ func TestResolveIdleTabTimeoutProfileLayer(t *testing.T) {
 		t.Errorf("broken registry: got %d, want %d", got, config.DefaultIdleTabCloseMinutes)
 	}
 }
+
+func TestParsePressCommands(t *testing.T) {
+	if got := parsePressCommands(""); got != nil {
+		t.Errorf("empty = %v, want nil", got)
+	}
+	if got := parsePressCommands("  "); got != nil {
+		t.Errorf("blank = %v, want nil", got)
+	}
+	got := parsePressCommands("selectAll, copy ,,delete")
+	want := []string{"selectAll", "copy", "delete"}
+	if len(got) != len(want) {
+		t.Fatalf("parsePressCommands = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("parsePressCommands = %v, want %v", got, want)
+		}
+	}
+}

@@ -205,14 +205,14 @@ Add to your MCP client configuration (e.g. `.claude/settings.json` for Claude Co
 
 ### Available Tools
 
-The MCP server exposes 38 tools:
+The MCP server exposes 41 tools:
 
 | Category | Tools |
 |----------|-------|
 | **Navigation** | `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close` |
-| **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_press`, `browser_clipboard_write`, `browser_scroll` |
+| **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_filechooser`, `browser_press`, `browser_page_visibility`, `browser_clipboard_write`, `browser_scroll` |
 | **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_term_text`, `browser_wait` |
-| **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_close` |
+| **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_front`, `browser_tab_close` |
 | **Diagnostics** | `browser_network`, `browser_console`, `browser_errors`, `browser_doctor` |
 | **Extension-backed** | `browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows` |
 | **Site Adapters** | `browser_site_list`, `browser_site_info`, `browser_site_run` |
@@ -437,6 +437,7 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/tabs` | `{url?, preset?, viewport?}` — open new tab |
 | POST | `/v1/tabs/select` | `{tabId?, index?}` |
 | POST | `/v1/tabs/close` | `{tabId?, index?}` |
+| POST | `/v1/tabs/front` | `{tab?}` — bring the tab to the real OS foreground: restore the window if minimized, activate the tab, focus the page. Unlike `/v1/tabs/select` this makes `document.visibilityState` become `visible`, so background throttling stops |
 | POST | `/v1/open` | `{url, new?, tab?, waitFor?, timeoutMs?, preset?, viewport?}` — reuses a tab with the exact same URL when one exists; `new: true` forces a fresh tab |
 | POST | `/v1/back` \| `/forward` \| `/refresh` | `{tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/close` | `{tab?}` |
@@ -448,7 +449,9 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/fill` \| `/type` | `{ref, text, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/select` | `{ref, value, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/upload` | `{ref, files: [path,...] \| file, tab?, waitFor?, timeoutMs?}` — attach files to `<input type=file>` (paths resolved on daemon host) |
-| POST | `/v1/press` | `{key, modifiers?, tab?, waitFor?, timeoutMs?}` |
+| POST | `/v1/filechooser` | `{command?: accept\|cancel\|disarm\|status, files?: [path,...] \| file, tab?}` — pre-arm the next native file-picker dialog (arm BEFORE the click that opens it) |
+| POST | `/v1/page/visibility` | `{visibility?: visible\|hidden\|reset, tab?}` — override what the page believes about `document.visibilityState`; omit `visibility` for status |
+| POST | `/v1/press` | `{key, modifiers?, commands?, tab?, waitFor?, timeoutMs?}` — `commands` are CDP editing commands sent with keyDown (e.g. `["selectAll"]`) |
 | POST | `/v1/key` | `{keyType?, key?, code?, text?, modifiers?, tab?}` — raw OS-level key input (reaches canvas apps / SSH) |
 | POST | `/v1/mouse` | `{mouseType?, x?, y?, button?, deltaX?, deltaY?, clickCount?, modifiers?, tab?}` — raw OS-level mouse input |
 | POST | `/v1/clipboard-read` | `{tab?}` — returns `data.value` from `navigator.clipboard.readText()` |
@@ -795,6 +798,33 @@ borz upload 5 ./a.pdf ./b.pdf
 
 Paths are resolved on the daemon's filesystem (where Chrome runs). When using `--remote`, the files must live on the daemon host, not on the client. Wraps CDP `DOM.setFileInputFiles`, so the OS file picker never opens.
 
+#### `filechooser`
+
+`upload` needs a stable `<input type=file>` to point a ref at. Many sites don't
+have one: they build the input on click, or open the OS file dialog directly.
+For those, arm a file-chooser handler **before** the click that opens the picker.
+
+```bash
+# Arm, then click the button that opens the picker
+borz filechooser accept ./report.pdf
+borz click 12
+
+# Multi-select picker
+borz filechooser accept ./a.png ./b.png
+
+# Suppress the next picker without selecting anything
+borz filechooser cancel
+
+# Inspect / drop the armed handler
+borz filechooser status
+borz filechooser disarm
+```
+
+Arming is one-shot, like `borz dialog`. Wraps CDP
+`Page.setInterceptFileChooserDialog` + `Page.fileChooserOpened` +
+`DOM.setFileInputFiles`: the native dialog never opens. Paths resolve on the
+daemon's filesystem.
+
 #### `press`
 
 ```bash
@@ -803,6 +833,16 @@ borz press Enter
 borz press Tab
 borz press ArrowDown
 borz press Escape
+
+# Modifier combos
+borz press Tab --modifiers shift
+
+# Editing shortcuts (select-all, copy, cut, paste, undo) are handled in the
+# browser process, which synthesized CDP key events bypass — notably on macOS.
+# Use meta: well-known meta combos (a/c/x/v/z/y) are auto-translated to CDP
+# editing commands, so they work in editable content on every OS.
+borz press a --modifiers meta          # select all
+borz press a --commands selectAll      # or set the editing command explicitly
 ```
 
 #### `clipboard-write` - Set clipboard / atomic terminal paste
@@ -906,6 +946,10 @@ borz tab select ab1c
 # Close a tab
 borz tab close 2
 borz tab close --id ab1c
+
+# Bring a tab to the real OS foreground (see below)
+borz tab front
+borz tab front --id ab1c
 ```
 
 Every response includes a short `tab` ID (e.g., `ab1c`) that you can use to target specific tabs:
@@ -916,6 +960,46 @@ borz snapshot --tab ab1c
 borz click 3 --tab ab1c
 borz eval "document.title" --tab ab1c
 ```
+
+### Page Visibility (background throttling)
+
+A Chrome window that is minimized or fully occluded reports
+`document.visibilityState === "hidden"`, and many web apps gate real work on
+that — image uploads never start, polling stops, media pauses. `borz tab select`
+does not help: it activates the tab *inside* Chrome, but the OS window is still
+hidden.
+
+```bash
+# Really unhide: restore the window if minimized, activate the tab, focus the page
+borz tab front
+
+# The response reports what the page ended up believing
+borz tab front --json | jq .data.result.visibilityState   # "visible"
+```
+
+When the window must stay where it is — unattended automation on a machine
+someone else is using — make the page *believe* it is visible instead:
+
+```bash
+# Override document.visibilityState / document.hidden, fire visibilitychange,
+# emulate focus, set the web lifecycle state to active
+borz page visibility visible
+
+# Inspect
+borz page visibility            # visibilityState: hidden (overridden: visible)
+
+# Back to native visibility
+borz page visibility reset
+
+# Test how a page behaves when backgrounded
+borz page visibility hidden
+```
+
+The override persists across navigations in that tab until `reset`. It does not
+un-throttle `requestAnimationFrame` or compositor rendering — when real
+rendering matters (screenshots of animation, video), use `tab front`.
+`tab front` needs no Chrome extension; unlike `borz window focus`, it works
+over plain CDP.
 
 ### Frame (iframe) Navigation
 

@@ -44,6 +44,18 @@ const (
 	ActionClipboardWrite ActionType = "clipboard_write"
 	ActionTermText       ActionType = "term_text"
 	ActionUpload         ActionType = "upload"
+
+	// ActionTabFront brings a tab to the real OS foreground: it restores the
+	// Chrome window if minimized (Browser.setWindowBounds), activates the tab
+	// (Target.activateTarget) and focuses the page (Page.bringToFront).
+	ActionTabFront ActionType = "tab_front"
+	// ActionPageVisibility overrides what the page believes about its own
+	// visibility (document.visibilityState / document.hidden) without moving
+	// any OS window. See Request.Visibility.
+	ActionPageVisibility ActionType = "page_visibility"
+	// ActionFileChooser pre-arms a handler for the next native file-picker
+	// dialog (Page.setInterceptFileChooserDialog). See Request.FileChooserCommand.
+	ActionFileChooser ActionType = "filechooser"
 )
 
 // Request is sent from CLI to daemon.
@@ -184,8 +196,35 @@ type Request struct {
 
 	// Upload (ActionUpload). Files is the list of absolute file paths to
 	// attach to an <input type=file> referenced by Ref. Paths are resolved
-	// on the daemon's filesystem.
+	// on the daemon's filesystem. Also used by ActionFileChooser as the
+	// files that fulfill the next intercepted file-picker dialog.
 	Files []string `json:"files,omitempty"`
+
+	// Visibility (ActionPageVisibility) is one of:
+	//   "visible" — make the page believe it is visible: override
+	//               document.visibilityState/document.hidden, fire
+	//               visibilitychange, emulate focus, and set the web
+	//               lifecycle state to active. Persists across navigations
+	//               in the tab until reset.
+	//   "hidden"  — the inverse override, for testing background behavior.
+	//   "reset"   — remove the override and return to native visibility.
+	//   ""        — report status only (current state + whether overridden).
+	Visibility string `json:"visibility,omitempty"`
+
+	// FileChooserCommand (ActionFileChooser) is one of:
+	//   "accept" — arm: intercept the next file-picker dialog and fulfill it
+	//              with Files (DOM.setFileInputFiles). One-shot.
+	//   "cancel" — arm: intercept the next dialog and cancel it. One-shot.
+	//   "disarm" — drop any armed handler and stop intercepting.
+	//   "status" — report whether a handler is armed for this tab.
+	FileChooserCommand string `json:"fileChooserCommand,omitempty"`
+
+	// Commands (ActionPress / ActionKey) are CDP editing commands sent with
+	// the keyDown event (Input.dispatchKeyEvent `commands`), e.g. "selectAll".
+	// Needed because synthesized key events do not trigger browser-level
+	// editing shortcuts (macOS handles Cmd+A/C/V/X in the browser process).
+	// When empty, well-known meta-modifier combos are auto-mapped.
+	Commands []string `json:"commands,omitempty"`
 }
 
 // RefInfo stores element reference information from a snapshot.

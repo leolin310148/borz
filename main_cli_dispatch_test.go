@@ -1132,3 +1132,78 @@ func TestServerOptionsRejectsInvalidPorts(t *testing.T) {
 		t.Fatalf("serverOptionsFromArgs legacy env error = %v", err)
 	}
 }
+
+func TestCLIDispatch_TabFront(t *testing.T) {
+	out, reqs := runMainWithFakeDaemon(t, "tab", "front")
+	if len(reqs) != 1 || reqs[0].Action != protocol.ActionTabFront {
+		t.Fatalf("requests = %+v", reqs)
+	}
+	if reqs[0].TabID != nil {
+		t.Errorf("no tab given should target the active tab, got %v", reqs[0].TabID)
+	}
+	if !strings.Contains(out, "Brought to front") {
+		t.Errorf("output = %q", out)
+	}
+
+	_, reqs = runMainWithFakeDaemon(t, "tab", "front", "--id", "abc123")
+	if len(reqs) != 1 || reqs[0].TabID != "abc123" {
+		t.Fatalf("tab front --id: %+v", reqs)
+	}
+}
+
+func TestCLIDispatch_PageVisibility(t *testing.T) {
+	out, reqs := runMainWithFakeDaemon(t, "page", "visibility", "visible")
+	if len(reqs) != 1 || reqs[0].Action != protocol.ActionPageVisibility || reqs[0].Visibility != "visible" {
+		t.Fatalf("requests = %+v", reqs)
+	}
+	if !strings.Contains(out, "Visibility override set: visible") {
+		t.Errorf("output = %q", out)
+	}
+
+	// No state = status read.
+	_, reqs = runMainWithFakeDaemon(t, "page", "visibility")
+	if len(reqs) != 1 || reqs[0].Visibility != "" {
+		t.Fatalf("status read: %+v", reqs)
+	}
+
+	_, reqs = runMainWithFakeDaemon(t, "page", "visibility", "reset", "--tab", "t2")
+	if len(reqs) != 1 || reqs[0].Visibility != "reset" || reqs[0].TabID != "t2" {
+		t.Fatalf("reset: %+v", reqs)
+	}
+}
+
+func TestCLIDispatch_FileChooser(t *testing.T) {
+	out, reqs := runMainWithFakeDaemon(t, "filechooser", "accept", "/tmp/a.pdf", "/tmp/b.pdf")
+	if len(reqs) != 1 || reqs[0].Action != protocol.ActionFileChooser {
+		t.Fatalf("requests = %+v", reqs)
+	}
+	if reqs[0].FileChooserCommand != "accept" || len(reqs[0].Files) != 2 {
+		t.Fatalf("accept request = %+v", reqs[0])
+	}
+	if !strings.Contains(out, "2 file(s)") {
+		t.Errorf("output = %q", out)
+	}
+
+	_, reqs = runMainWithFakeDaemon(t, "filechooser")
+	if len(reqs) != 1 || reqs[0].FileChooserCommand != "status" {
+		t.Fatalf("default subcommand should be status: %+v", reqs)
+	}
+
+	_, reqs = runMainWithFakeDaemon(t, "filechooser", "cancel")
+	if len(reqs) != 1 || reqs[0].FileChooserCommand != "cancel" {
+		t.Fatalf("cancel: %+v", reqs)
+	}
+}
+
+func TestCLIDispatch_PressCommands(t *testing.T) {
+	_, reqs := runMainWithFakeDaemon(t, "press", "a", "--modifiers", "meta", "--commands", "selectAll,copy")
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %+v", reqs)
+	}
+	if got := reqs[0].Commands; len(got) != 2 || got[0] != "selectAll" || got[1] != "copy" {
+		t.Fatalf("commands = %v", got)
+	}
+	if got := reqs[0].Modifiers; len(got) != 1 || got[0] != "meta" {
+		t.Fatalf("modifiers = %v", got)
+	}
+}

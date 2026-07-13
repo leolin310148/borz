@@ -90,7 +90,9 @@ func newMCPServer(version string) *server.MCPServer {
 	s.AddTool(uncheckTool, handleUncheck)
 	s.AddTool(selectTool, handleSelect)
 	s.AddTool(uploadTool, handleUpload)
+	s.AddTool(fileChooserTool, handleFileChooser)
 	s.AddTool(pressTool, handlePress)
+	s.AddTool(pageVisibilityTool, handlePageVisibility)
 	s.AddTool(clipboardWriteTool, handleClipboardWrite)
 	s.AddTool(scrollTool, handleScroll)
 
@@ -107,6 +109,7 @@ func newMCPServer(version string) *server.MCPServer {
 	s.AddTool(tabListTool, handleTabList)
 	s.AddTool(tabNewTool, handleTabNew)
 	s.AddTool(tabSelectTool, handleTabSelect)
+	s.AddTool(tabFrontTool, handleTabFront)
 	s.AddTool(tabCloseTool, handleTabClose)
 
 	// Diagnostics

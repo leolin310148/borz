@@ -74,7 +74,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		return body.applyWait(&protocol.Request{Action: protocol.ActionUpload, Ref: body.Ref, Files: files, TabID: body.tabID()}), nil
 	}))
 	mux.HandleFunc("/v1/press", s.restJSON(func(body restBody) *protocol.Request {
-		return body.applyWait(&protocol.Request{Action: protocol.ActionPress, Key: body.Key, Modifiers: body.Modifiers, TabID: body.tabID()})
+		return body.applyWait(&protocol.Request{Action: protocol.ActionPress, Key: body.Key, Modifiers: body.Modifiers, Commands: body.Commands, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/key", s.restJSON(func(body restBody) *protocol.Request {
 		return body.withActivate(&protocol.Request{
@@ -84,7 +84,31 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			Code:      body.Code,
 			Text:      body.Text,
 			Modifiers: body.Modifiers,
+			Commands:  body.Commands,
 			TabID:     body.tabID(),
+		})
+	}))
+	mux.HandleFunc("/v1/filechooser", s.restJSONE(func(body restBody) (*protocol.Request, error) {
+		cmd := body.Command
+		if cmd == "" {
+			cmd = "status"
+		}
+		files := body.uploadFiles()
+		if cmd == "accept" && len(files) == 0 {
+			return nil, fmt.Errorf("files (or file) is required for command=accept")
+		}
+		return body.withActivate(&protocol.Request{
+			Action:             protocol.ActionFileChooser,
+			FileChooserCommand: cmd,
+			Files:              files,
+			TabID:              body.tabID(),
+		}), nil
+	}))
+	mux.HandleFunc("/v1/page/visibility", s.restJSON(func(body restBody) *protocol.Request {
+		return body.withActivate(&protocol.Request{
+			Action:     protocol.ActionPageVisibility,
+			Visibility: body.Visibility,
+			TabID:      body.tabID(),
 		})
 	}))
 	mux.HandleFunc("/v1/mouse", s.restJSON(func(body restBody) *protocol.Request {
@@ -248,6 +272,9 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		}
 		return req
 	}))
+	mux.HandleFunc("/v1/tabs/front", s.restJSON(func(body restBody) *protocol.Request {
+		return &protocol.Request{Action: protocol.ActionTabFront, TabID: body.tabID()}
+	}))
 
 	// Diagnostics
 	mux.HandleFunc("/v1/doctor", s.handleDoctor)
@@ -365,10 +392,18 @@ type restBody struct {
 	DeltaY     *float64 `json:"deltaY,omitempty"`
 	ClickCount *int     `json:"clickCount,omitempty"`
 
-	// Upload — absolute file paths on the daemon's filesystem. `file` is
-	// a convenience alias for a single-file upload.
+	// Upload / filechooser — absolute file paths on the daemon's filesystem.
+	// `file` is a convenience alias for a single file.
 	Files []string `json:"files,omitempty"`
 	File  string   `json:"file,omitempty"`
+
+	// Page visibility override state for /v1/page/visibility:
+	// visible | hidden | reset, or empty for status.
+	Visibility string `json:"visibility,omitempty"`
+
+	// Editing commands sent with keyDown for /v1/press and /v1/key
+	// (Input.dispatchKeyEvent `commands`, e.g. ["selectAll"]).
+	Commands []string `json:"commands,omitempty"`
 }
 
 // uploadFiles returns the file list for an /v1/upload request, accepting

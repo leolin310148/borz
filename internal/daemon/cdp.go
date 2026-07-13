@@ -546,6 +546,28 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 			go c.SessionCommand(targetID, "Page.handleJavaScriptDialog", params)
 		}
 
+	case "Page.fileChooserOpened":
+		// Only fires while Page.setInterceptFileChooserDialog is enabled,
+		// which ActionFileChooser turns on when arming. The native dialog is
+		// suppressed; fulfill (or cancel) it with the armed handler, then
+		// stop intercepting — arming is one-shot, like dialog.
+		if handler := tab.ConsumeFileChooserHandler(); handler != nil {
+			var params struct {
+				Mode          string `json:"mode"`
+				BackendNodeID int    `json:"backendNodeId"`
+			}
+			json.Unmarshal(paramsRaw, &params)
+			go func() {
+				if handler.Accept && params.BackendNodeID != 0 {
+					c.SessionCommand(targetID, "DOM.setFileInputFiles", map[string]interface{}{
+						"files":         handler.Files,
+						"backendNodeId": params.BackendNodeID,
+					})
+				}
+				c.SessionCommand(targetID, "Page.setInterceptFileChooserDialog", map[string]interface{}{"enabled": false})
+			}()
+		}
+
 	case "Network.requestWillBeSent":
 		var params struct {
 			RequestID string `json:"requestId"`

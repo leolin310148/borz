@@ -678,6 +678,80 @@ func resolveKey(keyName string) keyDef {
 	return keyDef{Key: keyName}
 }
 
+// resolveLocalFiles validates and absolutizes file paths against the daemon's
+// filesystem (where Chrome runs). Shared by upload and filechooser.
+func resolveLocalFiles(paths []string) ([]string, error) {
+	absFiles := make([]string, 0, len(paths))
+	for _, p := range paths {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return nil, fmt.Errorf("resolve %q: %w", p, err)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return nil, fmt.Errorf("stat %q: %w", abs, err)
+		}
+		if info.IsDir() {
+			return nil, fmt.Errorf("%q is a directory, not a file", abs)
+		}
+		absFiles = append(absFiles, abs)
+	}
+	return absFiles, nil
+}
+
+// editingCommandsFor auto-maps meta-modifier key combos to CDP editing
+// commands (Input.dispatchKeyEvent `commands`). Synthesized key events never
+// reach the browser-process shortcut layer — on macOS that layer owns
+// Cmd+A/C/X/V/Z — so without the commands parameter these combos are no-ops
+// in editable content. Only meta combos are mapped: on non-mac browsers the
+// meta combo has no native default handler, so the command still executes
+// exactly once (ctrl combos are left alone — they already work natively via
+// the renderer and would double-execute if mapped).
+func editingCommandsFor(key string, mods []string) []string {
+	meta, shift, other := false, false, false
+	for _, m := range mods {
+		switch strings.ToLower(m) {
+		case "meta", "cmd", "command":
+			meta = true
+		case "shift":
+			shift = true
+		default:
+			other = true
+		}
+	}
+	if !meta || other {
+		return nil
+	}
+	switch strings.ToLower(key) {
+	case "a":
+		if !shift {
+			return []string{"selectAll"}
+		}
+	case "c":
+		if !shift {
+			return []string{"copy"}
+		}
+	case "x":
+		if !shift {
+			return []string{"cut"}
+		}
+	case "v":
+		if !shift {
+			return []string{"paste"}
+		}
+	case "z":
+		if shift {
+			return []string{"redo"}
+		}
+		return []string{"undo"}
+	case "y":
+		if !shift {
+			return []string{"redo"}
+		}
+	}
+	return nil
+}
+
 // modifierMask converts a list of modifier names into the CDP bitmask used by
 // Input.dispatchKeyEvent / Input.dispatchMouseEvent: alt=1, ctrl=2, meta=4, shift=8.
 func modifierMask(mods []string) int {
@@ -1209,20 +1283,9 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		if len(req.Files) == 0 {
 			return failResp(req.ID, "missing files parameter")
 		}
-		absFiles := make([]string, 0, len(req.Files))
-		for _, p := range req.Files {
-			abs, err := filepath.Abs(p)
-			if err != nil {
-				return failResp(req.ID, fmt.Errorf("resolve %q: %w", p, err))
-			}
-			info, err := os.Stat(abs)
-			if err != nil {
-				return failResp(req.ID, fmt.Errorf("stat %q: %w", abs, err))
-			}
-			if info.IsDir() {
-				return failResp(req.ID, fmt.Errorf("%q is a directory, not a file", abs))
-			}
-			absFiles = append(absFiles, abs)
+		absFiles, err := resolveLocalFiles(req.Files)
+		if err != nil {
+			return failResp(req.ID, err)
 		}
 		seq := tab.RecordAction()
 		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
@@ -1273,6 +1336,10 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		if keyType == "" {
 			keyType = "press"
 		}
+		commands := req.Commands
+		if len(commands) == 0 {
+			commands = editingCommandsFor(req.Key, req.Modifiers)
+		}
 
 		send := func(eventType string, def keyDef, withText bool) error {
 			params := map[string]interface{}{
@@ -1292,6 +1359,9 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			if withText && def.Text != "" {
 				params["text"] = def.Text
 				params["unmodifiedText"] = def.Text
+			}
+			if eventType == "keyDown" && len(commands) > 0 {
+				params["commands"] = commands
 			}
 			_, err := cdp.SessionCommand(target.ID, "Input.dispatchKeyEvent", params)
 			return err
@@ -1488,6 +1558,10 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		seq := tab.RecordAction()
 		def := resolveKey(req.Key)
 		mods := modifierMask(req.Modifiers)
+		commands := req.Commands
+		if len(commands) == 0 {
+			commands = editingCommandsFor(req.Key, req.Modifiers)
+		}
 		send := func(eventType string, withText bool) error {
 			params := map[string]interface{}{"type": eventType, "key": def.Key, "modifiers": mods}
 			if def.Code != "" {
@@ -1500,6 +1574,9 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			if withText && def.Text != "" {
 				params["text"] = def.Text
 				params["unmodifiedText"] = def.Text
+			}
+			if eventType == "keyDown" && len(commands) > 0 {
+				params["commands"] = commands
 			}
 			_, err := cdp.SessionCommand(target.ID, "Input.dispatchKeyEvent", params)
 			return err
@@ -1649,6 +1726,113 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		return okResp(req.ID, &protocol.ResponseData{
 			TabID: selected.ID, URL: selected.URL, Title: selected.Title, Tab: tabShort,
 		})
+
+	case protocol.ActionTabFront:
+		// tab_select activates the tab inside Chrome, but a minimized or
+		// occluded Chrome window still reports visibilityState "hidden" and
+		// pages throttle accordingly (uploads, timers, media). tab_front
+		// additionally restores the OS window so the page is really visible.
+		seq := tab.RecordAction()
+		result := bringTabToFront(cdp, target.ID)
+		return okResp(req.ID, &protocol.ResponseData{
+			Result: result, TabID: target.ID, URL: target.URL, Title: target.Title,
+			Tab: shortID, Seq: intPtr(seq),
+		})
+
+	case protocol.ActionPageVisibility:
+		state := strings.ToLower(strings.TrimSpace(req.Visibility))
+		switch state {
+		case "":
+			// Status: report the page's current belief and any active override.
+			raw, err := cdp.Evaluate(target.ID, "document.visibilityState", true)
+			if err != nil {
+				return failResp(req.ID, err)
+			}
+			var current string
+			json.Unmarshal(raw, &current)
+			override, _ := tab.GetVisibilityOverride()
+			return okResp(req.ID, &protocol.ResponseData{
+				Result: map[string]interface{}{
+					"visibilityState": current,
+					"override":        override,
+					"overridden":      override != "",
+				},
+				Tab: shortID,
+			})
+		case "visible", "hidden":
+			seq := tab.RecordAction()
+			result, err := applyVisibilityOverride(cdp, target.ID, tab, state)
+			if err != nil {
+				return failResp(req.ID, err)
+			}
+			return okResp(req.ID, &protocol.ResponseData{Result: result, Tab: shortID, Seq: intPtr(seq)})
+		case "reset":
+			seq := tab.RecordAction()
+			result, err := resetVisibilityOverride(cdp, target.ID, tab)
+			if err != nil {
+				return failResp(req.ID, err)
+			}
+			return okResp(req.ID, &protocol.ResponseData{Result: result, Tab: shortID, Seq: intPtr(seq)})
+		default:
+			return failResp(req.ID, fmt.Sprintf("unknown visibility state: %s (expected visible, hidden, or reset)", req.Visibility))
+		}
+
+	case protocol.ActionFileChooser:
+		subCmd := req.FileChooserCommand
+		if subCmd == "" {
+			subCmd = "status"
+		}
+		switch subCmd {
+		case "accept":
+			if len(req.Files) == 0 {
+				return failResp(req.ID, "missing files parameter")
+			}
+			absFiles, err := resolveLocalFiles(req.Files)
+			if err != nil {
+				return failResp(req.ID, err)
+			}
+			seq := tab.RecordAction()
+			if _, err := cdp.SessionCommand(target.ID, "Page.setInterceptFileChooserDialog", map[string]interface{}{"enabled": true}); err != nil {
+				return failResp(req.ID, err)
+			}
+			tab.SetFileChooserHandler(&FileChooserHandler{Accept: true, Files: absFiles})
+			return okResp(req.ID, &protocol.ResponseData{
+				Result: map[string]interface{}{"armed": true, "action": "accept", "files": absFiles},
+				Tab:    shortID, Seq: intPtr(seq),
+			})
+		case "cancel":
+			seq := tab.RecordAction()
+			if _, err := cdp.SessionCommand(target.ID, "Page.setInterceptFileChooserDialog", map[string]interface{}{"enabled": true}); err != nil {
+				return failResp(req.ID, err)
+			}
+			tab.SetFileChooserHandler(&FileChooserHandler{Accept: false})
+			return okResp(req.ID, &protocol.ResponseData{
+				Result: map[string]interface{}{"armed": true, "action": "cancel"},
+				Tab:    shortID, Seq: intPtr(seq),
+			})
+		case "disarm":
+			seq := tab.RecordAction()
+			tab.ConsumeFileChooserHandler()
+			cdp.SessionCommand(target.ID, "Page.setInterceptFileChooserDialog", map[string]interface{}{"enabled": false})
+			return okResp(req.ID, &protocol.ResponseData{
+				Result: map[string]interface{}{"armed": false},
+				Tab:    shortID, Seq: intPtr(seq),
+			})
+		case "status":
+			handler := tab.PeekFileChooserHandler()
+			result := map[string]interface{}{"armed": handler != nil}
+			if handler != nil {
+				if handler.Accept {
+					result["action"] = "accept"
+					result["files"] = handler.Files
+				} else {
+					result["action"] = "cancel"
+				}
+			}
+			return okResp(req.ID, &protocol.ResponseData{Result: result, Tab: shortID})
+		default:
+			return failResp(req.ID, fmt.Sprintf("unknown filechooser subcommand: %s", subCmd))
+		}
 
 	case protocol.ActionTabClose:
 		targets, _ := cdp.GetTargets()
