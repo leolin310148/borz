@@ -381,12 +381,14 @@ var windowsTool = mcp.NewTool("browser_windows",
 // --- Site Adapters ---
 
 var siteListTool = mcp.NewTool("browser_site_list",
-	mcp.WithDescription("List available site adapters — JavaScript plugins that automate interactions with specific websites (e.g. twitter/search). Returns adapter names, descriptions, domains, read-only flags, and argument schemas. Adapters are resolved on the borz daemon's filesystem."),
+	mcp.WithDescription("List available site adapters — JavaScript plugins that automate interactions with specific websites (e.g. twitter/search). scope=client (default) reads adapters beside this MCP process, so local adapters can run through any local or remote daemon. scope=server reads adapters installed on the selected profile's daemon."),
+	mcp.WithString("scope", mcp.Description("Adapter catalog: client (default, MCP host filesystem) or server (selected daemon filesystem)."), mcp.Enum("client", "server")),
 )
 
 var siteInfoTool = mcp.NewTool("browser_site_info",
 	mcp.WithDescription("Get detailed metadata for a site adapter, including read-only status, SHA256, source repo, argument order/schema, output schema, and example usage."),
 	mcp.WithString("name", mcp.Required(), mcp.Description("Adapter name, e.g. \"twitter/search\"")),
+	mcp.WithString("scope", mcp.Description("Adapter catalog: client (default) or server."), mcp.Enum("client", "server")),
 )
 
 var siteRunTool = mcp.NewTool("browser_site_run",
@@ -396,5 +398,6 @@ var siteRunTool = mcp.NewTool("browser_site_run",
 	mcp.WithBoolean("force", mcp.Description("Bypass community trust and domain mismatch guard for this run. Use only after inspecting the adapter and target tab.")),
 	mcp.WithBoolean("raw", mcp.Description("Return the adapter result unwrapped like CLI --unwrap (strings are not JSON-quoted).")),
 	mcp.WithNumber("timeout", mcp.Description("Maximum adapter JavaScript execution time in milliseconds (default 30000 or adapter timeoutMs)."), mcp.Min(0)),
+	mcp.WithString("scope", mcp.Description("Run the adapter from the client catalog (default) or selected daemon's server catalog."), mcp.Enum("client", "server")),
 	tabParam(),
 )

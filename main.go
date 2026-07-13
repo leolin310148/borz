@@ -55,7 +55,7 @@ var cliValueFlags = []string{
 	"--filename", "--state", "--name", "--display-name", "--description", "--out",
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
 	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--role",
-	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect", "--ref",
+	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect", "--ref", "--scope",
 }
 
 var cliValueFlagSet = makeFlagSet(cliValueFlags)
@@ -1400,54 +1400,40 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 	if len(cmdArgs) == 0 {
 		cmdArgs = []string{"list"}
 	}
+	scope, err := resolveSiteScope(os.Args[1:])
+	if err != nil {
+		fatal(err.Error())
+	}
 
 	sub := cmdArgs[0]
 	switch sub {
 	case "list":
-		sites := site.AllSites()
-		if jsonOutput {
-			printJSON(sites)
+		var sites []*site.SiteMeta
+		if scope == siteScopeServer {
+			sites, err = loadServerSites()
 		} else {
-			grouped := make(map[string][]*site.SiteMeta)
-			for _, s := range sites {
-				parts := strings.SplitN(s.Name, "/", 2)
-				platform := parts[0]
-				grouped[platform] = append(grouped[platform], s)
-			}
-			platforms := make([]string, 0, len(grouped))
-			for platform := range grouped {
-				platforms = append(platforms, platform)
-			}
-			sort.Strings(platforms)
-			for _, platform := range platforms {
-				adapters := grouped[platform]
-				fmt.Printf("\n%s:\n", platform)
-				for _, a := range adapters {
-					var tags []string
-					if a.Source == "local" {
-						tags = append(tags, "local")
-					}
-					if a.ReadOnly {
-						tags = append(tags, "read-only")
-					}
-					if a.UsageCount > 0 {
-						tags = append(tags, fmt.Sprintf("used:%d", a.UsageCount))
-					}
-					tagText := ""
-					if len(tags) > 0 {
-						tagText = " [" + strings.Join(tags, ",") + "]"
-					}
-					fmt.Printf("  %s - %s%s\n", a.Name, a.Description, tagText)
-				}
-			}
-			fmt.Printf("\nTotal: %d adapters\n", len(sites))
+			sites = site.AllSites()
 		}
+		if err != nil {
+			fatal(err.Error())
+		}
+		printSiteList(sites, jsonOutput)
 
 	case "search":
 		if len(cmdArgs) < 2 {
 			fatal("Usage: borz site search <query>")
 		}
-		results := site.SearchSites(strings.Join(cmdArgs[1:], " "))
+		query := strings.Join(cmdArgs[1:], " ")
+		var results []*site.SiteMeta
+		if scope == siteScopeServer {
+			sites, loadErr := loadServerSites()
+			if loadErr != nil {
+				fatal(loadErr.Error())
+			}
+			results = site.SearchSiteList(sites, query)
+		} else {
+			results = site.SearchSites(query)
+		}
 		if jsonOutput {
 			printJSON(results)
 		} else {
@@ -1461,60 +1447,33 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 		if len(cmdArgs) < 2 {
 			fatal("Usage: borz site info <name>")
 		}
-		s := site.FindSite(cmdArgs[1])
-		if s == nil {
-			fatal("Adapter not found: " + cmdArgs[1])
-		}
-		if jsonOutput {
-			printJSON(s)
+		var adapter *site.SiteMeta
+		if scope == siteScopeServer {
+			adapter, err = loadServerSite(cmdArgs[1])
 		} else {
-			fmt.Printf("Name:        %s\n", s.Name)
-			fmt.Printf("Description: %s\n", s.Description)
-			fmt.Printf("Domain:      %s\n", s.Domain)
-			if s.StartURL != "" {
-				fmt.Printf("Start URL:   %s\n", s.StartURL)
-			}
-			fmt.Printf("Source:       %s\n", s.Source)
-			fmt.Printf("Source repo:  %s\n", s.SourceRepo)
-			fmt.Printf("SHA256:      %s\n", s.SHA256)
-			fmt.Printf("Read-only:   %v\n", s.ReadOnly)
-			fmt.Printf("Trusted:     %v\n", s.Trusted)
-			if s.TimeoutMs > 0 {
-				fmt.Printf("Timeout:     %d ms\n", s.TimeoutMs)
-			}
-			if len(s.ArgOrder) > 0 {
-				fmt.Printf("Arg order:   %s\n", strings.Join(s.ArgOrder, ", "))
-			}
-			if s.Example != "" {
-				fmt.Printf("Example:     %s\n", s.Example)
-			}
-			if len(s.Args) > 0 {
-				fmt.Println("Args:")
-				for idx, name := range orderedSiteArgNames(s) {
-					arg := s.Args[name]
-					req := ""
-					if arg.Required {
-						req = " (required)"
-					}
-					def := ""
-					if arg.Default != "" {
-						def = fmt.Sprintf(" default=%q", arg.Default)
-					}
-					fmt.Printf("  %d. %s%s%s - %s (positional or --%s)\n", idx+1, name, req, def, arg.Description, name)
-				}
-			}
-			if len(s.Output) > 0 {
-				fmt.Printf("Output:      %s\n", string(s.Output))
+			adapter = site.FindSite(cmdArgs[1])
+			if adapter == nil {
+				err = fmt.Errorf("adapter not found: %s", cmdArgs[1])
 			}
 		}
+		if err != nil {
+			fatal(err.Error())
+		}
+		printSiteInfo(adapter, jsonOutput)
 
 	case "update":
+		if err := requireClientSiteScope(scope, sub); err != nil {
+			fatal(err.Error())
+		}
 		if err := site.UpdateCommunityRepo(getArgValue(os.Args[1:], "--ref")); err != nil {
 			fatal("Update failed: " + err.Error())
 		}
 		fmt.Println("Community adapters updated")
 
 	case "new":
+		if err := requireClientSiteScope(scope, sub); err != nil {
+			fatal(err.Error())
+		}
 		if len(cmdArgs) < 2 {
 			fatal("Usage: borz site new <platform/name>")
 		}
@@ -1525,12 +1484,18 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 		fmt.Println(path)
 
 	case "lint":
+		if err := requireClientSiteScope(scope, sub); err != nil {
+			fatal(err.Error())
+		}
 		if len(cmdArgs) < 2 {
 			fatal("Usage: borz site lint <name-or-path>")
 		}
 		handleSiteLint(cmdArgs[1])
 
 	case "trust":
+		if err := requireClientSiteScope(scope, sub); err != nil {
+			fatal(err.Error())
+		}
 		if len(cmdArgs) < 2 {
 			fatal("Usage: borz site trust <name>")
 		}
@@ -1547,12 +1512,12 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 		if len(cmdArgs) < 2 {
 			fatal("Usage: borz site run <name> [args...]")
 		}
-		handleSiteRun(cmdArgs[1], cmdArgs[2:], jsonOutput, globalTabID)
+		handleSiteRunWithScope(cmdArgs[1], cmdArgs[2:], jsonOutput, globalTabID, scope)
 
 	default:
 		// Try as site name: "borz site twitter/search AI"
 		if strings.Contains(sub, "/") {
-			handleSiteRun(sub, cmdArgs[1:], jsonOutput, globalTabID)
+			handleSiteRunWithScope(sub, cmdArgs[1:], jsonOutput, globalTabID, scope)
 		} else {
 			fatal(unknownSubcommandHint("site", sub))
 		}
@@ -1560,20 +1525,39 @@ func handleSite(cmdArgs []string, jsonOutput bool, globalTabID string) {
 }
 
 func handleSiteRun(name string, cmdArgs []string, jsonOutput bool, globalTabID string) {
-	meta := site.FindSite(name)
+	scope, err := resolveSiteScope(os.Args[1:])
+	if err != nil {
+		fatal(err.Error())
+	}
+	handleSiteRunWithScope(name, cmdArgs, jsonOutput, globalTabID, scope)
+}
+
+func handleSiteRunWithScope(name string, cmdArgs []string, jsonOutput bool, globalTabID string, scope siteScope) {
+	var meta *site.SiteMeta
+	var err error
+	if scope == siteScopeServer {
+		meta, err = loadServerSite(name)
+	} else {
+		meta = site.FindSite(name)
+	}
+	if err != nil {
+		fatal(err.Error())
+	}
 	if meta == nil {
 		fmt.Fprintf(os.Stderr, "Adapter not found: %s\n", name)
-		fmt.Fprintf(os.Stderr, "Run 'borz site update' to pull community adapters.\n")
+		if scope == siteScopeClient {
+			fmt.Fprintf(os.Stderr, "Run 'borz site update' to pull community adapters.\n")
+		}
 		exitFunc(1)
 	}
 
-	args, err := site.ParseAdapterArgs(meta, cmdArgs)
+	adapterArgs, err := site.ParseAdapterArgs(meta, cmdArgs)
 	if err != nil {
 		fatal(err.Error())
 	}
 	rawArgs := os.Args[1:]
 	force := hasFlag(rawArgs, "--force")
-	if !force {
+	if scope == siteScopeClient && !force {
 		if err := confirmCommunityAdapter(meta); err != nil {
 			fatal(err.Error())
 		}
@@ -1582,7 +1566,15 @@ func handleSiteRun(name string, cmdArgs []string, jsonOutput bool, globalTabID s
 	if err != nil {
 		fatal(err.Error())
 	}
-	evalReq, err := site.BuildEvalRequestWithOptions(meta, args, globalTabID, site.EvalOptions{
+	if scope == siteScopeServer {
+		resp, runErr := runServerSite(meta.Name, adapterArgs, globalTabID, force, timeoutMs)
+		if runErr != nil {
+			fatal(runErr.Error())
+		}
+		printEvalResponse(resp, jsonOutput, hasFlag(rawArgs, "--unwrap"))
+		return
+	}
+	evalReq, err := site.BuildEvalRequestWithOptions(meta, adapterArgs, globalTabID, site.EvalOptions{
 		Force:     force,
 		TimeoutMs: timeoutMs,
 	})
@@ -1854,6 +1846,50 @@ func printEval(req *protocol.Request, jsonOutput, unwrap bool) bool {
 			fmt.Println(v)
 		default:
 			out, _ := json.MarshalIndent(v, "", "  ")
+			fmt.Println(string(out))
+		}
+		return true
+	}
+	out, _ := json.MarshalIndent(resp.Data.Result, "", "  ")
+	fmt.Println(string(out))
+	return true
+}
+
+// printEvalResponse applies the same output precedence as printEval to a
+// response that was obtained through a non-/command endpoint, such as
+// /v1/sites/run for server-scoped adapters.
+func printEvalResponse(resp *protocol.Response, jsonOutput, unwrap bool) bool {
+	if resp == nil {
+		fatal("site run returned an empty response")
+	}
+	if jqExpression != "" {
+		for _, result := range applyJQExpression(resp, jqExpression) {
+			if value, ok := result.(string); ok {
+				fmt.Println(value)
+			} else {
+				out, _ := json.Marshal(result)
+				fmt.Println(string(out))
+			}
+		}
+		return resp.Success
+	}
+	if jsonOutput {
+		printJSON(resp)
+		return resp.Success
+	}
+	if !resp.Success {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", resp.Error)
+		exitFunc(1)
+	}
+	if resp.Data == nil || resp.Data.Result == nil {
+		return true
+	}
+	if unwrap {
+		switch value := resp.Data.Result.(type) {
+		case string:
+			fmt.Println(value)
+		default:
+			out, _ := json.MarshalIndent(value, "", "  ")
 			fmt.Println(string(out))
 		}
 		return true
@@ -2164,8 +2200,9 @@ Browser-level (Chrome extension):
   tab events [--tail]           Browser event stream (tabs, windows, etc.)
 
 Site Adapters:
-  site list / search / info / update     Discover and refresh adapters
-  site run <name> [args]                 Run an adapter
+  site list / search / info [--scope S]  Discover client/server adapters
+  site run <name> [args] [--scope S]     Run a client/server adapter
+  site update / new / lint / trust       Manage client-side adapters
   <platform>/<adapter> [args]            Shorthand for 'site run'
 
 Utility:

@@ -57,7 +57,7 @@ Keep these in sync; tests assert this (e.g. MCP handler tests, REST tests, OpenA
 
 ### Subsystems worth knowing
 
-- `internal/site/` — **site adapters**: user/community JS plugins (`~/.borz/sites`, `~/.borz/bb-sites`) that automate specific websites. They run on the **daemon**'s filesystem with SHA256 trust prompts; remote clients invoking `/v1/sites/*` get whatever the server has. Domain origin guards + `entry`/`timeoutMs`/`output` schema are validated here.
+- `internal/site/` — **site adapters**: user/community JS plugins (`~/.borz/sites`, `~/.borz/bb-sites`) that automate specific websites. CLI/MCP default to client scope (load + trust beside the process, then send built JS through any profile); server scope and direct `/v1/sites/*` load + trust on the selected daemon. Domain origin guards + `entry`/`timeoutMs`/`output` schema are validated here.
 - `internal/recorder/` + `record_cli.go` — `.borzrec` bundle capture (CDP mode or extension/client mode) and ffmpeg-based render with cursor/click/redaction overlays.
 - `internal/daemon/extbridge/` + `extension/` — optional Chrome extension that exposes browser-level APIs CDP can't reach (all-domain cookies, bookmarks, history, downloads, windows, event streams). Extension is downloaded by `borz extension download` and version-locked to the binary; `internal/extupdate/` handles fetch/verify/extract.
 - `internal/jq/` — built-in jq-compatible filter (no external `jq` binary). Used by `--jq` on every command.

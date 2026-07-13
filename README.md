@@ -217,6 +217,12 @@ The MCP server exposes 38 tools:
 | **Extension-backed** | `browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows` |
 | **Site Adapters** | `browser_site_list`, `browser_site_info`, `browser_site_run` |
 
+The three site-adapter tools accept `scope`. `client` (the default) resolves
+adapters and SHA256 trust on the MCP host, then sends the built JavaScript
+through the selected profile. `server` resolves adapters and trust on the
+selected daemon instead. This lets a local adapter drive a browser behind a
+local CDP daemon or a remote borz server without installing the adapter there.
+
 The workflow mirrors the CLI: call `browser_snapshot` to see the page structure with element refs, then use those refs with interaction tools like `browser_click` or `browser_fill`. Screenshots are returned as inline base64 PNG images.
 
 Most action tools accept optional `waitFor` (CSS selector) and `timeout` (ms, default 10000) params — after the action runs, the daemon polls `document.querySelector(waitFor)` until it returns a non-null node or the timeout elapses. Use this for SPA loads or modals instead of fixed `browser_wait` calls.
@@ -970,6 +976,9 @@ Site adapters are JavaScript plugins that automate interactions with specific we
 # List available adapters
 borz site list
 
+# Inspect adapters installed on a remote profile's daemon
+borz --profile mini site list --scope server
+
 # Search for adapters
 borz site search twitter
 
@@ -980,6 +989,12 @@ borz site info twitter/search
 borz site run twitter/search "AI news"
 # or shorthand:
 borz twitter/search "AI news"
+
+# Run the local/client adapter through a remote daemon (client is the default)
+borz --profile mini site run twitter/search "AI news" --scope client
+
+# Run the copy installed and trusted on the remote daemon
+borz --profile mini site run twitter/search "AI news" --scope server
 
 # Pull community adapters, optionally pinned to a tag/commit
 borz site update
@@ -1000,6 +1015,19 @@ or opens `startUrl` (default `https://<domain>/`) before evaluating the adapter.
 `site info` shows the adapter SHA256 and source repo. Community adapters are
 arbitrary JavaScript running in your real Chrome session; changed hashes must be
 trusted again or run once with `--force`.
+
+Site scope controls where the adapter catalog and trust database live:
+
+- `client` (default): read and trust the adapter on the CLI/MCP machine, build
+  its JavaScript there, and send it through the selected managed, cdp, or
+  remote profile.
+- `server`: use `/v1/sites/*` and the selected daemon's adapter files, trust
+  database, and usage data.
+
+`site list`, `search`, `info`, and `run` support both scopes. `site update`,
+`new`, `lint`, and `trust` are client-only; manage a server catalog by running
+those commands on the daemon host. Direct REST `/v1/sites/*` calls are always
+server-scoped.
 
 ### Daemon Management
 

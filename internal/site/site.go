@@ -251,10 +251,16 @@ func FindSite(name string) *SiteMeta {
 
 // SearchSites searches adapters by name, description, or domain.
 func SearchSites(query string) []*SiteMeta {
+	return SearchSiteList(AllSites(), query)
+}
+
+// SearchSiteList searches an already-resolved adapter catalog by name,
+// description, or domain. It is used by clients that obtained the catalog
+// from a daemon rather than the local filesystem.
+func SearchSiteList(sites []*SiteMeta, query string) []*SiteMeta {
 	query = strings.ToLower(strings.TrimSpace(query))
-	sites := AllSites()
 	if query == "" {
-		return sites
+		return append([]*SiteMeta(nil), sites...)
 	}
 
 	type scored struct {

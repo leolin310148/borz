@@ -518,6 +518,12 @@ func TestStripFlags(t *testing.T) {
 		t.Errorf("site update --ref value flag: %v", got)
 	}
 
+	in = []string{"--profile", "mini", "site", "run", "demo/search", "cats", "--scope", "server"}
+	got = stripFlags(in, nil, nil)
+	if !reflect.DeepEqual(got, []string{"site", "run", "demo/search", "cats"}) {
+		t.Errorf("site --scope value flag: %v", got)
+	}
+
 	// Custom bool flag strips just the flag.
 	in = []string{"cmd", "--bool", "keep"}
 	got = stripFlags(in, nil, []string{"--bool"})

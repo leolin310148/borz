@@ -25,9 +25,11 @@ import (
 // siteLister / siteFinder / siteBuilder are variables so tests can stub the
 // on-disk adapter resolution without creating real files.
 var (
-	siteLister  = site.AllSites
-	siteFinder  = site.FindSite
-	siteBuilder = site.BuildEvalRequestWithOptions
+	siteLister   = site.AllSites
+	siteFinder   = site.FindSite
+	siteBuilder  = site.BuildEvalRequestWithOptions
+	siteGetJSON  = client.GetJSON
+	sitePostJSON = client.PostJSON
 )
 
 var (
@@ -654,10 +656,74 @@ func handleDoctor(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResu
 
 // --- Site Adapter Handlers ---
 
-func handleSiteList(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sites := siteLister()
+func siteScopeArg(r mcp.CallToolRequest) (string, error) {
+	scope := strings.ToLower(strings.TrimSpace(r.GetString("scope", "client")))
+	switch scope {
+	case "client", "server":
+		return scope, nil
+	default:
+		return "", fmt.Errorf("scope must be client or server")
+	}
+}
+
+type mcpServerSiteListResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+	Data    struct {
+		Sites []*site.SiteMeta `json:"sites"`
+	} `json:"data"`
+}
+
+type mcpServerSiteInfoResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+	Data    struct {
+		Site *site.SiteMeta `json:"site"`
+	} `json:"data"`
+}
+
+func mcpServerSites() ([]*site.SiteMeta, error) {
+	raw, err := siteGetJSON("/v1/sites", 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	var payload mcpServerSiteListResponse
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("decode server site list: %w", err)
+	}
+	if !payload.Success {
+		if payload.Error == "" {
+			payload.Error = "unknown error"
+		}
+		return nil, fmt.Errorf("server site list failed: %s", payload.Error)
+	}
+	if payload.Data.Sites == nil {
+		return []*site.SiteMeta{}, nil
+	}
+	return payload.Data.Sites, nil
+}
+
+func mcpServerSiteInfo(name string) (*site.SiteMeta, error) {
+	raw, err := sitePostJSON("/v1/sites/info", map[string]interface{}{"name": name}, 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	var payload mcpServerSiteInfoResponse
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("decode server site info: %w", err)
+	}
+	if !payload.Success || payload.Data.Site == nil {
+		if payload.Error == "" {
+			payload.Error = "adapter not found: " + name
+		}
+		return nil, fmt.Errorf("server site info failed: %s", payload.Error)
+	}
+	return payload.Data.Site, nil
+}
+
+func formatSiteList(sites []*site.SiteMeta) *mcp.CallToolResult {
 	if len(sites) == 0 {
-		return mcp.NewToolResultText("No site adapters available. Run `borz site update` on the daemon host to pull community adapters."), nil
+		return mcp.NewToolResultText("No site adapters available in the selected scope.")
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "Site adapters (%d):\n", len(sites))
@@ -678,7 +744,24 @@ func handleSiteList(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 		}
 		sb.WriteByte('\n')
 	}
-	return mcp.NewToolResultText(sb.String()), nil
+	return mcp.NewToolResultText(sb.String())
+}
+
+func handleSiteList(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	scope, err := siteScopeArg(r)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	var sites []*site.SiteMeta
+	if scope == "server" {
+		sites, err = mcpServerSites()
+	} else {
+		sites = siteLister()
+	}
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to list %s site adapters: %v", scope, err)), nil
+	}
+	return formatSiteList(sites), nil
 }
 
 func handleSiteInfo(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -686,7 +769,19 @@ func handleSiteInfo(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 	if err != nil {
 		return mcp.NewToolResultError("name is required"), nil
 	}
-	meta := siteFinder(name)
+	scope, err := siteScopeArg(r)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	var meta *site.SiteMeta
+	if scope == "server" {
+		meta, err = mcpServerSiteInfo(name)
+	} else {
+		meta = siteFinder(name)
+	}
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 	if meta == nil {
 		return mcp.NewToolResultError(fmt.Sprintf("adapter not found: %s", name)), nil
 	}
@@ -702,9 +797,9 @@ func handleSiteRun(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRes
 	if err != nil {
 		return mcp.NewToolResultError("name is required"), nil
 	}
-	meta := siteFinder(name)
-	if meta == nil {
-		return mcp.NewToolResultError(fmt.Sprintf("adapter not found: %s", name)), nil
+	scope, err := siteScopeArg(r)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	args := map[string]interface{}{}
@@ -717,6 +812,39 @@ func handleSiteRun(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRes
 	}
 
 	tabID := tabIDArg(r)
+	if scope == "server" {
+		body := map[string]interface{}{
+			"name":  name,
+			"args":  args,
+			"force": r.GetBool("force", false),
+		}
+		if tabID != "" {
+			body["tab"] = tabID
+		}
+		if timeout := r.GetInt("timeout", 0); timeout > 0 {
+			body["timeoutMs"] = timeout
+		}
+		raw, postErr := sitePostJSON("/v1/sites/run", body, 30*time.Second)
+		if postErr != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("server site run failed: %v", postErr)), nil
+		}
+		var resp protocol.Response
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("decode server site result: %v", err)), nil
+		}
+		if e := checkError(&resp, nil); e != nil {
+			return e, nil
+		}
+		if r.GetBool("raw", false) {
+			return formatEvalRaw(&resp), nil
+		}
+		return formatEval(&resp), nil
+	}
+
+	meta := siteFinder(name)
+	if meta == nil {
+		return mcp.NewToolResultError(fmt.Sprintf("adapter not found: %s", name)), nil
+	}
 	req, err := siteBuilder(meta, args, tabID, site.EvalOptions{
 		Force:     r.GetBool("force", false),
 		TimeoutMs: r.GetInt("timeout", 0),

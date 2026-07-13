@@ -530,26 +530,32 @@ var commandHelp = map[string]cmdHelp{
 	// --- Site adapters ---
 	"site": {
 		Summary: "Run or inspect platform-specific scrapers (twitter/search, hackernews/top, ...).",
-		Usage:   "borz site [subcommand]",
+		Usage:   "borz site [subcommand] [--scope client|server]",
 		Flags: []string{
-			"  list                  List all adapters grouped by platform (default)",
-			"  search <query>        Fuzzy-search adapters by name/description",
-			"  info <name>           Show an adapter's args, domain, and example",
-			"  update [--ref <ref>]  Pull the community adapter pack, optionally pinned",
-			"  new <name>            Scaffold a local adapter template",
-			"  lint <name|path>      Validate adapter metadata and wrapper buildability",
-			"  trust <name>          Trust the current SHA256 of a community adapter",
-			"  run <name> [args...]  Run an adapter (equivalent to 'borz <name> ...')",
+			"  --scope <client|server>  Adapter catalog (default client)",
+			"  list                     List all adapters grouped by platform (default)",
+			"  search <query>           Fuzzy-search adapters by name/description",
+			"  info <name>              Show an adapter's args, domain, and example",
+			"  update [--ref <ref>]     Pull the community adapter pack, optionally pinned",
+			"  new <name>               Scaffold a local adapter template",
+			"  lint <name|path>         Validate adapter metadata and wrapper buildability",
+			"  trust <name>             Trust the current SHA256 of a community adapter",
+			"  run <name> [args...]     Run an adapter (equivalent to 'borz <name> ...')",
 		},
 		Examples: []string{
 			"  borz site list",
+			"  borz --profile mini site list --scope server",
 			"  borz site info hackernews/top",
 			"  borz hackernews/top",
+			"  borz --profile mini hackernews/top --scope client",
 			"  borz twitter/search 'claude code'",
 		},
 		Notes: "Any '<platform>/<adapter>' invocation is forwarded to 'site run' — " +
 			"'borz hackernews/top' and 'borz site run hackernews/top' are equivalent. " +
-			"Run 'borz site info <name>' to see required args, read-only status, source, and hash.",
+			"Client scope reads adapters and trust from the CLI host, then sends the built " +
+			"JavaScript to the selected daemon; server scope uses adapters and trust on that " +
+			"daemon. update/new/lint/trust are client-only. Run 'borz site info <name>' to " +
+			"see required args, read-only status, source, and hash.",
 	},
 
 	// --- Utility / infra ---
@@ -947,19 +953,19 @@ var commandHelp = map[string]cmdHelp{
 	// --- Subcommand pages: site.* ---
 	"site.list": {
 		Summary:  "List every available site adapter, grouped by platform.",
-		Usage:    "borz site [list]",
-		Examples: []string{"  borz site", "  borz site list"},
+		Usage:    "borz site [list] [--scope client|server]",
+		Examples: []string{"  borz site", "  borz site list", "  borz --profile mini site list --scope server"},
 		Notes: "Entries tagged [local] come from your workspace; the rest are from the " +
 			"community pack. Use 'site update' to refresh the community pack.",
 	},
 	"site.search": {
 		Summary:  "Fuzzy-search adapters by name, description, or domain.",
-		Usage:    "borz site search <query>",
+		Usage:    "borz site search <query> [--scope client|server]",
 		Examples: []string{"  borz site search hacker", "  borz site search 'linux forum'"},
 	},
 	"site.info": {
 		Summary: "Print an adapter's description, domain, source, example, and args.",
-		Usage:   "borz site info <name>",
+		Usage:   "borz site info <name> [--scope client|server]",
 		Examples: []string{
 			"  borz site info hackernews/top",
 			"  borz hackernews/top --help   # shortcut that forwards here",
@@ -973,39 +979,42 @@ var commandHelp = map[string]cmdHelp{
 		Flags: []string{
 			"  --ref <tag|sha>   Fetch and checkout a specific community repo ref; writes community.lock",
 		},
-		Notes: "Community adapters are cached under the user's config dir. Local adapters " +
+		Notes: "Client scope only. Community adapters are cached under the user's config dir. Local adapters " +
 			"you've placed in the workspace are not affected. Updates refuse to run when the community repo has local changes.",
 	},
 	"site.new": {
 		Summary:  "Create a local site adapter template.",
 		Usage:    "borz site new <platform/name>",
 		Examples: []string{"  borz site new github/search"},
-		Notes:    "Creates the file under the local sites directory and refuses to overwrite an existing adapter.",
+		Notes:    "Client scope only. Creates the file under the local sites directory and refuses to overwrite an existing adapter.",
 	},
 	"site.lint": {
 		Summary:  "Validate an adapter's metadata and generated execution wrapper.",
 		Usage:    "borz site lint <name-or-path>",
 		Examples: []string{"  borz site lint github/search", "  borz site lint ./sites/github/search.js"},
-		Notes:    "Checks required metadata, required/default consistency, required args, and adapter readability.",
+		Notes:    "Client scope only. Checks required metadata, required/default consistency, required args, and adapter readability.",
 	},
 	"site.trust": {
 		Summary:  "Trust the current SHA256 hash of a community adapter.",
 		Usage:    "borz site trust <name>",
 		Examples: []string{"  borz site trust twitter/search"},
-		Notes:    "Community adapters are arbitrary JavaScript. Trust records the current hash in sites-trust.json; hash changes require re-trust or --force.",
+		Notes:    "Client scope only. Community adapters are arbitrary JavaScript. Trust records the current hash in sites-trust.json; hash changes require re-trust or --force.",
 	},
 	"site.run": {
 		Summary: "Run an adapter by name — equivalent to calling 'borz <platform>/<name> ...' directly.",
-		Usage:   "borz site run <name> [args...] [--tab <id>] [--timeout <ms>] [--unwrap] [--force]",
+		Usage:   "borz site run <name> [args...] [--scope client|server] [--tab <id>] [--timeout <ms>] [--unwrap] [--force]",
 		Flags: []string{
+			"  --scope <scope>  client (default) reads adapters here; server reads them on the daemon",
 			"  --timeout <ms>   Override the adapter eval timeout",
 			"  --unwrap         Print a string result without JSON quotes",
 			"  --force          Bypass domain mismatch and one-off community trust checks",
 		},
-		Examples: []string{"  borz site run hackernews/top 10", "  borz hackernews/top 10"},
+		Examples: []string{"  borz site run hackernews/top 10", "  borz hackernews/top 10", "  borz --profile mini site run hackernews/top 10 --scope server"},
 		Notes: "Use 'borz site info <name>' to discover the args an adapter expects " +
 			"before running it. Without --tab, the daemon reuses or opens the adapter's site before running it. " +
-			"Explicit tabs still enforce the domain guard; --force bypasses that guard and one-off community trust checks.",
+			"client scope checks trust on this machine and sends the built script to any selected daemon. " +
+			"server scope resolves and checks the adapter on the daemon. Explicit tabs still enforce the " +
+			"domain guard; --force bypasses that guard and the selected scope's community trust check.",
 	},
 
 	// --- Subcommand pages: daemon.* ---

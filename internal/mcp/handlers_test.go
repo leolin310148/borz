@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/protocol"
@@ -43,6 +44,22 @@ func stubSiteBuilder(t *testing.T, fn func(*site.SiteMeta, map[string]interface{
 		return fn(meta, args, tab)
 	}
 	t.Cleanup(func() { siteBuilder = orig })
+}
+
+func stubSiteHTTP(
+	t *testing.T,
+	get func(string, time.Duration) (json.RawMessage, error),
+	post func(string, interface{}, time.Duration) (json.RawMessage, error),
+) {
+	t.Helper()
+	origGet, origPost := siteGetJSON, sitePostJSON
+	if get != nil {
+		siteGetJSON = get
+	}
+	if post != nil {
+		sitePostJSON = post
+	}
+	t.Cleanup(func() { siteGetJSON, sitePostJSON = origGet, origPost })
 }
 
 // stubSend swaps sendCommand for the duration of a test.
@@ -832,6 +849,56 @@ func TestHandleSiteRun_SendError(t *testing.T) {
 	res, _ := handleSiteRun(context.Background(), mkReq(map[string]any{"name": "a"}))
 	if !res.IsError {
 		t.Errorf("expected error result")
+	}
+}
+
+func TestHandleSiteServerScope(t *testing.T) {
+	var runBody map[string]interface{}
+	stubSiteHTTP(t,
+		func(path string, timeout time.Duration) (json.RawMessage, error) {
+			if path != "/v1/sites" {
+				t.Fatalf("GET path = %s", path)
+			}
+			return json.RawMessage(`{"success":true,"data":{"sites":[{"name":"server/listed","source":"community"}]}}`), nil
+		},
+		func(path string, body interface{}, timeout time.Duration) (json.RawMessage, error) {
+			switch path {
+			case "/v1/sites/info":
+				return json.RawMessage(`{"success":true,"data":{"site":{"name":"server/info","domain":"example.com"}}}`), nil
+			case "/v1/sites/run":
+				runBody = body.(map[string]interface{})
+				return json.RawMessage(`{"success":true,"data":{"result":{"scope":"server"}}}`), nil
+			default:
+				t.Fatalf("POST path = %s", path)
+				return nil, nil
+			}
+		},
+	)
+
+	listed, _ := handleSiteList(context.Background(), mkReq(map[string]any{"scope": "server"}))
+	if listed.IsError || !strings.Contains(firstText(t, listed), "server/listed") {
+		t.Fatalf("server list = %+v / %q", listed, firstText(t, listed))
+	}
+	info, _ := handleSiteInfo(context.Background(), mkReq(map[string]any{"scope": "server", "name": "server/info"}))
+	if info.IsError || !strings.Contains(firstText(t, info), `"name": "server/info"`) {
+		t.Fatalf("server info = %+v / %q", info, firstText(t, info))
+	}
+	run, _ := handleSiteRun(context.Background(), mkReq(map[string]any{
+		"scope": "server", "name": "server/run", "args": map[string]any{"q": "AI"},
+		"tab": "T2", "force": true, "timeout": float64(1234),
+	}))
+	if run.IsError || !strings.Contains(firstText(t, run), `"scope": "server"`) {
+		t.Fatalf("server run = %+v / %q", run, firstText(t, run))
+	}
+	if runBody["name"] != "server/run" || runBody["tab"] != "T2" || runBody["force"] != true || runBody["timeoutMs"] != 1234 {
+		t.Fatalf("run body = %#v", runBody)
+	}
+}
+
+func TestHandleSiteInvalidScope(t *testing.T) {
+	res, _ := handleSiteList(context.Background(), mkReq(map[string]any{"scope": "remote"}))
+	if !res.IsError || !strings.Contains(firstText(t, res), "client or server") {
+		t.Fatalf("invalid scope = %+v / %q", res, firstText(t, res))
 	}
 }
 
