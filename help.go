@@ -24,8 +24,11 @@ or any DOM change before interacting.`
 
 // globalFlagsNote is the short summary of global flags shown in per-command help.
 const globalFlagsNote = `Global flags (available on every command):
-  --remote                Route browser commands/status to configured server
-  --profile <name>        Use an isolated local daemon/browser profile
+  --profile <name>        Select a profile: its transport (managed browser,
+                          CDP endpoint, or remote server) comes from
+                          ~/.borz/profiles.json; undeclared names = managed
+  --remote                (deprecated) Alias for --profile remote; errors when
+                          combined with an explicit --profile
   --tab <id>              Target a specific tab (from 'borz tab')
   --json                  Emit the raw JSON response instead of pretty output
   --jq <expr>             Filter JSON output with a jq expression (implies --json)
@@ -671,27 +674,98 @@ var commandHelp = map[string]cmdHelp{
 			"The service entry runs the REST server in the foreground under the Windows Service Control Manager. " +
 			"Non-Windows platforms should use launchd, systemd, or a process manager instead.",
 	},
+	"profile": {
+		Summary: "Manage named browser targets in ~/.borz/profiles.json (managed, cdp, or remote transport).",
+		Usage:   "borz profile [list|show|add|set|rm] [<name>] [flags]",
+		Flags: []string{
+			"  list                     Declared profiles: name, transport, target",
+			"  show <name>              One profile's details (token redacted)",
+			"  add <name>               Declare a profile (pick exactly one transport)",
+			"  set <name>               Edit a declared profile in place",
+			"  rm <name>                Delete a profile from the registry",
+			"  --managed                Transport: borz launches and owns a local Chrome",
+			"  --cdp <url|host:port>    Transport: attach to an existing CDP endpoint",
+			"  --remote <url>           Transport: talk HTTP to a remote borz server",
+			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
+			"  --no-check               Save without probing the target",
+		},
+		Examples: []string{
+			"  borz profile add mini --remote http://100.116.143.73:13333 --token \"$BORZ_TOKEN\"",
+			"  borz profile add mdt --cdp 127.0.0.1:19845",
+			"  borz profile add clean --managed",
+			"  borz --profile mini open https://example.com",
+			"  BORZ_PROFILE=mdt borz snapshot",
+		},
+		Notes: "A profile is the single handle for \"which browser am I driving\". Undeclared\n" +
+			"names (including 'default') resolve to the managed transport — today's\n" +
+			"behaviour. cdp profiles never launch a browser: if the endpoint is down the\n" +
+			"command fails instead of silently starting a managed Chrome. remote profiles\n" +
+			"run no local daemon at all. profiles.json is stored with 0600 permissions\n" +
+			"because it can hold bearer tokens; show/list never print them.",
+	},
+	"profile.list": {
+		Summary: "List declared profiles with their transport and target.",
+		Usage:   "borz profile list [--json]",
+	},
+	"profile.show": {
+		Summary: "Show one profile's transport and target; tokens are redacted.",
+		Usage:   "borz profile show <name> [--json]",
+	},
+	"profile.add": {
+		Summary: "Declare a new profile with exactly one transport.",
+		Usage:   "borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--no-check]",
+		Flags: []string{
+			"  --managed                borz launches and owns a local Chrome (default behaviour)",
+			"  --cdp <url|host:port>    Attach to an existing CDP endpoint; never launches a browser",
+			"  --remote <url>           Route commands to a remote borz server; no local daemon",
+			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
+			"  --no-check               Skip probing (/status for remote, /json/version for cdp)",
+		},
+		Examples: []string{
+			"  borz profile add mini --remote http://server:13333 --token \"$BORZ_TOKEN\"",
+			"  borz profile add mdt --cdp 127.0.0.1:19845 --no-check",
+		},
+	},
+	"profile.set": {
+		Summary: "Edit a declared profile: switch transport or update its token/target.",
+		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--no-check]",
+		Examples: []string{
+			"  borz profile set mini --token \"$NEW_TOKEN\"",
+			"  borz profile set mdt --cdp 127.0.0.1:9222",
+		},
+	},
+	"profile.rm": {
+		Summary:  "Remove a profile from the registry; the name then resolves to managed again.",
+		Usage:    "borz profile rm <name>",
+		Examples: []string{"  borz profile rm mdt", "  borz profile remove mdt   # alias"},
+	},
+	"profile.remove": {
+		Summary: "Alias for 'profile rm'.",
+		Usage:   "borz profile remove <name>",
+	},
 	"client": {
-		Summary: "Configure the remote borz server used by the global --remote flag.",
+		Summary: "Deprecated remote-client commands; superseded by 'borz profile'.",
 		Usage:   "borz client [setup|status|enable|disable]",
 		Flags: []string{
-			"  setup <url>            Store the remote server URL",
+			"  setup <url>            Write a remote profile (named 'remote', or --as <name>)",
 			"  setup --url <url>      Same as positional URL",
 			"  BORZ_SERVER_URL        Env fallback when setup URL is omitted",
 			"  --token <t>            Bearer token for the remote server",
 			"  BORZ_TOKEN             Env fallback when --token is omitted",
-			"  --no-check             Store/toggle config without probing /status",
-			"  status                 Show current remote-client config",
-			"  enable|disable         Legacy config toggle; normal commands still need --remote",
+			"  --as <name>            Profile name to write (default 'remote')",
+			"  --no-check             Store config without probing /status",
+			"  status                 Show the 'remote' profile's config",
+			"  enable|disable         Deprecated no-ops kept for compatibility",
 		},
 		Examples: []string{
-			"  borz client setup http://server:19824 --token \"$BORZ_TOKEN\"",
-			"  borz --remote open https://example.com",
-			"  alias borz='borz --remote'  # remote by default in this shell",
+			"  borz profile add remote --remote http://server:19824 --token \"$BORZ_TOKEN\"   # preferred",
+			"  borz client setup http://server:19824 --token \"$BORZ_TOKEN\"                  # deprecated",
+			"  borz --profile remote open https://example.com",
 		},
-		Notes: "Commands that talk to the browser use the local daemon unless --remote is " +
-			"passed for that invocation. The token is stored in " +
-			"~/.borz/client.json with 0600 permissions and is never printed by status. " +
+		Notes: "'client setup' now writes a remote-transport profile into ~/.borz/profiles.json " +
+			"(0600; tokens never printed). Bare --remote is a deprecated alias for " +
+			"--profile remote. A legacy ~/.borz/client.json is migrated into the 'remote' " +
+			"profile automatically and left on disk for rollback. " +
 			"BORZ_SERVER_URL and BORZ_TOKEN are read only by 'client setup' when the " +
 			"matching CLI argument is omitted.",
 	},
@@ -986,13 +1060,14 @@ var commandHelp = map[string]cmdHelp{
 		Usage:   "borz service status [--name N]",
 	},
 
-	// --- Subcommand pages: client.* ---
+	// --- Subcommand pages: client.* (deprecated surface) ---
 	"client.setup": {
-		Summary: "Store the remote server URL and optional bearer token.",
-		Usage:   "borz client setup <server-url> [--token <token>] [--no-check]",
+		Summary: "Deprecated: write a remote-transport profile (prefer 'borz profile add').",
+		Usage:   "borz client setup <server-url> [--token <token>] [--as <profile>] [--no-check]",
 		Flags: []string{
 			"  --url <url>      Same as positional server URL",
 			"  --token <token>  Bearer token for the remote server",
+			"  --as <name>      Profile name to write (default 'remote')",
 			"  --no-check       Save config without probing /status",
 		},
 		Examples: []string{
@@ -1001,24 +1076,24 @@ var commandHelp = map[string]cmdHelp{
 			"  BORZ_SERVER_URL=http://127.0.0.1:19824 BORZ_TOKEN=secret borz client setup",
 			"  borz client setup https://browser.example.com --token \"$BORZ_TOKEN\"",
 		},
-		Notes: "The setup command probes the server's authenticated /status endpoint before " +
-			"saving unless --no-check is set. If the URL has no scheme, http:// is assumed. " +
-			"Use --remote on individual browser commands to route them to this server. " +
-			"When <server-url> or --token is omitted, setup falls back to BORZ_SERVER_URL " +
-			"and BORZ_TOKEN respectively.",
+		Notes: "Writes the profile into ~/.borz/profiles.json and probes the server's " +
+			"authenticated /status endpoint first unless --no-check is set. If the URL has " +
+			"no scheme, http:// is assumed. Route commands with --profile <name> (bare " +
+			"--remote still selects the 'remote' profile). When <server-url> or --token is " +
+			"omitted, setup falls back to BORZ_SERVER_URL and BORZ_TOKEN respectively.",
 	},
 	"client.enable": {
-		Summary: "Set the legacy remote-client enabled field in client.json.",
-		Usage:   "borz client enable [--no-check]",
-		Notes:   "The configured server is checked unless --no-check is set. Browser actions still use local by default; pass --remote to route one invocation to the configured server.",
+		Summary: "Deprecated no-op; routing follows the profile's transport.",
+		Usage:   "borz client enable",
+		Notes:   "Kept for compatibility only. Select a remote profile with --profile <name> instead.",
 	},
 	"client.disable": {
-		Summary:  "Clear the legacy remote-client enabled field in client.json.",
+		Summary:  "Deprecated no-op; routing follows the profile's transport.",
 		Usage:    "borz client disable",
 		Examples: []string{"  borz client disable"},
 	},
 	"client.status": {
-		Summary: "Show the remote client config used by --remote.",
+		Summary: "Show the 'remote' profile that the deprecated --remote flag selects.",
 		Usage:   "borz client status [--json]",
 	},
 

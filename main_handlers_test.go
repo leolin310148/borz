@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -202,7 +203,7 @@ func TestHandleClient_StatusSetupDisableJSON(t *testing.T) {
 	t.Setenv("BORZ_TOKEN", "env-token")
 
 	out := captureStdout(t, func() { handleClient([]string{"status"}, nil, false) })
-	if !strings.Contains(out, "Remote client is not configured") || !strings.Contains(out, "client.json") {
+	if !strings.Contains(out, "Remote client is not configured") || !strings.Contains(out, "profiles.json") {
 		t.Fatalf("unconfigured status output = %q", out)
 	}
 	out = captureStdout(t, func() { handleClient([]string{"status"}, nil, true) })
@@ -211,16 +212,18 @@ func TestHandleClient_StatusSetupDisableJSON(t *testing.T) {
 	}
 
 	out = captureStdout(t, func() { handleClient([]string{"setup"}, []string{"--no-check"}, true) })
-	if !strings.Contains(out, `"configured": true`) || !strings.Contains(out, `"tokenConfigured": true`) || strings.Contains(out, "ignored") {
+	if !strings.Contains(out, `"transport": "remote"`) || !strings.Contains(out, `"tokenConfigured": true`) || strings.Contains(out, "ignored") || strings.Contains(out, "env-token") {
 		t.Fatalf("setup JSON = %q", out)
 	}
-	client.SetRemoteRouting(true)
+	if err := config.SetProfile("remote"); err != nil {
+		t.Fatal(err)
+	}
 	out = captureStdout(t, func() { handleClient([]string{"status"}, nil, false) })
 	if !strings.Contains(out, "Remote routing: active") || !strings.Contains(out, "Token: configured") {
 		t.Fatalf("configured status output = %q", out)
 	}
 	out = captureStdout(t, func() { handleClient([]string{"disable"}, nil, true) })
-	if !strings.Contains(out, `"enabled": false`) {
+	if !strings.Contains(out, `"configured": true`) || !strings.Contains(out, `"deprecated": true`) {
 		t.Fatalf("disable JSON = %q", out)
 	}
 }
@@ -245,13 +248,13 @@ func TestHandleClient_SetupTextAndEnableJSON(t *testing.T) {
 	out := captureStdout(t, func() {
 		handleClient([]string{"setup", ts.URL}, []string{"--token", "token-from-flag"}, false)
 	})
-	if !strings.Contains(out, "Remote client configured") || !strings.Contains(out, "--remote") {
+	if !strings.Contains(out, `Profile "remote" configured`) || !strings.Contains(out, "--remote") {
 		t.Fatalf("setup text output = %q", out)
 	}
 	out = captureStdout(t, func() {
 		handleClient([]string{"enable"}, []string{"--no-check"}, true)
 	})
-	if !strings.Contains(out, `"enabled": true`) {
+	if !strings.Contains(out, `"configured": true`) || !strings.Contains(out, `"deprecated": true`) {
 		t.Fatalf("enable JSON output = %q", out)
 	}
 	if checks != 1 {

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/leolin310148/borz/internal/config"
+	"github.com/leolin310148/borz/internal/profile"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -26,13 +27,31 @@ import (
 func resetState() {
 	cachedInfo = nil
 	daemonReady = false
-	useRemote = false
+	legacyRemoteFlag = false
 	localVersion = ""
 	clientSurface = "cli"
 	clientSessionID = ""
 	versionWarningShown = false
 	cachedProfile = ""
+	resolvedTarget = nil
+	resolvedTargetProfile = ""
 	_ = config.SetProfile("")
+}
+
+// writeRemoteProfile declares a remote-transport profile in profiles.json.
+func writeRemoteProfile(t *testing.T, home, name, url, token string) {
+	t.Helper()
+	entry := map[string]any{"transport": "remote", "url": url}
+	if token != "" {
+		entry["token"] = token
+	}
+	data, err := json.Marshal(map[string]any{"version": 1, "profiles": map[string]any{name: entry}})
+	if err != nil {
+		t.Fatalf("marshal profiles.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "profiles.json"), data, 0o600); err != nil {
+		t.Fatalf("write profiles.json: %v", err)
+	}
 }
 
 // stubDiscover replaces discoverCDPPort for the test duration.
@@ -56,6 +75,17 @@ var errFakeNoCDP = &fakeErr{msg: "no cdp"}
 type fakeErr struct{ msg string }
 
 func (e *fakeErr) Error() string { return e.msg }
+
+// freePort reserves and releases a local TCP port, so connecting to it fails.
+func freePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("allocate local TCP port: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port
+}
 
 func containsArg(args []string, want string) bool {
 	for _, arg := range args {
@@ -146,9 +176,12 @@ func TestRemoteConfigReadWriteAndToggle(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BORZ_HOME", home)
 
-	cfg, err := ConfigureRemote("127.0.0.1:19824/", "secret")
+	if err := WriteRemoteConfig(&RemoteConfig{URL: "127.0.0.1:19824/", Token: "secret"}); err != nil {
+		t.Fatalf("WriteRemoteConfig: %v", err)
+	}
+	cfg, err := ReadRemoteConfig()
 	if err != nil {
-		t.Fatalf("ConfigureRemote: %v", err)
+		t.Fatalf("ReadRemoteConfig: %v", err)
 	}
 	if cfg.URL != "http://127.0.0.1:19824" || cfg.Token != "secret" || cfg.Enabled {
 		t.Fatalf("configured cfg = %+v", cfg)
@@ -161,32 +194,34 @@ func TestRemoteConfigReadWriteAndToggle(t *testing.T) {
 		t.Fatalf("client.json perms = %o, want 600", st.Mode().Perm())
 	}
 
-	cfg, err = SetRemoteEnabled(true)
-	if err != nil {
-		t.Fatalf("enable remote: %v", err)
-	}
-	if !cfg.Enabled {
-		t.Fatal("expected enabled config")
-	}
+	// The default profile ignores the legacy client.json for routing.
 	cfg, enabled, err := EnabledRemoteConfig()
 	if err != nil {
 		t.Fatalf("EnabledRemoteConfig: %v", err)
 	}
 	if enabled || cfg != nil {
-		t.Fatalf("remote routing should stay inactive without explicit --remote, enabled=%v cfg=%+v", enabled, cfg)
+		t.Fatalf("default profile should stay local, enabled=%v cfg=%+v", enabled, cfg)
 	}
 
-	SetRemoteRouting(true)
+	// Selecting the migrated 'remote' profile (what bare --remote maps to)
+	// routes to the server declared by the legacy config.
+	if err := config.SetProfile("remote"); err != nil {
+		t.Fatal(err)
+	}
+	SetLegacyRemoteFlag(true)
 	cfg, enabled, err = EnabledRemoteConfig()
 	if err != nil {
-		t.Fatalf("EnabledRemoteConfig after SetRemoteRouting: %v", err)
+		t.Fatalf("EnabledRemoteConfig for migrated remote profile: %v", err)
 	}
-	if !enabled || cfg.URL != "http://127.0.0.1:19824" {
+	if !enabled || cfg.URL != "http://127.0.0.1:19824" || cfg.Token != "secret" {
 		t.Fatalf("enabled=%v cfg=%+v", enabled, cfg)
 	}
 }
 
 func TestRemoteConfigValidation(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
 	cases := []struct {
 		raw  string
 		want string
@@ -201,21 +236,29 @@ func TestRemoteConfigValidation(t *testing.T) {
 		{"http://[::1]:", "TCP port"},
 	}
 	for _, tc := range cases {
-		if _, err := ConfigureRemote(tc.raw, ""); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Fatalf("ConfigureRemote(%q) error = %v, want substring %q", tc.raw, err, tc.want)
+		if err := WriteRemoteConfig(&RemoteConfig{URL: tc.raw}); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("WriteRemoteConfig(%q) error = %v, want substring %q", tc.raw, err, tc.want)
 		}
 	}
 }
 
-func TestRemoteRoutingEnabledReflectsProcessFlag(t *testing.T) {
+func TestRemoteRoutingEnabledReflectsProfileTransport(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
 	if RemoteRoutingEnabled() {
 		t.Fatal("remote routing should default to disabled")
 	}
-	SetRemoteRouting(true)
+	writeRemoteProfile(t, home, "mini", "http://10.0.0.1:13333", "tok")
+	if RemoteRoutingEnabled() {
+		t.Fatal("default profile must not pick up another profile's remote transport")
+	}
+	if err := config.SetProfile("mini"); err != nil {
+		t.Fatal(err)
+	}
 	if !RemoteRoutingEnabled() {
-		t.Fatal("remote routing flag was not enabled")
+		t.Fatal("remote-transport profile should enable remote routing")
 	}
 }
 
@@ -268,17 +311,10 @@ func TestRemoteConfigTrimsToken(t *testing.T) {
 	t.Cleanup(resetState)
 	t.Setenv("BORZ_HOME", t.TempDir())
 
-	cfg, err := NewRemoteConfig("127.0.0.1:19824", " secret ")
-	if err != nil {
+	if err := WriteRemoteConfig(&RemoteConfig{URL: "127.0.0.1:19824", Token: "\tstored\n"}); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Token != "secret" {
-		t.Fatalf("NewRemoteConfig token = %q, want secret", cfg.Token)
-	}
-	if err := WriteRemoteConfig(&RemoteConfig{URL: cfg.URL, Token: "\tstored\n"}); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err = ReadRemoteConfig()
+	cfg, err := ReadRemoteConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,6 +547,7 @@ func TestHttpJSON_Unreachable(t *testing.T) {
 func TestSendCommand_Success(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -542,6 +579,7 @@ func TestSendCommand_Success(t *testing.T) {
 func TestSendCommand_InvalidResponse(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -566,10 +604,31 @@ func TestEnabledRemoteConfigRequiresSetupWhenRemoteRequested(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
 	t.Setenv("BORZ_HOME", t.TempDir())
-	SetRemoteRouting(true)
+	// Bare --remote maps to the 'remote' profile plus the legacy flag; with
+	// nothing configured that must be a hard error, not a managed fallthrough.
+	if err := config.SetProfile("remote"); err != nil {
+		t.Fatal(err)
+	}
+	SetLegacyRemoteFlag(true)
 
-	if _, enabled, err := EnabledRemoteConfig(); err == nil || enabled {
-		t.Fatalf("expected missing config error with remote routing enabled, enabled=%v err=%v", enabled, err)
+	if _, enabled, err := EnabledRemoteConfig(); err == nil || enabled || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("expected missing config error with --remote, enabled=%v err=%v", enabled, err)
+	}
+}
+
+func TestEnabledRemoteConfigReportsBrokenProfile(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "profiles.json"), []byte(`{"version":1,"profiles":{"mini":{"transport":"remote"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetProfile("mini"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := EnabledRemoteConfig(); err == nil || !strings.Contains(err.Error(), `profile "mini"`) {
+		t.Fatalf("broken profile error = %v", err)
 	}
 }
 
@@ -601,10 +660,15 @@ func TestSendCommand_RemoteFlag(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	// Legacy path: only client.json exists; selecting the 'remote' profile
+	// (bare --remote) migrates it and routes the command to the server.
 	if err := WriteRemoteConfig(&RemoteConfig{URL: ts.URL, Token: "secret", Enabled: false}); err != nil {
 		t.Fatalf("write remote config: %v", err)
 	}
-	SetRemoteRouting(true)
+	if err := config.SetProfile("remote"); err != nil {
+		t.Fatal(err)
+	}
+	SetLegacyRemoteFlag(true)
 	resp, err := SendCommand(&protocol.Request{ID: "r1", Action: protocol.ActionGet})
 	if err != nil {
 		t.Fatalf("SendCommand: %v", err)
@@ -636,10 +700,10 @@ func TestGetJSONAndStatus_RemoteFlag(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	if err := WriteRemoteConfig(&RemoteConfig{URL: ts.URL, Token: "secret", Enabled: false}); err != nil {
-		t.Fatalf("write remote config: %v", err)
+	writeRemoteProfile(t, home, "mini", ts.URL, "secret")
+	if err := config.SetProfile("mini"); err != nil {
+		t.Fatal(err)
 	}
-	SetRemoteRouting(true)
 	status, err := GetDaemonStatus()
 	if err != nil {
 		t.Fatalf("GetDaemonStatus: %v", err)
@@ -659,6 +723,7 @@ func TestGetJSONAndStatus_RemoteFlag(t *testing.T) {
 func TestPostJSON_LocalAndRemote(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
 	localBodies := 0
 	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -706,10 +771,10 @@ func TestPostJSON_LocalAndRemote(t *testing.T) {
 		w.Write([]byte(`{"remote":true}`))
 	}))
 	defer remote.Close()
-	if err := WriteRemoteConfig(&RemoteConfig{URL: remote.URL, Token: "remote-token"}); err != nil {
-		t.Fatalf("write remote config: %v", err)
+	writeRemoteProfile(t, home, "mini", remote.URL, "remote-token")
+	if err := config.SetProfile("mini"); err != nil {
+		t.Fatal(err)
 	}
-	SetRemoteRouting(true)
 	raw, err = PostJSON("/v1/ext/call", map[string]any{"method": "remote.method"}, time.Second)
 	if err != nil {
 		t.Fatalf("remote PostJSON: %v", err)
@@ -761,6 +826,7 @@ func TestStopDaemon_NoDaemonJSON(t *testing.T) {
 func TestGetDaemonStatus_Success(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {
@@ -794,6 +860,7 @@ func TestGetDaemonStatus_NoDaemon(t *testing.T) {
 func TestGetJSON_PassesPathAndAuth(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	var sawPath, sawAuth string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1011,76 +1078,34 @@ func TestDiscoverCDPPort_NamedProfileUsesProfileState(t *testing.T) {
 	}
 }
 
-func TestParseCDPEndpointURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		raw      string
-		wantHost string
-		wantPort int
-		wantOK   bool
-	}{
-		{
-			name:     "host port without scheme",
-			raw:      "localhost:9222",
-			wantHost: "localhost",
-			wantPort: 9222,
-			wantOK:   true,
-		},
-		{
-			name:     "http URL with path",
-			raw:      " http://127.0.0.1:19825/json/version ",
-			wantHost: "127.0.0.1",
-			wantPort: 19825,
-			wantOK:   true,
-		},
-		{
-			name:     "bracketed ipv6 without scheme",
-			raw:      "[::1]:9222",
-			wantHost: "::1",
-			wantPort: 9222,
-			wantOK:   true,
-		},
-		{
-			name:     "websocket debugger URL",
-			raw:      "ws://127.0.0.1:9222/devtools/browser/abc",
-			wantHost: "127.0.0.1",
-			wantPort: 9222,
-			wantOK:   true,
-		},
-		{
-			name:   "missing port",
-			raw:    "http://localhost/json/version",
-			wantOK: false,
-		},
-		{
-			name:   "unsupported scheme",
-			raw:    "ftp://localhost:9222",
-			wantOK: false,
-		},
-		{
-			name:   "bad port",
-			raw:    "localhost:not-a-port",
-			wantOK: false,
-		},
-		{
-			name:   "port out of range",
-			raw:    "localhost:70000",
-			wantOK: false,
-		},
+func TestCheckCDPEndpoint(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/json/version" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Write([]byte(`{"Browser":"Chrome"}`))
+	}))
+	defer ts.Close()
+	host, portStr, err := net.SplitHostPort(strings.TrimPrefix(ts.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			gotHost, gotPort, gotOK := parseCDPEndpointURL(tc.raw)
-			if gotOK != tc.wantOK {
-				t.Fatalf("ok = %v, want %v", gotOK, tc.wantOK)
-			}
-			if !gotOK {
-				return
-			}
-			if gotHost != tc.wantHost || gotPort != tc.wantPort {
-				t.Fatalf("endpoint = %s:%d, want %s:%d", gotHost, gotPort, tc.wantHost, tc.wantPort)
-			}
-		})
+	if err := CheckCDPEndpoint(host, toInt(portStr), 0); err != nil {
+		t.Fatalf("CheckCDPEndpoint success: %v", err)
+	}
+
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+	_, badPortStr, _ := net.SplitHostPort(strings.TrimPrefix(bad.URL, "http://"))
+	if err := CheckCDPEndpoint(host, toInt(badPortStr), time.Second); err == nil || !strings.Contains(err.Error(), "HTTP 500") {
+		t.Fatalf("CheckCDPEndpoint non-200 err = %v", err)
+	}
+
+	dead := freePort(t)
+	if err := CheckCDPEndpoint("127.0.0.1", dead, time.Second); err == nil || !strings.Contains(err.Error(), "cannot reach") {
+		t.Fatalf("CheckCDPEndpoint dead err = %v", err)
 	}
 }
 
@@ -1318,6 +1343,150 @@ func TestEnsureDaemon_NamedProfileSpawnsProfileDaemon(t *testing.T) {
 	}
 }
 
+// writeCDPProfile declares a cdp-transport profile in profiles.json.
+func writeCDPProfile(t *testing.T, home, name, host string, port int) {
+	t.Helper()
+	content := fmt.Sprintf(`{"version":1,"profiles":{%q:{"transport":"cdp","cdpHost":%q,"cdpPort":%d}}}`, name, host, port)
+	if err := os.WriteFile(filepath.Join(home, "profiles.json"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write profiles.json: %v", err)
+	}
+}
+
+func TestEnsureDaemon_CDPProfileUnreachableFailsWithoutLaunching(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	writeCDPProfile(t, home, "mdt", "127.0.0.1", 19845)
+	if err := config.SetProfile("mdt"); err != nil {
+		t.Fatal(err)
+	}
+
+	oldCanConnect := canConnect
+	oldLaunch := launchManagedBrowserAtPort
+	canConnect = func(string, int) bool { return false }
+	launched := false
+	launchManagedBrowserAtPort = func(port int) (*CDPEndpoint, error) {
+		launched = true
+		return nil, fmt.Errorf("must not be called")
+	}
+	stubDiscover(t, func() (*CDPEndpoint, error) {
+		t.Error("cdp profile must bypass CDP discovery")
+		return nil, errFakeNoCDP
+	})
+	t.Cleanup(func() {
+		canConnect = oldCanConnect
+		launchManagedBrowserAtPort = oldLaunch
+	})
+
+	err := EnsureDaemon()
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:19845") || !strings.Contains(err.Error(), "unreachable") {
+		t.Fatalf("EnsureDaemon error = %v, want loud unreachable-endpoint error", err)
+	}
+	if launched {
+		t.Fatal("dead cdp endpoint must never fall back to launching a managed browser")
+	}
+	if _, statErr := os.Stat(filepath.Join(home, "profiles", "mdt", "browser")); !os.IsNotExist(statErr) {
+		t.Fatalf("cdp profile grew a managed browser dir: %v", statErr)
+	}
+}
+
+func TestEnsureDaemon_CDPProfileSpawnsDaemonAtDeclaredEndpoint(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	writeCDPProfile(t, home, "mdt", "127.0.0.1", 19845)
+	if err := config.SetProfile("mdt"); err != nil {
+		t.Fatal(err)
+	}
+
+	statusRunning := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"running":true}`))
+	}))
+	defer statusRunning.Close()
+	runningInfo := infoForServer(t, statusRunning, "")
+
+	oldCanConnect := canConnect
+	oldExecutable := osExecutable
+	oldCommand := execCommand
+	canConnect = func(host string, port int) bool { return host == "127.0.0.1" && port == 19845 }
+	osExecutable = func() (string, error) { return "/bin/echo", nil }
+	var daemonArgs []string
+	execCommand = func(_ string, args ...string) *exec.Cmd {
+		daemonArgs = append([]string(nil), args...)
+		return exec.Command("/bin/sh", "-c", "exit 0")
+	}
+	stubDiscover(t, func() (*CDPEndpoint, error) {
+		t.Error("cdp profile must bypass CDP discovery")
+		return nil, errFakeNoCDP
+	})
+	t.Cleanup(func() {
+		canConnect = oldCanConnect
+		osExecutable = oldExecutable
+		execCommand = oldCommand
+	})
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		_ = os.MkdirAll(filepath.Dir(config.DaemonJSONPath()), 0o755)
+		data, _ := json.Marshal(runningInfo)
+		_ = os.WriteFile(config.DaemonJSONPath(), data, 0o600)
+	}()
+
+	if err := EnsureDaemon(); err != nil {
+		t.Fatalf("EnsureDaemon: %v", err)
+	}
+	for _, want := range []string{"daemon", "--cdp-host", "127.0.0.1", "--cdp-port", "19845", "--profile", "mdt"} {
+		if !containsArg(daemonArgs, want) {
+			t.Fatalf("daemon args missing %q: %v", want, daemonArgs)
+		}
+	}
+}
+
+func TestEnsureDaemon_RemoteProfileHasNoLocalDaemon(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	writeRemoteProfile(t, home, "mini", "http://10.0.0.1:13333", "tok")
+	if err := config.SetProfile("mini"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := EnsureDaemon()
+	if err == nil || !strings.Contains(err.Error(), "remote profile") || !strings.Contains(err.Error(), "http://10.0.0.1:13333") {
+		t.Fatalf("EnsureDaemon remote error = %v", err)
+	}
+}
+
+func TestActiveTargetMemoizesPerProfile(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	writeRemoteProfile(t, home, "mini", "http://10.0.0.1:13333", "tok")
+
+	target, err := ActiveTarget()
+	if err != nil || target.Kind != profile.TransportManaged {
+		t.Fatalf("default target = %+v err=%v", target, err)
+	}
+	// Break the file on disk: the memoized default profile must survive, and
+	// switching profiles must re-read (and fail loudly).
+	if err := os.WriteFile(filepath.Join(home, "profiles.json"), []byte(`{broken`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if target, err = ActiveTarget(); err != nil || target.Kind != profile.TransportManaged {
+		t.Fatalf("memoized target = %+v err=%v", target, err)
+	}
+	if err := config.SetProfile("mini"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ActiveTarget(); err == nil {
+		t.Fatal("profile switch should re-resolve and surface the broken registry")
+	}
+}
+
 func TestEnsureDaemon_VersionMismatchWarnsButAdopts(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
@@ -1505,6 +1674,7 @@ func TestStopDaemon_ReadsDaemonJSONWhenCacheEmpty(t *testing.T) {
 func TestEnsureDaemon_CachedAndStillRunning(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/status" {

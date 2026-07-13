@@ -105,7 +105,9 @@ You need a Chromium-based browser (Google Chrome, Microsoft Edge, Brave, Arc, et
 2. Or launch a managed browser instance for you
 
 Use `--profile <name>` to keep a separate local daemon and managed browser
-profile, for example `borz --profile work open https://example.com`.
+profile, for example `borz --profile work open https://example.com`. Profiles
+can also point at an existing CDP endpoint or a remote borz server — see
+[Profiles](#profiles) below.
 
 If you prefer manual control, start Chrome with debugging enabled:
 
@@ -296,50 +298,92 @@ borz server shutdown
 
 ### Use a remote server from the CLI
 
-Configure the CLI once, then pass `--remote` for commands that should use the
-configured server:
+Declare a remote-transport profile once, then select it per command:
 
 ```bash
-borz client setup http://server-host:19824 --token "$BORZ_TOKEN"
-borz --remote open https://example.com
+borz profile add mini --remote http://server-host:19824 --token "$BORZ_TOKEN"
+borz --profile mini open https://example.com
 ```
 
 When a remote CLI command writes a screenshot path, the file is saved on the
 client machine running the CLI, not on the remote server:
 
 ```bash
-borz --remote screenshot ./out.png
+borz --profile mini screenshot ./out.png
 ```
 
-Without `--remote`, browser actions such as `open`, `snapshot`, `click`,
-`eval`, `tab`, `network`, and `cookies` always use the local daemon/CDP
-connection:
+Without a remote profile selected, browser actions such as `open`, `snapshot`,
+`click`, `eval`, `tab`, `network`, and `cookies` always use the local
+daemon/CDP connection:
 
 ```bash
 borz open https://example.com
 ```
 
-To make only the current shell default to remote while other shells stay local,
-define an alias in that shell:
+To make only the current shell default to that server while other shells stay
+local, export `BORZ_PROFILE` in that shell:
 
 ```bash
-alias borz='borz --remote'
+export BORZ_PROFILE=mini
 ```
 
-The client config is stored at `~/.borz/client.json` with 0600
-permissions because it may contain the bearer token. `client setup` probes the
-server's authenticated `/status` endpoint by default; pass `--no-check` only
-when you need to save config before the server is reachable. If the setup URL
-or token is omitted, `client setup` falls back to `BORZ_SERVER_URL` and
-`BORZ_TOKEN`:
+The deprecated `borz client setup <url> --token <t>` still works: it writes a
+profile named `remote` (override with `--as <name>`), and the deprecated bare
+`--remote` flag is an alias for `--profile remote`. Combining `--remote` with
+an explicit `--profile` is an error. An existing legacy `~/.borz/client.json`
+is migrated into the `remote` profile automatically on first use and left on
+disk for rollback. `client enable` and `client disable` are no-ops kept for
+compatibility.
+
+## Profiles
+
+`~/.borz/profiles.json` (mode 0600 — it can hold bearer tokens) is the single
+registry that says what each profile name means. Select a profile with
+`--profile <name>` or `BORZ_PROFILE`. A missing file or an undeclared name
+(including `default`) means the `managed` transport, i.e. exactly the
+zero-config behaviour described above.
+
+| `transport` | Meaning | Local daemon? |
+| --- | --- | --- |
+| `managed` | borz launches and owns a Chrome under the profile's `browser/user-data` | yes (auto-spawn) |
+| `cdp` | attach to an **existing** CDP endpoint (e.g. Chrome started with `--remote-debugging-port`, possibly over an SSH tunnel) | yes (auto-spawn, pinned to that endpoint) |
+| `remote` | talk HTTP to a remote `borz server`; nothing runs locally | no |
 
 ```bash
-BORZ_SERVER_URL=http://server-host:19824 BORZ_TOKEN="$BORZ_TOKEN" borz client setup
+borz profile list                       # name, transport, target (tokens never shown)
+borz profile show mini
+borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN"
+borz profile add mdt --cdp 127.0.0.1:19845
+borz profile add clean --managed
+borz profile set mini --token "$NEW_TOKEN"
+borz profile rm mdt
 ```
 
-`client enable` and `client disable` only update the legacy `enabled` field in
-`client.json`; browser actions still stay local unless that invocation includes
-`--remote`.
+`profile add` probes the target first (`/status` for remote, `/json/version`
+for cdp) unless `--no-check` is passed; `--token` falls back to `BORZ_TOKEN`.
+In `profiles.json` a cdp endpoint is spelled `cdpUrl`, or alternatively
+`cdpHost`/`cdpPort`:
+
+```json
+{
+  "version": 1,
+  "profiles": {
+    "mini": { "transport": "remote", "url": "http://100.116.143.73:13333", "token": "..." },
+    "mdt":  { "transport": "cdp", "cdpUrl": "http://127.0.0.1:19845" }
+  }
+}
+```
+
+Behaviour worth knowing:
+
+- A `cdp` profile **never launches a browser**. If the endpoint is unreachable
+  (tunnel down, Chrome quit), the command fails with a clear error instead of
+  silently starting a managed Chrome.
+- A `remote` profile runs **no local daemon**; `borz daemon status --profile
+  mini` says so instead of pretending one exists.
+- `daemon.json`, the managed `browser/user-data` dir, and `browser/cdp-port`
+  remain per-profile **runtime state** — do not hand-edit them into
+  `profiles.json`.
 
 ### CLI help and typo hints
 
@@ -995,7 +1039,8 @@ Logs live under `~/.borz/logs/<profile>`, rotate at 10 MiB with five backups per
 
 | Flag | Description |
 |------|-------------|
-| `--profile <name>` | Use an isolated local daemon and managed browser profile |
+| `--profile <name>` | Select a profile; its transport (managed/cdp/remote) comes from `~/.borz/profiles.json`, undeclared names = managed |
+| `--remote` | (deprecated) Alias for `--profile remote`; errors when combined with an explicit `--profile` |
 | `--tab <id>` | Target a specific tab by short ID or index |
 | `--json` | Output results as JSON |
 | `--jq <expr>` | Apply a jq-like filter to the output |
@@ -1071,8 +1116,8 @@ CDP mode records the controlled Chromium tab. Client mode uses the borz extensio
 
 | Variable | Description |
 |----------|-------------|
-| `BORZ_CDP_URL` | Override CDP endpoint (e.g., `http://127.0.0.1:9222`) |
-| `BORZ_PROFILE` | Default local daemon/browser profile name |
+| `BORZ_CDP_URL` | Override CDP endpoint for managed-transport discovery (e.g., `http://127.0.0.1:9222`) |
+| `BORZ_PROFILE` | Default profile name (see [Profiles](#profiles)) |
 | `BORZ_HOME` | Override config directory (default: `~/.borz`) |
 | `BORZ_SESSION_ID` | Override the automatically derived operational-log session correlation id |
 

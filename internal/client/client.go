@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,18 +19,23 @@ import (
 
 	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/observability"
+	"github.com/leolin310148/borz/internal/profile"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
 var (
 	cachedInfo          *protocol.DaemonInfo
 	daemonReady         bool
-	useRemote           bool
+	legacyRemoteFlag    bool
 	localVersion        string
 	clientSurface       = "cli"
 	clientSessionID     string
 	versionWarningShown bool
 	cachedProfile       string
+
+	// resolvedTarget memoizes profile.ResolveTarget for the active profile.
+	resolvedTarget        *profile.Target
+	resolvedTargetProfile string
 
 	// discoverCDPPort is indirected so tests can bypass real CDP discovery.
 	discoverCDPPort            = DiscoverCDPPort
@@ -58,8 +62,9 @@ func SetRequestContext(surface, sessionID string) {
 	clientSessionID = strings.TrimSpace(sessionID)
 }
 
-// RemoteConfig is persisted by `borz client setup` and stores the server
-// used when a CLI invocation opts into remote routing with --remote.
+// RemoteConfig is the legacy ~/.borz/client.json shape, kept for reading old
+// installs and for the deprecated `borz client` commands. New configuration
+// lives in profiles.json (internal/profile).
 type RemoteConfig struct {
 	URL     string `json:"url"`
 	Token   string `json:"token,omitempty"`
@@ -71,29 +76,50 @@ type RemoteConfig struct {
 func ResetForTests() {
 	cachedInfo = nil
 	daemonReady = false
-	useRemote = false
+	legacyRemoteFlag = false
 	localVersion = ""
 	clientSurface = "cli"
 	clientSessionID = ""
 	versionWarningShown = false
 	cachedProfile = ""
+	resolvedTarget = nil
+	resolvedTargetProfile = ""
 	_ = config.SetProfile("")
 }
 
-// SetRemoteRouting controls whether this process sends browser actions to the
-// configured remote server. Normal CLI invocations stay local unless main
-// enables this after seeing the global --remote flag.
-func SetRemoteRouting(enabled bool) {
-	useRemote = enabled
+// SetLegacyRemoteFlag records that the deprecated --remote flag was passed.
+// The flag no longer routes anything by itself — main maps it to the
+// "remote" profile — but it makes an unconfigured remote profile a hard
+// error instead of silently running the managed transport.
+func SetLegacyRemoteFlag(enabled bool) {
+	legacyRemoteFlag = enabled
 }
 
-// RemoteRoutingEnabled reports whether this process is currently in explicit
-// remote routing mode.
+// ActiveTarget resolves the selected profile into its declared browser
+// target. The result is memoized per profile name; ResetForTests clears it.
+func ActiveTarget() (profile.Target, error) {
+	name := profile.Normalize(config.Profile())
+	if resolvedTarget != nil && resolvedTargetProfile == name {
+		return *resolvedTarget, nil
+	}
+	target, err := profile.ResolveTarget(name)
+	if err != nil {
+		return profile.Target{}, err
+	}
+	resolvedTarget = &target
+	resolvedTargetProfile = name
+	return target, nil
+}
+
+// RemoteRoutingEnabled reports whether browser commands from this process go
+// to a remote borz server, i.e. the active profile declares the remote
+// transport. Resolution errors read as "not remote".
 func RemoteRoutingEnabled() bool {
-	return useRemote
+	target, err := ActiveTarget()
+	return err == nil && target.Kind == profile.TransportRemote
 }
 
-// ReadRemoteConfig reads ~/.borz/client.json.
+// ReadRemoteConfig reads the legacy ~/.borz/client.json.
 func ReadRemoteConfig() (*RemoteConfig, error) {
 	data, err := os.ReadFile(config.ClientJSONPath())
 	if err != nil {
@@ -106,7 +132,7 @@ func ReadRemoteConfig() (*RemoteConfig, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("invalid client.json: missing url")
 	}
-	normalized, err := normalizeServerURL(cfg.URL)
+	normalized, err := profile.NormalizeServerURL(cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid client.json: %w", err)
 	}
@@ -115,13 +141,14 @@ func ReadRemoteConfig() (*RemoteConfig, error) {
 	return &cfg, nil
 }
 
-// WriteRemoteConfig writes ~/.borz/client.json with restrictive
-// permissions because it may contain a bearer token.
+// WriteRemoteConfig writes the legacy ~/.borz/client.json with restrictive
+// permissions because it may contain a bearer token. Only tests and rollback
+// tooling should still need this; new config goes to profiles.json.
 func WriteRemoteConfig(cfg *RemoteConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("missing remote client config")
 	}
-	normalized, err := normalizeServerURL(cfg.URL)
+	normalized, err := profile.NormalizeServerURL(cfg.URL)
 	if err != nil {
 		return err
 	}
@@ -138,61 +165,22 @@ func WriteRemoteConfig(cfg *RemoteConfig) error {
 	return os.WriteFile(config.ClientJSONPath(), append(data, '\n'), 0600)
 }
 
-// NewRemoteConfig builds a server URL/token pair while preserving the previous
-// enabled state when a config already exists.
-func NewRemoteConfig(serverURL, token string) (*RemoteConfig, error) {
-	normalized, err := normalizeServerURL(serverURL)
-	if err != nil {
-		return nil, err
-	}
-	enabled := false
-	if existing, err := ReadRemoteConfig(); err == nil && existing != nil {
-		enabled = existing.Enabled
-	}
-	return &RemoteConfig{URL: normalized, Token: strings.TrimSpace(token), Enabled: enabled}, nil
-}
-
-// ConfigureRemote stores a server URL/token pair.
-func ConfigureRemote(serverURL, token string) (*RemoteConfig, error) {
-	cfg, err := NewRemoteConfig(serverURL, token)
-	if err != nil {
-		return nil, err
-	}
-	if err := WriteRemoteConfig(cfg); err != nil {
-		return nil, err
-	}
-	return cfg, nil
-}
-
-// SetRemoteEnabled toggles remote client mode in the persisted config.
-func SetRemoteEnabled(enabled bool) (*RemoteConfig, error) {
-	cfg, err := ReadRemoteConfig()
-	if err != nil {
-		return nil, err
-	}
-	cfg.Enabled = enabled
-	if err := WriteRemoteConfig(cfg); err != nil {
-		return nil, err
-	}
-	return cfg, nil
-}
-
-// EnabledRemoteConfig returns the active remote config for this process. Remote
-// routing is opt-in per invocation (borz --remote ...); the persisted
-// Enabled field is retained only for compatibility with older client.json files
-// and client enable/disable commands.
+// EnabledRemoteConfig returns the remote server to talk to when the active
+// profile declares the remote transport. With the deprecated --remote flag
+// set, an unresolved remote profile is a configuration error rather than a
+// silent fallthrough to the local daemon.
 func EnabledRemoteConfig() (*RemoteConfig, bool, error) {
-	if !useRemote {
-		return nil, false, nil
-	}
-	cfg, err := ReadRemoteConfig()
+	target, err := ActiveTarget()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, fmt.Errorf("remote client is not configured; run 'borz client setup <server-url> [--token <token>]'")
-		}
 		return nil, false, err
 	}
-	return cfg, true, nil
+	if target.Kind == profile.TransportRemote {
+		return &RemoteConfig{URL: target.Remote.URL, Token: target.Remote.Token}, true, nil
+	}
+	if legacyRemoteFlag {
+		return nil, false, fmt.Errorf("remote server is not configured; run 'borz profile add %s --remote <server-url> [--token <token>]' (or the deprecated 'borz client setup <server-url>')", profile.LegacyRemoteName)
+	}
+	return nil, false, nil
 }
 
 // CheckRemoteConfig verifies the configured server is reachable and that the
@@ -208,59 +196,6 @@ func CheckRemoteConfig(cfg *RemoteConfig, timeout time.Duration) error {
 		return fmt.Errorf("cannot reach borz server %s: %w", cfg.URL, err)
 	}
 	return nil
-}
-
-func normalizeServerURL(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", fmt.Errorf("server URL is required")
-	}
-	if !strings.Contains(raw, "://") {
-		raw = "http://" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "", fmt.Errorf("invalid server URL: %w", err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("server URL must use http or https")
-	}
-	if u.Host == "" || u.Hostname() == "" {
-		return "", fmt.Errorf("server URL must include a host")
-	}
-	if err := validateServerURLPort(u); err != nil {
-		return "", err
-	}
-	if u.User != nil {
-		return "", fmt.Errorf("server URL must not include user info")
-	}
-	u.RawQuery = ""
-	u.Fragment = ""
-	u.Path = strings.TrimRight(u.Path, "/")
-	return u.String(), nil
-}
-
-func validateServerURLPort(u *url.URL) error {
-	port := u.Port()
-	if port == "" {
-		if hasExplicitPort(u.Host) {
-			return fmt.Errorf("server URL port must be a TCP port between 1 and 65535")
-		}
-		return nil
-	}
-	n, err := strconv.Atoi(port)
-	if err != nil || n <= 0 || n > 65535 {
-		return fmt.Errorf("server URL port must be a TCP port between 1 and 65535")
-	}
-	return nil
-}
-
-func hasExplicitPort(host string) bool {
-	if strings.HasPrefix(host, "[") {
-		close := strings.LastIndex(host, "]")
-		return close >= 0 && close+1 < len(host) && host[close+1] == ':'
-	}
-	return strings.Count(host, ":") == 1
 }
 
 // ReadDaemonJSON reads ~/.borz/daemon.json.
@@ -434,6 +369,14 @@ func adoptRunningDaemon(info *protocol.DaemonInfo, status protocol.DaemonStatus)
 
 // EnsureDaemon makes sure the daemon is running and ready.
 func EnsureDaemon() error {
+	target, err := ActiveTarget()
+	if err != nil {
+		return err
+	}
+	if target.Kind == profile.TransportRemote {
+		return fmt.Errorf("profile %q is a remote profile (%s); there is no local daemon", profile.Normalize(config.Profile()), target.Remote.URL)
+	}
+
 	if cachedProfile != config.Profile() {
 		daemonReady = false
 		cachedInfo = nil
@@ -471,19 +414,36 @@ func EnsureDaemon() error {
 		}
 	}
 
-	// Discover CDP port
+	// Resolve the CDP endpoint: a cdp profile pins it declaratively; the
+	// managed transport keeps today's discovery (env var, port file,
+	// default port, then launching a managed browser).
 	autostartStarted := time.Now()
 	logClientEvent("info", "daemon_autostart_started", observability.Fields{})
-	cdpInfo, err := discoverCDPPort()
-	if err != nil {
-		logClientEvent("warn", "browser_discovery_failed", observability.Fields{
-			DurationMS: time.Since(autostartStarted).Milliseconds(), ErrorCode: "browser_not_found",
-		})
-		return fmt.Errorf("borz: Cannot find a Chromium-based browser.\n\n" +
-			"Please do one of the following:\n" +
-			"  1. Install Google Chrome, Edge, or Brave\n" +
-			"  2. Start Chrome with: google-chrome --remote-debugging-port=19825\n" +
-			"  3. Set BORZ_CDP_URL=http://host:port")
+	var cdpInfo *CDPEndpoint
+	if target.Kind == profile.TransportCDP {
+		if !canConnect(target.CDP.Host, target.CDP.Port) {
+			logClientEvent("warn", "cdp_endpoint_unreachable", observability.Fields{
+				DurationMS: time.Since(autostartStarted).Milliseconds(), ErrorCode: "cdp_unreachable",
+			})
+			return fmt.Errorf("borz: profile %q: CDP endpoint http://%s:%d is unreachable.\n\n"+
+				"This profile attaches to an existing browser, so borz will not launch one.\n"+
+				"Start the browser (or the tunnel) behind that endpoint, or fix the profile\n"+
+				"with 'borz profile set %s --cdp <host:port>'.",
+				profile.Normalize(config.Profile()), target.CDP.Host, target.CDP.Port, profile.Normalize(config.Profile()))
+		}
+		cdpInfo = &CDPEndpoint{Host: target.CDP.Host, Port: target.CDP.Port}
+	} else {
+		cdpInfo, err = discoverCDPPort()
+		if err != nil {
+			logClientEvent("warn", "browser_discovery_failed", observability.Fields{
+				DurationMS: time.Since(autostartStarted).Milliseconds(), ErrorCode: "browser_not_found",
+			})
+			return fmt.Errorf("borz: Cannot find a Chromium-based browser.\n\n" +
+				"Please do one of the following:\n" +
+				"  1. Install Google Chrome, Edge, or Brave\n" +
+				"  2. Start Chrome with: google-chrome --remote-debugging-port=19825\n" +
+				"  3. Set BORZ_CDP_URL=http://host:port")
+		}
 	}
 
 	// Spawn daemon process
@@ -880,7 +840,7 @@ func cdpPortForProfile() (int, error) {
 func DiscoverCDPPort() (*CDPEndpoint, error) {
 	// Priority 1: BORZ_CDP_URL env var (legacy BB_BROWSER_CDP_URL supported).
 	if envURL := config.Env("BORZ_CDP_URL", "BB_BROWSER_CDP_URL"); envURL != "" {
-		if host, port, ok := parseCDPEndpointURL(envURL); ok && canConnect(host, port) {
+		if host, port, ok := profile.ParseCDPEndpoint(envURL); ok && canConnect(host, port) {
 			return &CDPEndpoint{Host: host, Port: port}, nil
 		}
 	}
@@ -913,31 +873,21 @@ func DiscoverCDPPort() (*CDPEndpoint, error) {
 	return nil, fmt.Errorf("no CDP endpoint found")
 }
 
-func parseCDPEndpointURL(raw string) (host string, port int, ok bool) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", 0, false
+// CheckCDPEndpoint verifies a CDP endpoint answers /json/version. Used by
+// 'borz profile add --cdp' to probe the target before persisting it.
+func CheckCDPEndpoint(host string, port int, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
 	}
-	if !strings.Contains(raw, "://") {
-		raw = "http://" + raw
-	}
-	u, err := url.Parse(raw)
+	endpoint := fmt.Sprintf("http://%s:%d/json/version", host, port)
+	httpClient := &http.Client{Timeout: timeout}
+	resp, err := httpClient.Get(endpoint)
 	if err != nil {
-		return "", 0, false
+		return fmt.Errorf("cannot reach CDP endpoint %s: %w", endpoint, err)
 	}
-	switch u.Scheme {
-	case "http", "https", "ws", "wss":
-	default:
-		return "", 0, false
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("CDP endpoint %s returned HTTP %d", endpoint, resp.StatusCode)
 	}
-	host = u.Hostname()
-	portStr := u.Port()
-	if host == "" || portStr == "" {
-		return "", 0, false
-	}
-	port, err = strconv.Atoi(portStr)
-	if err != nil || port <= 0 || port > 65535 {
-		return "", 0, false
-	}
-	return host, port, true
+	return nil
 }

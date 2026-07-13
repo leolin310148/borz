@@ -22,6 +22,7 @@ import (
 	"github.com/leolin310148/borz/internal/jq"
 	"github.com/leolin310148/borz/internal/jseval"
 	mcpserver "github.com/leolin310148/borz/internal/mcp"
+	borzprofile "github.com/leolin310148/borz/internal/profile"
 	"github.com/leolin310148/borz/internal/protocol"
 	"github.com/leolin310148/borz/internal/selfupdate"
 	"github.com/leolin310148/borz/internal/site"
@@ -50,7 +51,7 @@ var cliValueFlags = []string{
 	"--timeout", "--pre-delay", "--post-delay",
 	"--modifiers",
 	"--lines",
-	"--json-arg", "--interval", "--limit", "--title", "--parent",
+	"--json-arg", "--interval", "--limit", "--title", "--parent", "--cdp", "--as",
 	"--filename", "--state", "--name", "--display-name", "--description", "--out",
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
 	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--role",
@@ -62,7 +63,7 @@ var cliValueFlagSet = makeFlagSet(cliValueFlags)
 var cliBoolFlags = []string{
 	"-i", "-c",
 	"--all", "--baked", "--check", "--clear", "--compact", "--diff", "--focused",
-	"--force", "--help", "--interactive", "--json", "--lossless",
+	"--force", "--help", "--interactive", "--json", "--lossless", "--managed",
 	"--mask-by-default", "--mobile", "--new", "--no-auto-await", "--no-check",
 	"--no-touch", "--paste", "--recover", "--recursive", "--remote", "--reset", "--save-as",
 	"--smooth", "--tail", "--text", "--text-only", "--touch", "--unwrap",
@@ -88,7 +89,12 @@ func main() {
 		exitFunc(0)
 	}
 
-	// Parse global flags
+	// Parse global flags.
+	// 'borz profile ...' reuses --remote as a value flag (profile add <name>
+	// --remote <url>), so the deprecated routing alias below must not fire
+	// and stripFlags must consume the flag's value.
+	profileCommand := firstPositionalArg(args) == "profile"
+
 	profileName, profileFlagSet := getArgValueOK(args, "--profile")
 	if profileFlagSet && strings.TrimSpace(profileName) == "" {
 		fatal("--profile requires a non-empty value")
@@ -102,8 +108,18 @@ func main() {
 	client.SetRequestContext("cli", cliSessionID(
 		os.Getenv("BORZ_SESSION_ID"), os.Getenv("TMUX_PANE"), os.Getenv("TERM_SESSION_ID"), os.Getppid(),
 	))
-	remoteRouting := hasFlag(args, "--remote")
-	client.SetRemoteRouting(remoteRouting)
+	remoteFlag := !profileCommand && hasFlag(args, "--remote")
+	client.SetLegacyRemoteFlag(remoteFlag)
+	if remoteFlag {
+		if profileFlagSet {
+			fatal("--remote and --profile are mutually exclusive; --profile selects the transport")
+		}
+		// Deprecated alias: bare --remote selects the 'remote' profile that
+		// client.json migrates into.
+		if err := config.SetProfile(borzprofile.LegacyRemoteName); err != nil {
+			fatal(err.Error())
+		}
+	}
 	globalTabID := getArgValue(args, "--tab")
 	jqExpression = getArgValue(args, "--jq")
 	jsonOutput := hasFlag(args, "--json") || jqExpression != ""
@@ -113,7 +129,11 @@ func main() {
 	globalPostDelayMs = parseGlobalDelayFlag(args, "--post-delay")
 
 	// Strip global flags from args for command parsing
-	cleanArgs := stripFlags(args, nil, nil)
+	var extraValueFlags []string
+	if profileCommand {
+		extraValueFlags = []string{"--remote"}
+	}
+	cleanArgs := stripFlags(args, extraValueFlags, nil)
 
 	if len(cleanArgs) == 0 {
 		if hasFlag(args, "--version") {
@@ -624,9 +644,13 @@ func main() {
 	case "service":
 		handleService(cmdArgs, args)
 
-	// --- Client (remote server mode) ---
+	// --- Client (remote server mode, deprecated) ---
 	case "client":
 		handleClient(cmdArgs, args, jsonOutput)
+
+	// --- Profiles (declarative browser targets) ---
+	case "profile":
+		handleProfile(cmdArgs, args, jsonOutput)
 
 	// --- Status ---
 	case "status":
@@ -971,6 +995,10 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 
 	switch cmdArgs[0] {
 	case "status":
+		if url, isRemote := remoteProfileURL(); isRemote {
+			fmt.Println(remoteProfileLifecycleNote("daemon", url))
+			return
+		}
 		raw, err := client.GetLocalDaemonStatus()
 		if err != nil {
 			fmt.Println("Daemon is not running")
@@ -979,6 +1007,10 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 		out, _ := json.MarshalIndent(json.RawMessage(raw), "", "  ")
 		fmt.Println(string(out))
 	case "shutdown", "stop":
+		if url, isRemote := remoteProfileURL(); isRemote {
+			fatal(remoteProfileLifecycleNote("daemon", url))
+			return
+		}
 		if err := client.StopDaemon(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			exitFunc(1)
@@ -987,6 +1019,22 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 	default:
 		startDaemonForeground(rawArgs)
 	}
+}
+
+// remoteProfileURL reports whether the active profile declares the remote
+// transport, so lifecycle commands can say so instead of pretending a local
+// daemon exists.
+func remoteProfileURL() (string, bool) {
+	target, err := client.ActiveTarget()
+	if err != nil || target.Kind != borzprofile.TransportRemote {
+		return "", false
+	}
+	return target.Remote.URL, true
+}
+
+func remoteProfileLifecycleNote(kind, url string) string {
+	name := borzprofile.Normalize(config.Profile())
+	return fmt.Sprintf("profile %q is a remote profile (%s); there is no local %s to manage.\nUse 'borz --profile %s status' for the remote server's status.", name, url, kind, name)
 }
 
 // stopDaemonAfterUpdate shuts down a running daemon following a self-update.
@@ -1103,6 +1151,10 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 	if len(cmdArgs) > 0 {
 		switch cmdArgs[0] {
 		case "status":
+			if url, isRemote := remoteProfileURL(); isRemote {
+				fmt.Println(remoteProfileLifecycleNote("server", url))
+				return
+			}
 			raw, err := client.GetLocalDaemonStatus()
 			if err != nil {
 				fmt.Println("Server is not running")
@@ -1112,6 +1164,10 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 			fmt.Println(string(out))
 			return
 		case "shutdown", "stop":
+			if url, isRemote := remoteProfileURL(); isRemote {
+				fatal(remoteProfileLifecycleNote("server", url))
+				return
+			}
 			if err := client.StopDaemon(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				exitFunc(1)
@@ -1873,6 +1929,29 @@ func fatal(msg string) {
 	exitFunc(1)
 }
 
+// firstPositionalArg returns the first token that stripFlags would keep,
+// so global-flag handling can special-case a command before flag stripping.
+func firstPositionalArg(args []string) string {
+	skip := false
+	for i, a := range args {
+		if skip {
+			skip = false
+			continue
+		}
+		if cliValueFlagSet[a] {
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				skip = true
+			}
+			continue
+		}
+		if hasInlineValueFlag(a, cliValueFlagSet) || cliBoolFlagSet[a] {
+			continue
+		}
+		return a
+	}
+	return ""
+}
+
 func hasFlag(args []string, flag string) bool {
 	for _, a := range args {
 		if a == flag {
@@ -2093,13 +2172,16 @@ Utility:
                                 Start remote-accessible HTTP server
                                 (--token required on non-loopback binds)
   service install|start|stop    Install/control Windows service mode
+  profile list|show|add|set|rm  Manage named browser targets (managed browser,
+                                CDP endpoint, or remote server) in profiles.json
   client setup <url> [--token T]
-  --remote <command>            Route one command to configured server
+                                (deprecated) Writes the 'remote' profile
   update [--check] [--force]    Download latest release and replace self
 
 Global Flags:
-  --remote                      Send browser actions/status to configured server
-  --profile <name>              Use an isolated local daemon/browser profile
+  --profile <name>              Select a profile; its transport comes from
+                                ~/.borz/profiles.json (undeclared = managed)
+  --remote                      (deprecated) Alias for --profile remote
   --tab <id>                    Target tab
   --json                        JSON output
   --jq <expr>                   Filter with jq expression (implies --json)

@@ -65,10 +65,24 @@ func SetProfile(name string) error {
 		activeProfile = ""
 		return nil
 	}
+	if err := ValidateProfileName(name); err != nil {
+		return err
+	}
+	activeProfile = name
+	return nil
+}
+
+// ValidateProfileName rejects names that cannot double as a directory name on
+// every supported platform. Profile names become runtime directories for
+// managed/cdp profiles, so they must stay a portable single path segment.
+func ValidateProfileName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("profile name is required")
+	}
 	if strings.ContainsAny(name, `/\<>:"|?*`) || strings.ContainsFunc(name, unicode.IsControl) || filepath.Base(name) != name || name == "." || name == ".." || strings.HasSuffix(name, ".") || filepath.IsAbs(name) || isWindowsReservedName(name) {
 		return fmt.Errorf("profile name must be a portable single path segment")
 	}
-	activeProfile = name
 	return nil
 }
 
@@ -192,9 +206,15 @@ func LogsDir() string {
 	return filepath.Join(HomeDir(), "logs", profile)
 }
 
-// ClientJSONPath returns the path to the remote client configuration.
+// ClientJSONPath returns the path to the legacy remote client configuration.
 func ClientJSONPath() string {
 	return filepath.Join(HomeDir(), "client.json")
+}
+
+// ProfilesJSONPath returns the path to the declarative profile registry. The
+// file is shared by all profiles; it is not profile-scoped.
+func ProfilesJSONPath() string {
+	return filepath.Join(HomeDir(), "profiles.json")
 }
 
 // SitesDir returns the local site adapters directory.

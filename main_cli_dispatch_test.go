@@ -651,7 +651,7 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
-	if !strings.Contains(out, "Remote client configured") {
+	if !strings.Contains(out, `Profile "remote" configured`) {
 		t.Fatalf("setup output = %q", out)
 	}
 	if !strings.Contains(out, "--remote") {
@@ -671,14 +671,14 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 		t.Fatalf("remote commands after setup = %+v", commands)
 	}
 
-	out = captureStdout(t, func() {
+	errOut := captureStderr(t, func() {
 		oldArgs := os.Args
 		os.Args = []string{"borz", "client", "enable"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
-	if !strings.Contains(out, "legacy config") || !strings.Contains(out, "--remote") {
-		t.Fatalf("enable output = %q", out)
+	if !strings.Contains(errOut, "deprecated") {
+		t.Fatalf("enable stderr = %q", errOut)
 	}
 
 	out = captureStdout(t, func() {
@@ -733,18 +733,18 @@ func TestMainClientCommandsAndRemoteRouting(t *testing.T) {
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
-	if !strings.Contains(out, `"enabled": true`) || strings.Contains(out, "remote-token") {
+	if !strings.Contains(out, `"configured": true`) || strings.Contains(out, "remote-token") {
 		t.Fatalf("status output = %q", out)
 	}
 
-	out = captureStdout(t, func() {
+	errOut = captureStderr(t, func() {
 		oldArgs := os.Args
 		os.Args = []string{"borz", "client", "disable"}
 		defer func() { os.Args = oldArgs }()
 		main()
 	})
-	if !strings.Contains(out, "legacy config") {
-		t.Fatalf("disable output = %q", out)
+	if !strings.Contains(errOut, "deprecated") {
+		t.Fatalf("disable stderr = %q", errOut)
 	}
 }
 

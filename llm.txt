@@ -71,11 +71,36 @@ borz status | daemon [shutdown]
 borz doctor [--json]                         # diagnose CLI/daemon/CDP/tabs end-to-end
 borz logs path|tail|stats [--since 7d]       # inspect privacy-safe local operational logs
 borz server --host 0.0.0.0 --token ... [shutdown]
+borz profile list|show|add|set|rm            # named browser targets (profiles.json)
 borz help [command [sub]]                    # per-command help
 borz <command> --help                        # same, inline form
 ```
 
 Global flags: `--profile <name>`, `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only), `--since <seq|last_action>`.
+
+## Profiles (one handle per browser target)
+
+`~/.borz/profiles.json` (0600) declares what each profile name means; select one
+with `--profile <name>` or `BORZ_PROFILE`. Undeclared names (including
+`default`) mean `managed` — today's zero-config behaviour.
+
+| transport | meaning | local daemon? |
+| --- | --- | --- |
+| `managed` | borz launches and owns a Chrome under the profile's runtime dir | yes (auto-spawn) |
+| `cdp` | attach to an existing CDP endpoint (`cdpUrl` or `cdpHost`/`cdpPort`); if it is unreachable the command fails loudly — borz never launches a browser for a cdp profile | yes (auto-spawn, pinned to that endpoint) |
+| `remote` | send every command to a remote `borz server` (`url`, `token`) | no |
+
+```bash
+borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN"
+borz profile add mdt --cdp 127.0.0.1:19845
+borz --profile mini open https://example.com     # HTTP to the Mini server
+BORZ_PROFILE=mdt borz snapshot                   # tunnel-attached Chrome
+```
+
+Deprecated but still working: `--remote` = `--profile remote`; `borz client
+setup` writes the `remote` profile; a legacy `~/.borz/client.json` is migrated
+into profiles.json automatically (and left on disk). `--remote` combined with
+an explicit `--profile` is an error.
 
 ## MCP (for AI agents)
 
@@ -157,8 +182,8 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 
 ## Environment
 
-- `BORZ_CDP_URL` — override CDP endpoint
-- `BORZ_PROFILE` — default local daemon/browser profile for this process
+- `BORZ_CDP_URL` — override CDP endpoint (managed-transport discovery only)
+- `BORZ_PROFILE` — default profile for this process (see Profiles above)
 - `BORZ_HOME` — config dir (default `~/.borz`)
 - `BORZ_SESSION_ID` — override the CLI's automatically derived operational-log session id
 - `BORZ_TOKEN`, `BORZ_SERVER_HOST`, `BORZ_SERVER_PORT` — server mode

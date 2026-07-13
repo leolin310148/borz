@@ -20,27 +20,21 @@ func TestRemoteConfigAndHTTPErrorBranches(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BORZ_HOME", home)
 
-	if err := WriteRemoteConfig(&RemoteConfig{URL: "http://example.test", Enabled: true}); err != nil {
+	if err := WriteRemoteConfig(&RemoteConfig{URL: "https://other.test/base/?q=1#frag", Token: "tok"}); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := NewRemoteConfig("https://other.test/base/?q=1#frag", "tok")
+	cfg, err := ReadRemoteConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Enabled || cfg.URL != "https://other.test/base" {
-		t.Fatalf("NewRemoteConfig preserved/normalized = %+v", cfg)
-	}
-	if _, err := ConfigureRemote("http://127.0.0.1:1", "tok"); err != nil {
-		t.Fatalf("ConfigureRemote: %v", err)
-	}
-	if _, err := SetRemoteEnabled(true); err != nil {
-		t.Fatalf("SetRemoteEnabled true: %v", err)
+	if cfg.URL != "https://other.test/base" || cfg.Token != "tok" {
+		t.Fatalf("WriteRemoteConfig normalized = %+v", cfg)
 	}
 	if err := os.Remove(filepath.Join(home, "client.json")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := SetRemoteEnabled(false); err == nil {
-		t.Fatal("SetRemoteEnabled should fail without config")
+	if _, err := ReadRemoteConfig(); err == nil {
+		t.Fatal("ReadRemoteConfig should fail without config")
 	}
 
 	if _, err := httpJSONEndpoint("POST", "://bad-url", "", "/x", nil, time.Second); err == nil {

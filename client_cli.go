@@ -1,15 +1,19 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"time"
+	"strings"
 
 	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/config"
+	borzprofile "github.com/leolin310148/borz/internal/profile"
 )
 
+// handleClient keeps the deprecated `borz client` surface alive on top of
+// profiles.json. `setup` writes a remote-transport profile (named 'remote'
+// unless --as is given); enable/disable are no-ops retained for muscle
+// memory; status reports the profile that bare --remote resolves to.
 func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 	sub := "status"
 	if len(cmdArgs) > 0 {
@@ -26,135 +30,94 @@ func handleClient(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			serverURL = config.Env("BORZ_SERVER_URL", "BB_BROWSER_SERVER_URL")
 		}
 		if serverURL == "" {
-			fatal("Usage: borz client setup <server-url> [--token <token>] [--no-check]")
+			fatal("Usage: borz client setup <server-url> [--token <token>] [--as <profile>] [--no-check]")
 		}
 
 		token := getArgValue(rawArgs, "--token")
 		if token == "" {
 			token = config.Env("BORZ_TOKEN", "BB_BROWSER_TOKEN")
 		}
-
-		cfg, err := client.NewRemoteConfig(serverURL, token)
+		name := getArgValue(rawArgs, "--as")
+		if name == "" {
+			name = borzprofile.LegacyRemoteName
+		}
+		if err := config.ValidateProfileName(name); err != nil {
+			fatal(err.Error())
+		}
+		registry, err := borzprofile.Load()
 		if err != nil {
 			fatal(err.Error())
 		}
-		if !hasFlag(rawArgs, "--no-check") {
-			if err := client.CheckRemoteConfig(cfg, 5*time.Second); err != nil {
-				fatal(err.Error())
-			}
+		fmt.Fprintf(os.Stderr, "Warning: 'borz client setup' is deprecated; use 'borz profile add %s --remote <url> --token <t>'\n", name)
+		entry := borzprofile.Entry{
+			Transport: string(borzprofile.TransportRemote),
+			URL:       strings.TrimSpace(serverURL),
+			Token:     strings.TrimSpace(token),
 		}
-		if err := client.WriteRemoteConfig(cfg); err != nil {
-			fatal(err.Error())
+		saveProfileEntry(registry, name, entry, rawArgs, jsonOutput, "configured")
+		if !jsonOutput && name == borzprofile.LegacyRemoteName {
+			fmt.Println("The deprecated '--remote' flag selects this profile.")
 		}
-		if jsonOutput {
-			printJSON(clientStatusPayload(cfg))
-			return
-		}
-		fmt.Printf("Remote client configured: %s\n", cfg.URL)
-		fmt.Println("Use 'borz --remote <command>' to send a command to this server")
 
-	case "enable":
-		cfg, err := client.ReadRemoteConfig()
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				fatal("client is not configured; run 'borz client setup <server-url> [--token <token>]'")
-			}
-			fatal(err.Error())
-		}
-		cfg.Enabled = true
-		if !hasFlag(rawArgs, "--no-check") {
-			if err := client.CheckRemoteConfig(cfg, 5*time.Second); err != nil {
-				fatal(err.Error())
-			}
-		}
-		if err := client.WriteRemoteConfig(cfg); err != nil {
-			fatal(err.Error())
-		}
+	case "enable", "disable":
+		fmt.Fprintf(os.Stderr, "Warning: 'borz client %s' is deprecated and does nothing; routing follows the profile's transport (see 'borz profile list')\n", sub)
 		if jsonOutput {
-			printJSON(clientStatusPayload(cfg))
-			return
+			printJSON(clientStatusPayload())
 		}
-		fmt.Printf("Remote client enabled in legacy config: %s\n", cfg.URL)
-		fmt.Println("Browser actions still use local by default; pass --remote to use this server")
-
-	case "disable":
-		cfg, err := client.ReadRemoteConfig()
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				cfg = &client.RemoteConfig{}
-			} else {
-				fatal(err.Error())
-			}
-		} else {
-			cfg.Enabled = false
-			if err := client.WriteRemoteConfig(cfg); err != nil {
-				fatal(err.Error())
-			}
-		}
-		if jsonOutput {
-			printJSON(clientStatusPayload(cfg))
-			return
-		}
-		fmt.Println("Remote client disabled in legacy config")
 
 	case "status":
-		cfg, err := client.ReadRemoteConfig()
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				if jsonOutput {
-					printJSON(map[string]interface{}{
-						"configured": false,
-						"enabled":    false,
-						"path":       config.ClientJSONPath(),
-					})
-					return
-				}
-				fmt.Println("Remote client is not configured")
-				fmt.Printf("Config path: %s\n", config.ClientJSONPath())
-				return
-			}
-			fatal(err.Error())
-		}
 		if jsonOutput {
-			printJSON(clientStatusPayload(cfg))
+			printJSON(clientStatusPayload())
 			return
 		}
-		state := "disabled"
-		if cfg.Enabled {
-			state = "enabled"
+		registry, err := borzprofile.Load()
+		if err != nil {
+			fatal(err.Error())
 		}
-		fmt.Printf("Remote client config: %s (legacy global flag)\n", state)
-		if client.RemoteRoutingEnabled() {
-			fmt.Println("Remote routing: active for this command")
-		} else {
-			fmt.Println("Remote routing: inactive; use --remote before the command to activate")
+		entry, declared := registry.Profiles[borzprofile.LegacyRemoteName]
+		if !declared {
+			fmt.Println("Remote client is not configured")
+			fmt.Printf("Configure it with 'borz profile add %s --remote <url> --token <t>'\n", borzprofile.LegacyRemoteName)
+			fmt.Printf("Config path: %s\n", config.ProfilesJSONPath())
+			return
 		}
-		fmt.Printf("Server: %s\n", cfg.URL)
-		if cfg.Token != "" {
+		fmt.Printf("Remote profile %q: %s\n", borzprofile.LegacyRemoteName, profileTargetDescription(borzprofile.LegacyRemoteName, entry))
+		if strings.TrimSpace(entry.Token) != "" {
 			fmt.Println("Token: configured")
 		} else {
 			fmt.Println("Token: not configured")
 		}
-		fmt.Printf("Config path: %s\n", config.ClientJSONPath())
+		if client.RemoteRoutingEnabled() {
+			fmt.Println("Remote routing: active for this command")
+		} else {
+			fmt.Printf("Remote routing: inactive; use '--profile %s' (or the deprecated '--remote') to activate\n", borzprofile.LegacyRemoteName)
+		}
+		fmt.Printf("Config path: %s\n", config.ProfilesJSONPath())
 
 	default:
 		fatal(unknownSubcommandHint("client", sub))
 	}
 }
 
-func clientStatusPayload(cfg *client.RemoteConfig) map[string]interface{} {
+func clientStatusPayload() map[string]interface{} {
 	payload := map[string]interface{}{
-		"configured":      cfg != nil && cfg.URL != "",
-		"enabled":         false,
+		"configured":      false,
+		"deprecated":      true,
 		"remoteActive":    client.RemoteRoutingEnabled(),
 		"url":             "",
 		"tokenConfigured": false,
-		"path":            config.ClientJSONPath(),
+		"path":            config.ProfilesJSONPath(),
 	}
-	if cfg != nil {
-		payload["enabled"] = cfg.Enabled
-		payload["url"] = cfg.URL
-		payload["tokenConfigured"] = cfg.Token != ""
+	registry, err := borzprofile.Load()
+	if err != nil {
+		return payload
 	}
+	entry, declared := registry.Profiles[borzprofile.LegacyRemoteName]
+	if !declared || borzprofile.TransportKind(entry.Transport) != borzprofile.TransportRemote {
+		return payload
+	}
+	payload["configured"] = true
+	payload["url"] = entry.URL
+	payload["tokenConfigured"] = strings.TrimSpace(entry.Token) != ""
 	return payload
 }
