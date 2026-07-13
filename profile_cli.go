@@ -227,9 +227,10 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 		}
 		entry = borzprofile.Entry{Transport: string(borzprofile.TransportRemote), URL: strings.TrimSpace(remoteValue), Token: base.Token}
 	}
-	if !tokenSet && remoteSet && entry.Token == "" {
-		// Match 'client setup': fall back to the env token when configuring
-		// a remote target without an explicit --token.
+	if !tokenSet && remoteSet {
+		// Match 'client setup': whenever a remote target is (re)configured
+		// without an explicit --token, the env token wins — even over a
+		// previously stored token, so add and set resolve tokens identically.
 		if envToken := strings.TrimSpace(config.Env("BORZ_TOKEN", "BB_BROWSER_TOKEN")); envToken != "" {
 			tokenValue, tokenSet = envToken, true
 		}

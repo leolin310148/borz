@@ -257,9 +257,15 @@ func TestE2EProfileLegacyClientJSONMigration(t *testing.T) {
 		t.Fatalf("write legacy client.json: %v", err)
 	}
 
-	// Bare --remote resolves through the migrated 'remote' profile.
-	statusOut := runE2ECLI(t, clientEnv, "--remote", "status")
+	// Bare --remote resolves through the migrated 'remote' profile and warns
+	// (once, on stderr) that the flag is deprecated.
+	statusOut, statusErr := runE2ECLIStreams(t, clientEnv, "--remote", "status")
 	requireContains(t, statusOut, `"cdpConnected": true`, "legacy --remote status")
+	requireContains(t, statusErr, "'--remote' is deprecated", "legacy --remote stderr")
+	requireNotContains(t, statusOut, "deprecated", "legacy --remote stdout")
+	if got := strings.Count(statusErr, "deprecated"); got != 1 {
+		t.Fatalf("deprecation warning printed %d times, want once:\n%s", got, statusErr)
+	}
 
 	migratedPath := filepath.Join(clientHome, "profiles.json")
 	first, err := os.ReadFile(migratedPath)

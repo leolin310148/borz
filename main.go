@@ -114,6 +114,8 @@ func main() {
 		if profileFlagSet {
 			fatal("--remote and --profile are mutually exclusive; --profile selects the transport")
 		}
+		fmt.Fprintf(os.Stderr, "Warning: '--remote' is deprecated; use '--profile %s' (or BORZ_PROFILE=%s) instead\n",
+			borzprofile.LegacyRemoteName, borzprofile.LegacyRemoteName)
 		// Deprecated alias: bare --remote selects the 'remote' profile that
 		// client.json migrates into.
 		if err := config.SetProfile(borzprofile.LegacyRemoteName); err != nil {

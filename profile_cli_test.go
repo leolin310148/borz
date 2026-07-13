@@ -233,6 +233,64 @@ func TestProfileCLIAddRemoteTokenFallsBackToEnv(t *testing.T) {
 	}
 }
 
+func TestProfileCLISetRemoteTokenFallsBackToEnv(t *testing.T) {
+	setupProfileHome(t)
+	t.Setenv("BORZ_TOKEN", "")
+	t.Setenv("BB_BROWSER_TOKEN", "")
+	tokenOf := func() string {
+		t.Helper()
+		registry, err := borzprofile.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return registry.Profiles["mini"].Token
+	}
+
+	runProfileCLI(t, "profile", "add", "mini", "--remote", "http://10.0.0.5:1111", "--token", "old-token", "--no-check")
+
+	// Without --token and without an env token, set keeps the stored token.
+	runProfileCLI(t, "profile", "set", "mini", "--remote", "http://10.0.0.5:2222", "--no-check")
+	if got := tokenOf(); got != "old-token" {
+		t.Fatalf("token after set without env = %q, want stored token kept", got)
+	}
+
+	// With BORZ_TOKEN, set resolves the token exactly like add/client setup:
+	// the env token replaces the stored one.
+	t.Setenv("BORZ_TOKEN", "env-token")
+	runProfileCLI(t, "profile", "set", "mini", "--remote", "http://10.0.0.5:3333", "--no-check")
+	if got := tokenOf(); got != "env-token" {
+		t.Fatalf("token after set with BORZ_TOKEN = %q, want env fallback", got)
+	}
+
+	// An explicit --token still wins over the env.
+	runProfileCLI(t, "profile", "set", "mini", "--remote", "http://10.0.0.5:4444", "--token", "explicit", "--no-check")
+	if got := tokenOf(); got != "explicit" {
+		t.Fatalf("token after explicit --token = %q", got)
+	}
+}
+
+func TestMainBareRemotePrintsDeprecationWarning(t *testing.T) {
+	setupProfileHome(t)
+	errOut := captureStderr(t, func() {
+		oldArgs := os.Args
+		os.Args = []string{"borz", "--remote", "client", "status"}
+		defer func() { os.Args = oldArgs }()
+		captureStdout(t, main)
+	})
+	if !strings.Contains(errOut, "deprecated") || !strings.Contains(errOut, "--profile remote") {
+		t.Fatalf("bare --remote stderr = %q, want deprecation warning pointing at --profile remote", errOut)
+	}
+
+	// 'borz profile ... --remote <url>' reuses the flag as a value flag; the
+	// deprecation warning must not fire there.
+	errOut = captureStderr(t, func() {
+		runProfileCLI(t, "profile", "add", "quiet", "--remote", "http://10.0.0.5:1111", "--no-check")
+	})
+	if strings.Contains(errOut, "deprecated") {
+		t.Fatalf("profile add --remote stderr = %q, want no deprecation warning", errOut)
+	}
+}
+
 func TestMainRemoteAndProfileFlagsAreMutuallyExclusive(t *testing.T) {
 	setupProfileHome(t)
 	errOut := captureStderr(t, func() {

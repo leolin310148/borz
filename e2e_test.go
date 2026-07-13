@@ -218,6 +218,25 @@ func runE2ECLI(t *testing.T, env e2eDaemonEnv, args ...string) string {
 	return string(out)
 }
 
+// runE2ECLIStreams runs a CLI command keeping stdout and stderr separate, so
+// JSON output can be parsed even when the command emits stderr warnings (e.g.
+// the deprecated --remote flag).
+func runE2ECLIStreams(t *testing.T, env e2eDaemonEnv, args ...string) (string, string) {
+	t.Helper()
+	cmdArgs := append([]string{"-test.run=TestE2ECLIHelper", "--"}, args...)
+	cmd := exec.Command(os.Args[0], cmdArgs...)
+	cmd.Env = append(os.Environ(),
+		"BORZ_E2E_HELPER=1",
+		"BORZ_HOME="+env.home,
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("borz %s failed: %v\n%s%s", strings.Join(args, " "), err, stdout.String(), stderr.String())
+	}
+	return stdout.String(), stderr.String()
+}
+
 func runE2ECLIError(t *testing.T, env e2eDaemonEnv, args ...string) (error, string) {
 	t.Helper()
 	cmdArgs := append([]string{"-test.run=TestE2ECLIHelper", "--"}, args...)
@@ -236,7 +255,7 @@ func runE2ECLIError(t *testing.T, env e2eDaemonEnv, args ...string) (error, stri
 
 func runE2EJSON(t *testing.T, env e2eDaemonEnv, args ...string) protocol.Response {
 	t.Helper()
-	out := runE2ECLI(t, env, args...)
+	out, _ := runE2ECLIStreams(t, env, args...)
 	var resp protocol.Response
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("borz %s returned non-JSON response: %v\n%s", strings.Join(args, " "), err, out)
@@ -252,7 +271,7 @@ func runE2EJSON(t *testing.T, env e2eDaemonEnv, args ...string) protocol.Respons
 
 func runE2EJSONResponse(t *testing.T, env e2eDaemonEnv, args ...string) protocol.Response {
 	t.Helper()
-	out := runE2ECLI(t, env, args...)
+	out, _ := runE2ECLIStreams(t, env, args...)
 	var resp protocol.Response
 	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("borz %s returned non-JSON response: %v\n%s", strings.Join(args, " "), err, out)

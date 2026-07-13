@@ -1040,7 +1040,7 @@ Logs live under `~/.borz/logs/<profile>`, rotate at 10 MiB with five backups per
 | Flag | Description |
 |------|-------------|
 | `--profile <name>` | Select a profile; its transport (managed/cdp/remote) comes from `~/.borz/profiles.json`, undeclared names = managed |
-| `--remote` | (deprecated) Alias for `--profile remote`; errors when combined with an explicit `--profile` |
+| `--remote` | (deprecated) Alias for `--profile remote`; warns on stderr, errors when combined with an explicit `--profile` |
 | `--tab <id>` | Target a specific tab by short ID or index |
 | `--json` | Output results as JSON |
 | `--jq <expr>` | Apply a jq-like filter to the output |
