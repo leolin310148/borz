@@ -49,6 +49,12 @@ type CdpConnection struct {
 	attached  sync.Map // sessionId -> targetId
 	connected atomic.Bool
 	logger    *observability.Logger
+	maxTabs   int
+	// tabLimitMu serializes capacity checks. tabLimitClosing tracks successful
+	// close requests until Chrome reports target destruction, preventing a
+	// burst of targetCreated events from over-closing while events are in flight.
+	tabLimitMu      sync.Mutex
+	tabLimitClosing sync.Map // targetId -> struct{}
 
 	// ensureBrowser, when set, is invoked by Connect after the CDP endpoint
 	// turns out to be unreachable, giving the daemon a chance to launch its
@@ -103,6 +109,45 @@ const ensureBrowserMinInterval = 15 * time.Second
 // before Connect (it is not safe to set concurrently with connection attempts).
 func (c *CdpConnection) SetEnsureBrowser(fn func() error) {
 	c.ensureBrowser = fn
+}
+
+// SetMaxTabs configures the page-tab cap. It must be called before Connect.
+// Values <= 0 disable the cap.
+func (c *CdpConnection) SetMaxTabs(maxTabs int) {
+	if maxTabs < 0 {
+		maxTabs = 0
+	}
+	c.maxTabs = maxTabs
+}
+
+func (c *CdpConnection) registerTab(targetID string) {
+	c.TabManager.AddTab(targetID)
+	c.enforceTabLimit()
+}
+
+func (c *CdpConnection) enforceTabLimit() {
+	if c.maxTabs <= 0 {
+		return
+	}
+	c.tabLimitMu.Lock()
+	defer c.tabLimitMu.Unlock()
+	closeTabsOverLimit(
+		c.TabManager,
+		c,
+		c.maxTabs,
+		c.GetCurrentTargetID(),
+		func(targetID string) bool {
+			_, closing := c.tabLimitClosing.Load(targetID)
+			return closing
+		},
+		func(targetID string, closing bool) {
+			if closing {
+				c.tabLimitClosing.Store(targetID, struct{}{})
+			} else {
+				c.tabLimitClosing.Delete(targetID)
+			}
+		},
+	)
 }
 
 // maybeEnsureBrowser launches the managed browser after an unreachable CDP
@@ -518,6 +563,7 @@ func (c *CdpConnection) handleDetached(msg map[string]json.RawMessage) {
 	}
 	if v, ok := c.attached.LoadAndDelete(params.SessionID); ok {
 		targetID := v.(string)
+		c.tabLimitClosing.Delete(targetID)
 		c.sessions.Delete(targetID)
 		c.TabManager.RemoveTab(targetID)
 		c.ClearCurrentTargetIDIf(targetID)
@@ -549,6 +595,7 @@ func (c *CdpConnection) handleTargetDestroyed(msg map[string]json.RawMessage) {
 	if params.TargetID == "" {
 		return
 	}
+	c.tabLimitClosing.Delete(params.TargetID)
 	if v, ok := c.sessions.LoadAndDelete(params.TargetID); ok {
 		sessionID := v.(string)
 		c.attached.Delete(sessionID)
@@ -790,7 +837,7 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 // AttachAndEnable attaches to a target and enables CDP domains.
 func (c *CdpConnection) AttachAndEnable(targetID string) error {
 	if _, ok := c.sessions.Load(targetID); ok {
-		c.TabManager.AddTab(targetID)
+		c.registerTab(targetID)
 		return nil
 	}
 
@@ -813,7 +860,7 @@ func (c *CdpConnection) AttachAndEnable(targetID string) error {
 
 	c.sessions.Store(targetID, attached.SessionID)
 	c.attached.Store(attached.SessionID, targetID)
-	c.TabManager.AddTab(targetID)
+	c.registerTab(targetID)
 
 	// Enable domains (best-effort)
 	for _, domain := range []string{"Page.enable", "Runtime.enable", "Network.enable", "DOM.enable", "Accessibility.enable"} {

@@ -200,8 +200,62 @@ func TestProfileCLIIdleTabTimeout(t *testing.T) {
 		t.Fatalf("idleTabTimeout after 'default' = %v, want unset", *got)
 	}
 	out = runProfileCLI(t, "profile", "show", "mdt")
-	if !strings.Contains(out, "Idle tab timeout: default (30 minutes") {
+	if !strings.Contains(out, "Idle tab timeout: default (0 minutes") {
 		t.Fatalf("show output = %q", out)
+	}
+}
+
+func TestProfileCLIMaxTabs(t *testing.T) {
+	setupProfileHome(t)
+	maxTabsOf := func(name string) *int {
+		registry, err := borzprofile.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return registry.Profiles[name].MaxTabs
+	}
+
+	out := runProfileCLI(t, "profile", "add", "bounded", "--managed", "--max-tabs", "30")
+	if got := maxTabsOf("bounded"); got == nil || *got != 30 {
+		t.Fatalf("stored maxTabs = %v, want 30", got)
+	}
+	if !strings.Contains(runProfileCLI(t, "profile", "list"), "[maxTabs=30]") {
+		t.Fatal("profile list should surface maxTabs")
+	}
+	if !strings.Contains(runProfileCLI(t, "profile", "show", "bounded"), "Max tabs:         30") {
+		t.Fatal("profile show should surface maxTabs")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(runProfileCLI(t, "profile", "show", "bounded", "--json")), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["maxTabs"] != float64(30) {
+		t.Fatalf("show payload = %+v", payload)
+	}
+
+	runProfileCLI(t, "profile", "set", "bounded", "--max-tabs", "0")
+	if got := maxTabsOf("bounded"); got == nil || *got != 0 {
+		t.Fatalf("maxTabs=0 = %v", got)
+	}
+	out = runProfileCLI(t, "profile", "show", "bounded")
+	if !strings.Contains(out, "0 (tab cap disabled)") {
+		t.Fatalf("show output = %q", out)
+	}
+	runProfileCLI(t, "profile", "set", "bounded", "--max-tabs", "default")
+	if got := maxTabsOf("bounded"); got != nil {
+		t.Fatalf("default should clear maxTabs, got %v", *got)
+	}
+	if !strings.Contains(runProfileCLI(t, "profile", "show", "bounded"), "default (30") {
+		t.Fatal("profile show should surface the default maxTabs")
+	}
+
+	errOut := captureStderr(t, func() {
+		expectExit(t, 1, func() {
+			runMainArgsForExit("profile", "add", "remote-cap", "--remote", "http://10.0.0.1:1", "--max-tabs", "30", "--no-check")
+		})
+	})
+	if !strings.Contains(errOut, "maxTabs does not apply to the remote transport") {
+		t.Fatalf("remote maxTabs stderr = %q", errOut)
 	}
 }
 

@@ -25,7 +25,11 @@ const (
 
 	// DefaultIdleTabCloseMinutes is how long a tab may sit without a
 	// user-initiated action before the daemon auto-closes it. 0 disables.
-	DefaultIdleTabCloseMinutes = 30
+	DefaultIdleTabCloseMinutes = 0
+
+	// DefaultMaxTabs caps the number of page tabs retained by the daemon.
+	// 0 disables the cap.
+	DefaultMaxTabs = 30
 )
 
 const (

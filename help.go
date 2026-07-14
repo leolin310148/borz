@@ -688,7 +688,9 @@ var commandHelp = map[string]cmdHelp{
 			"  --cdp-host <h>         Chrome DevTools host (default 127.0.0.1)",
 			"  --cdp-port <p>         Chrome DevTools port (default 19825)",
 			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
-			"                         (flag > env BORZ_TAB_IDLE_TIMEOUT > profile idleTabTimeout > 30; 0=disable)",
+			"                         (flag > env BORZ_TAB_IDLE_TIMEOUT > profile idleTabTimeout > 0; default disabled)",
+			"  --max-tabs <n>          Keep at most <n> page tabs; close oldest non-current tabs",
+			"                         (flag > env BORZ_MAX_TABS > profile maxTabs > 30; 0=unlimited)",
 		},
 		Notes: "For a remote-accessible server with auth, use 'borz server' instead.",
 	},
@@ -708,7 +710,9 @@ var commandHelp = map[string]cmdHelp{
 			"  --ensure-browser       Launch the managed browser whenever the CDP endpoint",
 			"                         is unreachable (start and reconnect); loopback --cdp-host only",
 			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
-			"                         (flag > env BORZ_TAB_IDLE_TIMEOUT > profile idleTabTimeout > 30; 0=disable)",
+			"                         (flag > env BORZ_TAB_IDLE_TIMEOUT > profile idleTabTimeout > 0; default disabled)",
+			"  --max-tabs <n>          Keep at most <n> page tabs; close oldest non-current tabs",
+			"                         (flag > env BORZ_MAX_TABS > profile maxTabs > 30; 0=unlimited)",
 		},
 		Examples: []string{
 			"  borz server --host 127.0.0.1",
@@ -736,7 +740,8 @@ var commandHelp = map[string]cmdHelp{
 			"  --cdp-port <p>         Chrome DevTools port (default 19825)",
 			"  --ensure-browser       Launch the managed browser whenever the CDP endpoint",
 			"                         is unreachable (loopback --cdp-host only)",
-			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
+			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes (default 0=disabled)",
+			"  --max-tabs <n>          Keep at most <n> page tabs (default 30; 0=unlimited)",
 		},
 		Examples: []string{
 			"  borz service install",
@@ -765,6 +770,8 @@ var commandHelp = map[string]cmdHelp{
 			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
 			"  --idle-tab-timeout <m>   Idle-tab auto-close in minutes for managed/cdp",
 			"                           (0=disable, 'default'=unset; invalid for remote)",
+			"  --max-tabs <n>           Maximum page tabs for managed/cdp",
+			"                           (0=unlimited, 'default'=unset; invalid for remote)",
 			"  --no-check               Save without probing the target",
 		},
 		Examples: []string{
@@ -778,9 +785,10 @@ var commandHelp = map[string]cmdHelp{
 			"names (including 'default') resolve to the managed transport — today's\n" +
 			"behaviour. cdp profiles never launch a browser: if the endpoint is down the\n" +
 			"command fails instead of silently starting a managed Chrome. remote profiles\n" +
-			"run no local daemon at all. idleTabTimeout is carried onto auto-spawned\n" +
-			"daemons; precedence is --idle-tab-timeout flag > BORZ_TAB_IDLE_TIMEOUT env >\n" +
-			"profile > default 30. profiles.json is stored with 0600 permissions\n" +
+			"run no local daemon at all. idleTabTimeout and maxTabs are carried onto\n" +
+			"auto-spawned daemons. idleTabTimeout defaults to 0 (disabled); maxTabs\n" +
+			"defaults to 30. Each uses flag > env > profile > default.\n" +
+			"profiles.json is stored with 0600 permissions\n" +
 			"because it can hold bearer tokens; show/list never print them.",
 	},
 	"profile.list": {
@@ -793,13 +801,14 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"profile.add": {
 		Summary: "Declare a new profile with exactly one transport.",
-		Usage:   "borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--idle-tab-timeout <m>] [--no-check]",
+		Usage:   "borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]",
 		Flags: []string{
 			"  --managed                borz launches and owns a local Chrome (default behaviour)",
 			"  --cdp <url|host:port>    Attach to an existing CDP endpoint; never launches a browser",
 			"  --remote <url>           Route commands to a remote borz server; no local daemon",
 			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
 			"  --idle-tab-timeout <m>   Idle-tab auto-close in minutes (0=disable); managed/cdp only",
+			"  --max-tabs <n>            Maximum page tabs (0=unlimited); managed/cdp only",
 			"  --no-check               Skip probing (/status for remote, /json/version for cdp)",
 		},
 		Examples: []string{
@@ -808,13 +817,14 @@ var commandHelp = map[string]cmdHelp{
 		},
 	},
 	"profile.set": {
-		Summary: "Edit a declared profile: switch transport or update its token/target/idle timeout.",
-		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--idle-tab-timeout <m|default>] [--no-check]",
+		Summary: "Edit a declared profile: switch transport or update token/target/tab lifecycle settings.",
+		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]",
 		Examples: []string{
 			"  borz profile set mini --token \"$NEW_TOKEN\"",
 			"  borz profile set mdt --cdp 127.0.0.1:9222",
 			"  borz profile set mdt --idle-tab-timeout 0        # never auto-close its tabs",
-			"  borz profile set mdt --idle-tab-timeout default  # back to flag/env/30",
+			"  borz profile set mdt --idle-tab-timeout default  # back to flag/env/0 (disabled)",
+			"  borz profile set mdt --max-tabs 30               # cap runaway tab creation",
 		},
 	},
 	"profile.rm": {

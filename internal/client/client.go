@@ -467,6 +467,9 @@ func EnsureDaemon() error {
 	if target.IdleTabTimeout != nil && config.Env("BORZ_TAB_IDLE_TIMEOUT", "BB_BROWSER_TAB_IDLE_TIMEOUT") == "" {
 		args = append(args, "--idle-tab-timeout", strconv.Itoa(*target.IdleTabTimeout))
 	}
+	if target.MaxTabs != nil && config.Env("BORZ_MAX_TABS", "BB_BROWSER_MAX_TABS") == "" {
+		args = append(args, "--max-tabs", strconv.Itoa(*target.MaxTabs))
+	}
 	if config.Profile() != "" {
 		args = append(args, "--profile", config.Profile(), "--port", strconv.Itoa(daemonPort))
 	}

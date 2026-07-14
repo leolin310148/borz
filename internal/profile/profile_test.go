@@ -342,14 +342,15 @@ func TestParseCDPEndpoint(t *testing.T) {
 
 func TestFileJSONShapeMatchesDesign(t *testing.T) {
 	zero := 0
+	thirty := 30
 	f := &File{Version: 1, Profiles: map[string]Entry{
-		"mdt": {Transport: "cdp", CDPURL: "http://127.0.0.1:19845", IdleTabTimeout: &zero},
+		"mdt": {Transport: "cdp", CDPURL: "http://127.0.0.1:19845", IdleTabTimeout: &zero, MaxTabs: &thirty},
 	}}
 	data, err := json.Marshal(f)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	for _, want := range []string{`"version":1`, `"transport":"cdp"`, `"cdpUrl":"http://127.0.0.1:19845"`, `"idleTabTimeout":0`} {
+	for _, want := range []string{`"version":1`, `"transport":"cdp"`, `"cdpUrl":"http://127.0.0.1:19845"`, `"idleTabTimeout":0`, `"maxTabs":30`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("serialized file missing %q:\n%s", want, data)
 		}
@@ -364,8 +365,8 @@ func TestFileJSONShapeMatchesDesign(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if strings.Contains(string(plain), "idleTabTimeout") {
-		t.Fatalf("unset idleTabTimeout should be omitted:\n%s", plain)
+	if strings.Contains(string(plain), "idleTabTimeout") || strings.Contains(string(plain), "maxTabs") {
+		t.Fatalf("unset lifecycle fields should be omitted:\n%s", plain)
 	}
 	var back File
 	if err := json.Unmarshal(data, &back); err != nil {
@@ -373,6 +374,9 @@ func TestFileJSONShapeMatchesDesign(t *testing.T) {
 	}
 	if got := back.Profiles["mdt"].IdleTabTimeout; got == nil || *got != 0 {
 		t.Fatalf("idleTabTimeout=0 lost in round-trip: %v", got)
+	}
+	if got := back.Profiles["mdt"].MaxTabs; got == nil || *got != 30 {
+		t.Fatalf("maxTabs=30 lost in round-trip: %v", got)
 	}
 }
 
@@ -418,5 +422,29 @@ func TestResolveTargetIdleTabTimeout(t *testing.T) {
 	_, err = ResolveTarget("mdt")
 	if err == nil || !strings.Contains(err.Error(), "idleTabTimeout must be >= 0") {
 		t.Fatalf("negative idleTabTimeout error = %v, want validation error", err)
+	}
+}
+
+func TestResolveTargetMaxTabs(t *testing.T) {
+	home := setHome(t)
+	writeProfiles(t, home, `{"version":1,"profiles":{
+		"bounded":{"transport":"managed","maxTabs":30},
+		"unlimited":{"transport":"cdp","cdpUrl":"http://127.0.0.1:19845","maxTabs":0}}}`)
+	bounded, err := ResolveTarget("bounded")
+	if err != nil || bounded.MaxTabs == nil || *bounded.MaxTabs != 30 {
+		t.Fatalf("bounded target = %+v, err=%v", bounded, err)
+	}
+	unlimited, err := ResolveTarget("unlimited")
+	if err != nil || unlimited.MaxTabs == nil || *unlimited.MaxTabs != 0 {
+		t.Fatalf("unlimited target = %+v, err=%v", unlimited, err)
+	}
+
+	writeProfiles(t, home, `{"version":1,"profiles":{"mini":{"transport":"remote","url":"http://10.0.0.1:13333","maxTabs":30}}}`)
+	if _, err := ResolveTarget("mini"); err == nil || !strings.Contains(err.Error(), "maxTabs does not apply to the remote transport") {
+		t.Fatalf("remote maxTabs error = %v", err)
+	}
+	writeProfiles(t, home, `{"version":1,"profiles":{"bad":{"transport":"managed","maxTabs":-1}}}`)
+	if _, err := ResolveTarget("bad"); err == nil || !strings.Contains(err.Error(), "maxTabs must be >= 0") {
+		t.Fatalf("negative maxTabs error = %v", err)
 	}
 }

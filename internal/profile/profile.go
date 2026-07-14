@@ -53,6 +53,10 @@ type Target struct {
 	// minutes (0 disables it). nil means the profile does not declare one,
 	// so the flag/env/default chain decides. Never set for remote targets.
 	IdleTabTimeout *int
+	// MaxTabs is the profile's maximum retained page-tab count (0 disables
+	// the cap). nil means the flag/env/default chain decides. Never set for
+	// remote targets.
+	MaxTabs *int
 }
 
 // Entry is one declared profile in profiles.json.
@@ -67,6 +71,10 @@ type Entry struct {
 	// managed and cdp transports (0 disables auto-close). It is invalid on
 	// remote profiles: the server on the other side owns tab lifecycle.
 	IdleTabTimeout *int `json:"idleTabTimeout,omitempty"`
+	// MaxTabs caps retained page tabs for managed and cdp transports (0 means
+	// unlimited). It is invalid on remote profiles for the same lifecycle
+	// ownership reason as IdleTabTimeout.
+	MaxTabs *int `json:"maxTabs,omitempty"`
 }
 
 // File is the on-disk shape of profiles.json.
@@ -185,12 +193,18 @@ func ResolveEntry(name string, entry Entry) (Target, error) {
 	if entry.IdleTabTimeout != nil && *entry.IdleTabTimeout < 0 {
 		return Target{}, fmt.Errorf("profile %q: idleTabTimeout must be >= 0 minutes (0 disables idle-tab auto-close)", name)
 	}
+	if entry.MaxTabs != nil && *entry.MaxTabs < 0 {
+		return Target{}, fmt.Errorf("profile %q: maxTabs must be >= 0 (0 disables the tab cap)", name)
+	}
 	switch TransportKind(strings.TrimSpace(entry.Transport)) {
 	case TransportManaged:
-		return Target{Kind: TransportManaged, IdleTabTimeout: entry.IdleTabTimeout}, nil
+		return Target{Kind: TransportManaged, IdleTabTimeout: entry.IdleTabTimeout, MaxTabs: entry.MaxTabs}, nil
 	case TransportRemote:
 		if entry.IdleTabTimeout != nil {
 			return Target{}, fmt.Errorf("profile %q: idleTabTimeout does not apply to the remote transport (the server owns tab lifecycle) — remove it", name)
+		}
+		if entry.MaxTabs != nil {
+			return Target{}, fmt.Errorf("profile %q: maxTabs does not apply to the remote transport (the server owns tab lifecycle) — remove it", name)
 		}
 		normalized, err := NormalizeServerURL(entry.URL)
 		if err != nil {
@@ -202,7 +216,7 @@ func ResolveEntry(name string, entry Entry) (Target, error) {
 		if err != nil {
 			return Target{}, fmt.Errorf("profile %q: %w", name, err)
 		}
-		return Target{Kind: TransportCDP, CDP: cdp, IdleTabTimeout: entry.IdleTabTimeout}, nil
+		return Target{Kind: TransportCDP, CDP: cdp, IdleTabTimeout: entry.IdleTabTimeout, MaxTabs: entry.MaxTabs}, nil
 	case "":
 		return Target{}, fmt.Errorf("profile %q: missing transport (expected managed, cdp, or remote)", name)
 	default:

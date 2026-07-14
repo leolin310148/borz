@@ -477,4 +477,6 @@ type DaemonStatus struct {
 	// IdleTabCloseMinutes is the daemon's effective idle-tab reaper
 	// threshold; 0 means auto-close is disabled.
 	IdleTabCloseMinutes int `json:"idleTabCloseMinutes"`
+	// MaxTabs is the daemon's effective page-tab cap; 0 means unlimited.
+	MaxTabs int `json:"maxTabs"`
 }

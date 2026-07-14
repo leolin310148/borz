@@ -52,7 +52,8 @@ the registry *of* profiles.
     "mdt": {
       "transport": "cdp",
       "cdpUrl": "http://127.0.0.1:19845",
-      "idleTabTimeout": 0
+      "idleTabTimeout": 0,
+      "maxTabs": 30
     }
   }
 }
@@ -62,8 +63,8 @@ the registry *of* profiles.
 
 | `transport` | Meaning | Local daemon? | Fields |
 | --- | --- | --- | --- |
-| `managed` | borz launches and owns a Chrome under the profile's `browser/user-data`. Today's default behaviour. | yes (auto-spawn) | `idleTabTimeout` (optional) |
-| `cdp` | Attach to an **existing** CDP endpoint (e.g. a Chrome started with `--remote-debugging-port`, possibly reached over an SSH tunnel). The endpoint is finally *persisted*. | yes (auto-spawn, pointed at that endpoint) | `cdpUrl`, or `cdpHost` + `cdpPort`; `idleTabTimeout` (optional) |
+| `managed` | borz launches and owns a Chrome under the profile's `browser/user-data`. Today's default behaviour. | yes (auto-spawn) | `idleTabTimeout`, `maxTabs` (optional) |
+| `cdp` | Attach to an **existing** CDP endpoint (e.g. a Chrome started with `--remote-debugging-port`, possibly reached over an SSH tunnel). The endpoint is finally *persisted*. | yes (auto-spawn, pointed at that endpoint) | `cdpUrl`, or `cdpHost` + `cdpPort`; `idleTabTimeout`, `maxTabs` (optional) |
 | `remote` | Talk HTTP to a remote `borz server`. No browser and no daemon locally. | **no** | `url`, `token` |
 
 `cdpUrl` is the preferred spelling (it subsumes `BORZ_CDP_URL`); accept
@@ -83,14 +84,15 @@ attached (over an SSH tunnel) to a browser we do not own that carries live SSO
 sessions: it must run with the idle-tab reaper disabled, and before this field
 existed that guarantee lived in a launchd plist passing `--idle-tab-timeout 0`
 — exactly the kind of config-outside-the-config this design is meant to kill.
-If the plist's daemon wasn't up, a CLI auto-spawn silently reverted to the
-30-minute default and reaped someone else's tabs.
+If the plist's daemon wasn't up, older releases silently reverted to their
+then-30-minute default and reaped someone else's tabs.
 
 - Optional per-profile field, in **minutes**; `0` disables auto-close.
   Meaningful for `managed` and `cdp`. On `remote` profiles it is **rejected**
   at validation (the server owns tab lifecycle) — never silently ignored.
 - Precedence: `--idle-tab-timeout` flag > `BORZ_TAB_IDLE_TIMEOUT` env >
-  profile `idleTabTimeout` > default 30. The flag/env behaviour is unchanged.
+  profile `idleTabTimeout` > default 0. Idle-tab auto-close is therefore off
+  unless explicitly enabled.
 - Auto-spawn (`internal/client`) passes `--idle-tab-timeout <n>` to the daemon
   it starts when the profile declares the field — unless the env var is set,
   in which case the flag is omitted so the inherited env keeps outranking the
@@ -99,6 +101,26 @@ If the plist's daemon wasn't up, a CLI auto-spawn silently reverted to the
   so a hand-started `borz daemon --profile mdt` honours the field too.
 - The effective value is observable: daemon `GET /status` reports
   `idleTabCloseMinutes`.
+
+### `maxTabs`
+
+`maxTabs` is an independent hard guard against runaway tab creation and the
+resulting browser memory pressure.
+
+- Default 30 page tabs; `0` disables the cap.
+- Meaningful for `managed` and `cdp`; rejected on `remote` because the remote
+  server owns tab lifecycle.
+- Precedence: `--max-tabs` > `BORZ_MAX_TABS` > profile `maxTabs` > default 30.
+- Auto-spawn carries a declared profile value to the daemon unless the env var
+  is set, matching `idleTabTimeout`.
+- Enforcement runs immediately after a page target is registered. If the count
+  exceeds the cap, the daemon closes the oldest non-current tabs until it is
+  back at the limit. In-flight closes are excluded so concurrent target-created
+  events cannot over-close.
+- “Oldest” means `TabState.CreatedAt`, i.e. daemon-observed registration order.
+  CDP does not expose original creation timestamps for tabs that already exist
+  when the daemon starts.
+- Daemon `GET /status` reports the effective `maxTabs`.
 
 ### What does NOT move into this file
 
@@ -158,6 +180,7 @@ borz profile add <name> --managed
 borz profile set <name> --token <t>     # edit fields in place
 borz profile add <name> --cdp <hp> --idle-tab-timeout 0   # never reap this target's tabs
 borz profile set <name> --idle-tab-timeout <m|default>    # 'default' clears the field
+borz profile set <name> --max-tabs <n|default>            # 0 means unlimited
 borz profile rm <name>
 ```
 

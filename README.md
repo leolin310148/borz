@@ -262,6 +262,8 @@ The server refuses to bind a non-loopback address without a token. Clients authe
 | `--cdp-host` | — | `127.0.0.1` | Chrome CDP host |
 | `--cdp-port` | — | `19825` | Chrome CDP port |
 | `--ensure-browser` | — | *(off)* | Launch the managed browser whenever CDP is unreachable |
+| `--idle-tab-timeout` | `BORZ_TAB_IDLE_TIMEOUT` | `0` | Close non-current tabs idle for this many minutes; `0` disables |
+| `--max-tabs` | `BORZ_MAX_TABS` | `30` | Retain at most this many page tabs, closing oldest non-current tabs; `0` means unlimited |
 
 With `--ensure-browser`, the server owns its browser end-to-end: it launches the managed Chrome at startup if nothing is listening on the CDP port, and relaunches it after Chrome exits or updates — no external keep-alive needed. It only applies to a loopback `--cdp-host` (the server will not try to launch a browser on another machine), never touches a browser it did not launch (if something is already serving the CDP port it just attaches), and rate-limits launch attempts so a crash-looping browser is not respawned on every request.
 
@@ -362,7 +364,7 @@ zero-config behaviour described above.
 borz profile list                       # name, transport, target (tokens never shown)
 borz profile show mini
 borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN"
-borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0
+borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 --max-tabs 30
 borz profile add clean --managed
 borz profile set mini --token "$NEW_TOKEN"
 borz profile set mdt --idle-tab-timeout default   # clear the field again
@@ -379,7 +381,7 @@ In `profiles.json` a cdp endpoint is spelled `cdpUrl`, or alternatively
   "version": 1,
   "profiles": {
     "mini": { "transport": "remote", "url": "http://100.116.143.73:13333", "token": "..." },
-    "mdt":  { "transport": "cdp", "cdpUrl": "http://127.0.0.1:19845", "idleTabTimeout": 0 }
+    "mdt":  { "transport": "cdp", "cdpUrl": "http://127.0.0.1:19845", "idleTabTimeout": 0, "maxTabs": 30 }
   }
 }
 ```
@@ -395,9 +397,16 @@ Behaviour worth knowing:
   `managed` and `cdp` profiles and rides along when the CLI auto-spawns the
   daemon — useful for a cdp target you don't own and must never reap.
   Precedence: `--idle-tab-timeout` flag > `BORZ_TAB_IDLE_TIMEOUT` env >
-  profile > default 30. Setting it on a `remote` profile is an error (the
+  profile > default 0 (disabled). Setting it on a `remote` profile is an error (the
   server owns tab lifecycle). The effective value shows up as
   `idleTabCloseMinutes` in `borz daemon status`.
+- `maxTabs` (`0` = unlimited) is an independent hard cap for `managed` and
+  `cdp` profiles. Whenever the daemon observes more page tabs than the cap, it
+  immediately closes the oldest non-current tabs until the count is back at
+  the limit. Precedence is `--max-tabs` > `BORZ_MAX_TABS` > profile > default
+  30; remote profiles reject it, and daemon status reports the effective
+  `maxTabs`. “Oldest” means the daemon's observed `CreatedAt` order; for tabs
+  that predate daemon startup, CDP does not expose their original creation time.
 - `daemon.json`, the managed `browser/user-data` dir, and `browser/cdp-port`
   remain per-profile **runtime state** — do not hand-edit them into
   `profiles.json`.
@@ -1243,6 +1252,8 @@ CDP mode records the controlled Chromium tab. Client mode uses the borz extensio
 | `BORZ_PROFILE` | Default profile name (see [Profiles](#profiles)) |
 | `BORZ_HOME` | Override config directory (default: `~/.borz`) |
 | `BORZ_SESSION_ID` | Override the automatically derived operational-log session correlation id |
+| `BORZ_TAB_IDLE_TIMEOUT` | Idle-tab auto-close threshold in minutes (`0` disables and is the default) |
+| `BORZ_MAX_TABS` | Maximum retained page tabs (`0` means unlimited; default 30) |
 
 Legacy `BB_BROWSER_*` environment variables are still accepted during the rename transition.
 

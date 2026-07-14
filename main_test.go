@@ -62,12 +62,14 @@ func TestServerOptionsFromArgs(t *testing.T) {
 	t.Setenv("BB_BROWSER_TOKEN", "")
 	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
 	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
+	t.Setenv("BORZ_MAX_TABS", "")
+	t.Setenv("BB_BROWSER_MAX_TABS", "")
 
-	opts, err := serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1", "--port", "19999", "--cdp-host", "chrome", "--cdp-port", "9222", "--idle-tab-timeout", "7"}, "0.0.0.0")
+	opts, err := serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1", "--port", "19999", "--cdp-host", "chrome", "--cdp-port", "9222", "--idle-tab-timeout", "7", "--max-tabs", "11"}, "0.0.0.0")
 	if err != nil {
 		t.Fatalf("serverOptionsFromArgs returned error: %v", err)
 	}
-	if opts.Host != "127.0.0.1" || opts.Port != 19999 || opts.CDPHost != "chrome" || opts.CDPPort != 9222 || opts.IdleTabCloseMinutes != 7 || opts.Version != version {
+	if opts.Host != "127.0.0.1" || opts.Port != 19999 || opts.CDPHost != "chrome" || opts.CDPPort != 9222 || opts.IdleTabCloseMinutes != 7 || opts.MaxTabs != 11 || opts.Version != version {
 		t.Fatalf("unexpected options: %+v", opts)
 	}
 
@@ -663,6 +665,7 @@ func TestResolveIdleTabTimeout(t *testing.T) {
 	t.Setenv("BORZ_HOME", t.TempDir())
 	client.ResetForTests()
 	t.Cleanup(client.ResetForTests)
+	t.Cleanup(func() { _ = config.SetProfile("") })
 
 	// Default when neither flag nor env present.
 	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
@@ -717,6 +720,42 @@ func TestResolveIdleTabTimeout(t *testing.T) {
 	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "abc")
 	if got := resolveIdleTabTimeout(nil); got != config.DefaultIdleTabCloseMinutes {
 		t.Errorf("garbage env: got %d, want %d", got, config.DefaultIdleTabCloseMinutes)
+	}
+}
+
+func TestResolveMaxTabs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	t.Setenv("BORZ_MAX_TABS", "")
+	t.Setenv("BB_BROWSER_MAX_TABS", "")
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+	t.Cleanup(func() { _ = config.SetProfile("") })
+
+	if got := resolveMaxTabs(nil); got != config.DefaultMaxTabs {
+		t.Fatalf("default = %d, want %d", got, config.DefaultMaxTabs)
+	}
+	if err := os.WriteFile(filepath.Join(home, "profiles.json"), []byte(`{"version":1,"profiles":{"work":{"transport":"managed","maxTabs":12}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveMaxTabs(nil); got != 12 {
+		t.Fatalf("profile = %d, want 12", got)
+	}
+	t.Setenv("BORZ_MAX_TABS", "8")
+	if got := resolveMaxTabs(nil); got != 8 {
+		t.Fatalf("env = %d, want 8", got)
+	}
+	if got := resolveMaxTabs([]string{"--max-tabs", "5"}); got != 5 {
+		t.Fatalf("flag = %d, want 5", got)
+	}
+	if got := resolveMaxTabs([]string{"--max-tabs", "-1"}); got != 0 {
+		t.Fatalf("negative flag = %d, want 0", got)
+	}
+	if got := resolveMaxTabs([]string{"--max-tabs", "bad"}); got != 8 {
+		t.Fatalf("invalid flag fallback = %d, want 8", got)
 	}
 }
 

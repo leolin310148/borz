@@ -1453,7 +1453,7 @@ func TestEnsureDaemon_CDPProfileCarriesIdleTabTimeoutToSpawn(t *testing.T) {
 		t.Cleanup(resetState)
 		home := t.TempDir()
 		t.Setenv("BORZ_HOME", home)
-		content := `{"version":1,"profiles":{"mdt":{"transport":"cdp","cdpHost":"127.0.0.1","cdpPort":19845,"idleTabTimeout":0}}}`
+		content := `{"version":1,"profiles":{"mdt":{"transport":"cdp","cdpHost":"127.0.0.1","cdpPort":19845,"idleTabTimeout":0,"maxTabs":12}}}`
 		if err := os.WriteFile(filepath.Join(home, "profiles.json"), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -1496,9 +1496,9 @@ func TestEnsureDaemon_CDPProfileCarriesIdleTabTimeoutToSpawn(t *testing.T) {
 		return daemonArgs
 	}
 
-	hasIdleFlag := func(args []string) (string, bool) {
+	flagValue := func(args []string, name string) (string, bool) {
 		for i, a := range args {
-			if a == "--idle-tab-timeout" && i+1 < len(args) {
+			if a == name && i+1 < len(args) {
 				return args[i+1], true
 			}
 		}
@@ -1508,17 +1508,32 @@ func TestEnsureDaemon_CDPProfileCarriesIdleTabTimeoutToSpawn(t *testing.T) {
 	t.Run("profile value rides along", func(t *testing.T) {
 		t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
 		t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
+		t.Setenv("BORZ_MAX_TABS", "")
+		t.Setenv("BB_BROWSER_MAX_TABS", "")
 		args := spawnArgs(t)
-		if v, ok := hasIdleFlag(args); !ok || v != "0" {
+		if v, ok := flagValue(args, "--idle-tab-timeout"); !ok || v != "0" {
 			t.Fatalf("daemon args should carry --idle-tab-timeout 0, got %v", args)
+		}
+		if v, ok := flagValue(args, "--max-tabs"); !ok || v != "12" {
+			t.Fatalf("daemon args should carry --max-tabs 12, got %v", args)
 		}
 	})
 
 	t.Run("env set: flag omitted so env keeps outranking the profile", func(t *testing.T) {
 		t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "5")
+		t.Setenv("BORZ_MAX_TABS", "")
 		args := spawnArgs(t)
-		if _, ok := hasIdleFlag(args); ok {
+		if _, ok := flagValue(args, "--idle-tab-timeout"); ok {
 			t.Fatalf("daemon args must omit --idle-tab-timeout when the env var is set, got %v", args)
+		}
+	})
+
+	t.Run("max-tabs env set: flag omitted", func(t *testing.T) {
+		t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+		t.Setenv("BORZ_MAX_TABS", "5")
+		args := spawnArgs(t)
+		if _, ok := flagValue(args, "--max-tabs"); ok {
+			t.Fatalf("daemon args must omit --max-tabs when env is set, got %v", args)
 		}
 	})
 }

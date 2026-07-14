@@ -1497,6 +1497,8 @@ components:
         uptime: { type: integer }
         currentSeq: { type: integer }
         currentTargetId: { type: string }
+        idleTabCloseMinutes: { type: integer, description: Effective idle-tab timeout in minutes; 0 disables }
+        maxTabs: { type: integer, description: Effective page-tab cap; 0 means unlimited }
         tabs:
           type: array
           items:

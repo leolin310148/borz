@@ -33,6 +33,10 @@ type ServerOptions struct {
 	// user-initiated action. 0 disables. Negative values are clamped to 0.
 	IdleTabCloseMinutes int
 
+	// MaxTabs caps retained page tabs. When exceeded, the oldest non-current
+	// tabs are closed. 0 disables the cap.
+	MaxTabs int
+
 	// Version is reported by /v1/doctor so REST clients can see which
 	// borz binary is serving them. Optional.
 	Version string
@@ -70,6 +74,7 @@ func NewServer(opts ServerOptions) *Server {
 	tabManager := NewTabStateManager()
 	cdp := NewCdpConnection(opts.CDPHost, opts.CDPPort, tabManager)
 	cdp.SetEnsureBrowser(opts.EnsureBrowser)
+	cdp.SetMaxTabs(opts.MaxTabs)
 	extHub := extbridge.NewHub()
 
 	return &Server{
@@ -119,8 +124,8 @@ func (s *Server) RunContext(ctx context.Context) error {
 		Addr:    addr,
 		Handler: corsMiddleware(root),
 	}
-	fmt.Fprintf(os.Stderr, "borz daemon starting on %s (cdp=%s:%d, idleTabCloseMinutes=%d)\n",
-		addr, s.opts.CDPHost, s.opts.CDPPort, s.opts.IdleTabCloseMinutes)
+	fmt.Fprintf(os.Stderr, "borz daemon starting on %s (cdp=%s:%d, idleTabCloseMinutes=%d, maxTabs=%d)\n",
+		addr, s.opts.CDPHost, s.opts.CDPPort, s.opts.IdleTabCloseMinutes, s.opts.MaxTabs)
 	if s.opts.EnsureBrowser != nil {
 		fmt.Fprintf(os.Stderr, "managed browser ensure enabled: daemon relaunches Chrome at %s:%d when CDP is unreachable\n",
 			s.opts.CDPHost, s.opts.CDPPort)
@@ -186,6 +191,10 @@ func (s *Server) RunContext(ctx context.Context) error {
 			func() string { return s.cdp.GetCurrentTargetID() },
 			time.Now,
 		)
+	}
+	if s.opts.MaxTabs > 0 {
+		fmt.Fprintf(os.Stderr, "borz tab limit enabled (maxTabs=%d)\n", s.opts.MaxTabs)
+		go runTabLimitEnforcer(reaperCtx, reaperTickInterval, s.cdp.enforceTabLimit)
 	}
 
 	// Write daemon.json only after the listener is held.
@@ -465,6 +474,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"tabs":                tabs,
 		"version":             s.opts.Version,
 		"idleTabCloseMinutes": s.opts.IdleTabCloseMinutes,
+		"maxTabs":             s.opts.MaxTabs,
 	})
 }
 

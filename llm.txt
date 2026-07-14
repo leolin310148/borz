@@ -97,16 +97,24 @@ with `--profile <name>` or `BORZ_PROFILE`. Undeclared names (including
 
 ```bash
 borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN"
-borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0
+borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 --max-tabs 30
 borz --profile mini open https://example.com     # HTTP to the Mini server
 BORZ_PROFILE=mdt borz snapshot                   # tunnel-attached Chrome
 ```
 
 Optional `idleTabTimeout` (minutes, 0 = never auto-close idle tabs) on
 `managed`/`cdp` profiles is honoured by auto-spawned daemons; precedence is
-`--idle-tab-timeout` flag > `BORZ_TAB_IDLE_TIMEOUT` env > profile > 30.
+`--idle-tab-timeout` flag > `BORZ_TAB_IDLE_TIMEOUT` env > profile > 0, so
+idle-tab auto-close is disabled by default.
 It is rejected on `remote` profiles. Verify via `idleTabCloseMinutes` in
 `borz daemon status`.
+
+Optional `maxTabs` (0 = unlimited) on `managed`/`cdp` profiles limits retained
+page tabs. When the count exceeds the cap, the daemon immediately closes the
+oldest non-current tabs. Precedence is `--max-tabs` > `BORZ_MAX_TABS` > profile
+> 30. It is rejected on remote profiles; verify via `maxTabs` in daemon status.
+For tabs already open before daemon startup, oldest means daemon-observed
+registration order because CDP exposes no original creation timestamp.
 
 Deprecated but still working: `--remote` = `--profile remote`; `borz client
 setup` writes the `remote` profile; a legacy `~/.borz/client.json` is migrated
@@ -200,6 +208,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 
 - `BORZ_CDP_URL` — override CDP endpoint (managed-transport discovery only)
 - `BORZ_PROFILE` — default profile for this process (see Profiles above)
+- `BORZ_MAX_TABS` — maximum retained page tabs (`0` = unlimited; default 30)
 - `BORZ_HOME` — config dir (default `~/.borz`)
 - `BORZ_SESSION_ID` — override the CLI's automatically derived operational-log session id
 - `BORZ_TOKEN`, `BORZ_SERVER_HOST`, `BORZ_SERVER_PORT` — server mode

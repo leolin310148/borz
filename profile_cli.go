@@ -12,7 +12,7 @@ import (
 	borzprofile "github.com/leolin310148/borz/internal/profile"
 )
 
-const profileAddUsage = "Usage: borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--idle-tab-timeout <m>] [--no-check]"
+const profileAddUsage = "Usage: borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]"
 
 func handleProfile(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 	sub := "list"
@@ -35,7 +35,7 @@ func handleProfile(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 		handleProfileAdd(cmdArgs[1], rawArgs, jsonOutput)
 	case "set":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--idle-tab-timeout <m|default>] [--no-check]")
+			fatal("Usage: borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]")
 		}
 		handleProfileSet(cmdArgs[1], rawArgs, jsonOutput)
 	case "rm", "remove":
@@ -93,6 +93,9 @@ func handleProfileList(jsonOutput bool) {
 		if entry.IdleTabTimeout != nil {
 			desc += fmt.Sprintf(" [idleTabTimeout=%d]", *entry.IdleTabTimeout)
 		}
+		if entry.MaxTabs != nil {
+			desc += fmt.Sprintf(" [maxTabs=%d]", *entry.MaxTabs)
+		}
 		fmt.Printf("%-*s  %-*s  %s\n", nameWidth, name, transportWidth, entry.Transport, desc)
 	}
 	fmt.Printf("\nConfig path: %s\n", config.ProfilesJSONPath())
@@ -138,6 +141,7 @@ func handleProfileShow(name string, jsonOutput bool) {
 		}
 	} else {
 		fmt.Printf("Idle tab timeout: %s\n", idleTabTimeoutDescription(entry.IdleTabTimeout))
+		fmt.Printf("Max tabs:         %s\n", maxTabsDescription(entry.MaxTabs))
 	}
 	fmt.Printf("Config path: %s\n", config.ProfilesJSONPath())
 }
@@ -177,7 +181,7 @@ func handleProfileSet(name string, rawArgs []string, jsonOutput bool) {
 		fatal(err.Error())
 	}
 	if !changed {
-		fatal("nothing to change; pass --managed, --cdp <endpoint>, --remote <url>, --token <t>, or --idle-tab-timeout <m|default>")
+		fatal("nothing to change; pass --managed, --cdp <endpoint>, --remote <url>, --token <t>, --idle-tab-timeout <m|default>, or --max-tabs <n|default>")
 	}
 	saveProfileEntry(registry, name, entry, rawArgs, jsonOutput, "updated")
 }
@@ -201,7 +205,7 @@ func handleProfileRemove(name string, jsonOutput bool) {
 	fmt.Printf("Profile %q removed. Its name now resolves to the managed transport again.\n", name)
 }
 
-// profileEntryFromFlags applies the transport/token/idle-timeout flags to
+// profileEntryFromFlags applies the transport/token/tab-lifecycle flags to
 // base. It returns the updated entry and whether any flag actually changed it.
 func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofile.Entry, bool, error) {
 	managedSet := hasFlag(rawArgs, "--managed")
@@ -209,6 +213,7 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 	remoteValue, remoteSet := getArgValueOK(rawArgs, "--remote")
 	tokenValue, tokenSet := getArgValueOK(rawArgs, "--token")
 	idleValue, idleSet := getArgValueOK(rawArgs, "--idle-tab-timeout")
+	maxTabsValue, maxTabsSet := getArgValueOK(rawArgs, "--max-tabs")
 
 	transports := 0
 	for _, set := range []bool{managedSet, cdpSet, remoteSet} {
@@ -223,17 +228,17 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 	entry := base
 	switch {
 	case managedSet:
-		entry = borzprofile.Entry{Transport: string(borzprofile.TransportManaged), IdleTabTimeout: base.IdleTabTimeout}
+		entry = borzprofile.Entry{Transport: string(borzprofile.TransportManaged), IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
 	case cdpSet:
 		if strings.TrimSpace(cdpValue) == "" {
 			return borzprofile.Entry{}, false, fmt.Errorf("--cdp requires a value (http://host:port or host:port)")
 		}
-		entry = borzprofile.Entry{Transport: string(borzprofile.TransportCDP), CDPURL: strings.TrimSpace(cdpValue), IdleTabTimeout: base.IdleTabTimeout}
+		entry = borzprofile.Entry{Transport: string(borzprofile.TransportCDP), CDPURL: strings.TrimSpace(cdpValue), IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
 	case remoteSet:
 		if strings.TrimSpace(remoteValue) == "" {
 			return borzprofile.Entry{}, false, fmt.Errorf("--remote requires a server URL")
 		}
-		// idleTabTimeout does not apply to remote targets, so it is dropped
+		// Tab lifecycle settings do not apply to remote targets, so they are dropped
 		// rather than carried into an entry that would fail validation.
 		entry = borzprofile.Entry{Transport: string(borzprofile.TransportRemote), URL: strings.TrimSpace(remoteValue), Token: base.Token}
 	}
@@ -246,6 +251,17 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 				return borzprofile.Entry{}, false, fmt.Errorf("--idle-tab-timeout must be a non-negative number of minutes (0 disables auto-close) or 'default'")
 			}
 			entry.IdleTabTimeout = &n
+		}
+	}
+	if maxTabsSet {
+		if strings.EqualFold(strings.TrimSpace(maxTabsValue), "default") {
+			entry.MaxTabs = nil
+		} else {
+			n, err := strconv.Atoi(strings.TrimSpace(maxTabsValue))
+			if err != nil || n < 0 {
+				return borzprofile.Entry{}, false, fmt.Errorf("--max-tabs must be a non-negative tab count (0 disables the cap) or 'default'")
+			}
+			entry.MaxTabs = &n
 		}
 	}
 	if !tokenSet && remoteSet {
@@ -262,7 +278,7 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 		}
 		entry.Token = strings.TrimSpace(tokenValue)
 	}
-	return entry, transports == 1 || tokenSet || idleSet, nil
+	return entry, transports == 1 || tokenSet || idleSet || maxTabsSet, nil
 }
 
 // saveProfileEntry validates, optionally probes, persists, and reports one
@@ -339,7 +355,22 @@ func profilePayload(name string, entry borzprofile.Entry) map[string]interface{}
 	if entry.IdleTabTimeout != nil {
 		payload["idleTabTimeout"] = *entry.IdleTabTimeout
 	}
+	if entry.MaxTabs != nil {
+		payload["maxTabs"] = *entry.MaxTabs
+	}
 	return payload
+}
+
+// maxTabsDescription renders a profile's maxTabs for humans.
+func maxTabsDescription(maxTabs *int) string {
+	switch {
+	case maxTabs == nil:
+		return fmt.Sprintf("default (%d; flag/env may override)", config.DefaultMaxTabs)
+	case *maxTabs == 0:
+		return "0 (tab cap disabled)"
+	default:
+		return strconv.Itoa(*maxTabs)
+	}
 }
 
 // idleTabTimeoutDescription renders a profile's idleTabTimeout for humans.

@@ -47,7 +47,7 @@ var cliValueFlags = []string{
 	"-d", "--depth", "-s", "--selector", "--filter", "--method", "--status", "--id",
 	"--header", "--body",
 	"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url",
-	"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--file", "--wait-for",
+	"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--max-tabs", "--file", "--wait-for",
 	"--timeout", "--pre-delay", "--post-delay",
 	"--modifiers", "--commands",
 	"--lines",
@@ -1110,6 +1110,37 @@ func parseIdleTabTimeout(v string) (int, bool) {
 	return n, true
 }
 
+// resolveMaxTabs returns the maximum number of page tabs retained by the
+// daemon. Precedence: --max-tabs flag > BORZ_MAX_TABS env > the active
+// profile's maxTabs > config.DefaultMaxTabs. 0 disables the cap.
+func resolveMaxTabs(rawArgs []string) int {
+	if v := getArgValue(rawArgs, "--max-tabs"); v != "" {
+		if n, ok := parseMaxTabs(v); ok {
+			return n
+		}
+	}
+	if v := config.Env("BORZ_MAX_TABS", "BB_BROWSER_MAX_TABS"); v != "" {
+		if n, ok := parseMaxTabs(v); ok {
+			return n
+		}
+	}
+	if target, err := client.ActiveTarget(); err == nil && target.MaxTabs != nil {
+		return *target.MaxTabs
+	}
+	return config.DefaultMaxTabs
+}
+
+func parseMaxTabs(v string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return 0, false
+	}
+	if n < 0 {
+		n = 0
+	}
+	return n, true
+}
+
 // --- Daemon handling ---
 
 func handleDaemon(cmdArgs []string, rawArgs []string) {
@@ -1262,6 +1293,7 @@ func startDaemonForeground(rawArgs []string) {
 		CDPHost:             cdpHost,
 		CDPPort:             cdpPort,
 		IdleTabCloseMinutes: resolveIdleTabTimeout(rawArgs),
+		MaxTabs:             resolveMaxTabs(rawArgs),
 		Version:             version,
 	})
 
@@ -1383,6 +1415,7 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 		CDPHost:             cdpHost,
 		CDPPort:             cdpPort,
 		IdleTabCloseMinutes: resolveIdleTabTimeout(rawArgs),
+		MaxTabs:             resolveMaxTabs(rawArgs),
 		Version:             version,
 		EnsureBrowser:       ensureBrowser,
 	}, nil
@@ -1490,6 +1523,7 @@ func serviceRunArgs(name string, opts daemon.ServerOptions) []string {
 		"--cdp-host", opts.CDPHost,
 		"--cdp-port", strconv.Itoa(opts.CDPPort),
 		"--idle-tab-timeout", strconv.Itoa(opts.IdleTabCloseMinutes),
+		"--max-tabs", strconv.Itoa(opts.MaxTabs),
 	}
 	if opts.EnsureBrowser != nil {
 		args = append(args, "--ensure-browser")

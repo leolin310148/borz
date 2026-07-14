@@ -56,13 +56,14 @@ func TestServiceArgsAndSmallHelpers(t *testing.T) {
 		"--cdp-port", "29999",
 		"--token", "secret",
 		"--idle-tab-timeout", "7",
+		"--max-tabs", "9",
 	}, "0.0.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	args := serviceRunArgs("custom", opts)
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"service run", "--name custom", "--host 127.0.0.1", "--port 19999", "--token secret", "--idle-tab-timeout 7"} {
+	for _, want := range []string{"service run", "--name custom", "--host 127.0.0.1", "--port 19999", "--token secret", "--idle-tab-timeout 7", "--max-tabs 9"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("service args missing %q: %v", want, args)
 		}

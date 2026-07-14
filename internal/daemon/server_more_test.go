@@ -20,7 +20,7 @@ func TestServerRunContextAuthCORSAndShutdownBranches(t *testing.T) {
 	port := freeTCPPortForTest(t)
 	s := NewServer(ServerOptions{
 		Host: "127.0.0.1", Port: port, Token: "secret",
-		CDPHost: "127.0.0.1", CDPPort: 1, IdleTabCloseMinutes: 1,
+		CDPHost: "127.0.0.1", CDPPort: 1, IdleTabCloseMinutes: 1, MaxTabs: 3,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -76,6 +76,10 @@ func TestServerRunContextAuthCORSAndShutdownBranches(t *testing.T) {
 	if status["running"] != true || status["tabs"] == nil {
 		cancel()
 		t.Fatalf("status body = %+v", status)
+	}
+	if status["idleTabCloseMinutes"] != float64(1) || status["maxTabs"] != float64(3) {
+		cancel()
+		t.Fatalf("status lifecycle config = %+v", status)
 	}
 
 	req, _ := http.NewRequest(http.MethodOptions, base+"/status", nil)

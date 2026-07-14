@@ -11,7 +11,8 @@ param(
     [string]$Token = "",
     [string]$CdpHost = "127.0.0.1",
     [int]$CdpPort = 19825,
-    [int]$IdleTabTimeout = 30
+    [int]$IdleTabTimeout = 0,
+    [int]$MaxTabs = 30
 )
 
 $ErrorActionPreference = "Stop"
@@ -94,6 +95,7 @@ try {
             "--cdp-host", $CdpHost,
             "--cdp-port", $CdpPort,
             "--idle-tab-timeout", $IdleTabTimeout
+            "--max-tabs", $MaxTabs
         )
         if ($Token) {
             $serviceArgs += @("--token", $Token)
@@ -113,4 +115,3 @@ try {
 finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
-
