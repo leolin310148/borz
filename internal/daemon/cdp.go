@@ -50,6 +50,14 @@ type CdpConnection struct {
 	connected atomic.Bool
 	logger    *observability.Logger
 
+	// ensureBrowser, when set, is invoked by Connect after the CDP endpoint
+	// turns out to be unreachable, giving the daemon a chance to launch its
+	// managed browser before giving up. Guarded by connectMu along with
+	// lastEnsureAt (rate limit so a crash-looping browser is not relaunched
+	// on every request).
+	ensureBrowser func() error
+	lastEnsureAt  time.Time
+
 	LastError string
 	lastErrMu sync.RWMutex
 
@@ -85,6 +93,38 @@ func NewCdpConnection(host string, port int, tabManager *TabStateManager) *CdpCo
 // Connected returns whether the CDP WebSocket is open.
 func (c *CdpConnection) Connected() bool {
 	return c.connected.Load()
+}
+
+// ensureBrowserMinInterval rate-limits managed-browser launches so a browser
+// that dies immediately after starting is not relaunched on every request.
+const ensureBrowserMinInterval = 15 * time.Second
+
+// SetEnsureBrowser installs the managed-browser launch hook. Must be called
+// before Connect (it is not safe to set concurrently with connection attempts).
+func (c *CdpConnection) SetEnsureBrowser(fn func() error) {
+	c.ensureBrowser = fn
+}
+
+// maybeEnsureBrowser launches the managed browser after an unreachable CDP
+// endpoint. Returns true when a launch was attempted and succeeded, meaning
+// the caller should retry the endpoint once. Caller must hold connectMu.
+func (c *CdpConnection) maybeEnsureBrowser() bool {
+	if c.ensureBrowser == nil {
+		return false
+	}
+	if time.Since(c.lastEnsureAt) < ensureBrowserMinInterval {
+		return false
+	}
+	c.lastEnsureAt = time.Now()
+	fmt.Fprintf(os.Stderr, "CDP unreachable; launching managed browser for %s:%d\n", c.Host, c.Port)
+	c.log("info", "cdp_ensure_browser_started", observability.Fields{})
+	if err := c.ensureBrowser(); err != nil {
+		fmt.Fprintf(os.Stderr, "managed browser launch failed: %v\n", err)
+		c.log("warn", "cdp_ensure_browser_failed", observability.Fields{ErrorCode: "browser_not_found"})
+		return false
+	}
+	c.log("info", "cdp_ensure_browser_completed", observability.Fields{})
+	return true
 }
 
 func (c *CdpConnection) setLastError(err string) {
@@ -149,6 +189,9 @@ func (c *CdpConnection) Connect() error {
 	c.log("info", "cdp_connect_started", observability.Fields{})
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	resp, err := httpClient.Get(versionURL)
+	if err != nil && c.maybeEnsureBrowser() {
+		resp, err = httpClient.Get(versionURL)
+	}
 	if err != nil {
 		c.setLastError(err.Error())
 		err = fmt.Errorf("cannot reach Chrome CDP at %s:%d: %w", c.Host, c.Port, err)

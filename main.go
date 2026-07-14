@@ -62,7 +62,7 @@ var cliValueFlagSet = makeFlagSet(cliValueFlags)
 
 var cliBoolFlags = []string{
 	"-i", "-c",
-	"--all", "--baked", "--check", "--clear", "--compact", "--diff", "--focused",
+	"--all", "--baked", "--check", "--clear", "--compact", "--diff", "--ensure-browser", "--focused",
 	"--force", "--help", "--interactive", "--json", "--lossless", "--managed",
 	"--mask-by-default", "--mobile", "--new", "--no-auto-await", "--no-check",
 	"--no-touch", "--paste", "--recover", "--recursive", "--remote", "--reset", "--save-as",
@@ -1367,6 +1367,15 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 		return daemon.ServerOptions{}, fmt.Errorf("--host=%s is non-loopback; refusing to start without a token. Pass --token <secret> or set BORZ_TOKEN", host)
 	}
 
+	var ensureBrowser func() error
+	if hasFlag(rawArgs, "--ensure-browser") {
+		if isRemoteBind(cdpHost) {
+			return daemon.ServerOptions{}, fmt.Errorf("--ensure-browser only manages a local browser, but --cdp-host=%s is not loopback. Drop the flag or point --cdp-host at 127.0.0.1", cdpHost)
+		}
+		launchPort := cdpPort
+		ensureBrowser = func() error { return client.LaunchManagedBrowser(launchPort) }
+	}
+
 	return daemon.ServerOptions{
 		Host:                host,
 		Port:                port,
@@ -1375,6 +1384,7 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 		CDPPort:             cdpPort,
 		IdleTabCloseMinutes: resolveIdleTabTimeout(rawArgs),
 		Version:             version,
+		EnsureBrowser:       ensureBrowser,
 	}, nil
 }
 
@@ -1480,6 +1490,9 @@ func serviceRunArgs(name string, opts daemon.ServerOptions) []string {
 		"--cdp-host", opts.CDPHost,
 		"--cdp-port", strconv.Itoa(opts.CDPPort),
 		"--idle-tab-timeout", strconv.Itoa(opts.IdleTabCloseMinutes),
+	}
+	if opts.EnsureBrowser != nil {
+		args = append(args, "--ensure-browser")
 	}
 	if config.Profile() != "" {
 		args = append(args, "--profile", config.Profile())

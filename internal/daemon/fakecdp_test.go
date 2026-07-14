@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,6 +43,15 @@ type fakeCall struct {
 
 func newFakeCDP(t *testing.T) *fakeCDP {
 	t.Helper()
+	return newFakeCDPWithListener(t, nil)
+}
+
+// newFakeCDPWithListener starts the fake on a caller-provided listener so
+// tests can serve a pre-chosen port (the ensure-browser path relaunches the
+// browser on the exact port the daemon was configured with). A nil listener
+// picks any free port.
+func newFakeCDPWithListener(t *testing.T, ln net.Listener) *fakeCDP {
+	t.Helper()
 	f := &fakeCDP{
 		t:        t,
 		handlers: make(map[string]fakeHandler),
@@ -56,7 +66,14 @@ func newFakeCDP(t *testing.T) *fakeCDP {
 	})
 	mux.HandleFunc("/ws", f.handleWS)
 
-	f.server = httptest.NewServer(mux)
+	if ln == nil {
+		f.server = httptest.NewServer(mux)
+	} else {
+		f.server = httptest.NewUnstartedServer(mux)
+		f.server.Listener.Close()
+		f.server.Listener = ln
+		f.server.Start()
+	}
 	t.Cleanup(f.Close)
 
 	// Built-in responses for boot-time commands.

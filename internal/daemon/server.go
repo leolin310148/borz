@@ -36,6 +36,12 @@ type ServerOptions struct {
 	// Version is reported by /v1/doctor so REST clients can see which
 	// borz binary is serving them. Optional.
 	Version string
+
+	// EnsureBrowser, when set, lets the daemon launch its managed browser
+	// whenever the CDP endpoint is unreachable (server start and any later
+	// reconnect). Wired by `borz server --ensure-browser`; the caller is
+	// responsible for only setting this for a loopback CDP endpoint it owns.
+	EnsureBrowser func() error
 }
 
 // Server is the borz daemon HTTP server.
@@ -63,6 +69,7 @@ func NewServer(opts ServerOptions) *Server {
 	}
 	tabManager := NewTabStateManager()
 	cdp := NewCdpConnection(opts.CDPHost, opts.CDPPort, tabManager)
+	cdp.SetEnsureBrowser(opts.EnsureBrowser)
 	extHub := extbridge.NewHub()
 
 	return &Server{
@@ -114,6 +121,10 @@ func (s *Server) RunContext(ctx context.Context) error {
 	}
 	fmt.Fprintf(os.Stderr, "borz daemon starting on %s (cdp=%s:%d, idleTabCloseMinutes=%d)\n",
 		addr, s.opts.CDPHost, s.opts.CDPPort, s.opts.IdleTabCloseMinutes)
+	if s.opts.EnsureBrowser != nil {
+		fmt.Fprintf(os.Stderr, "managed browser ensure enabled: daemon relaunches Chrome at %s:%d when CDP is unreachable\n",
+			s.opts.CDPHost, s.opts.CDPPort)
+	}
 
 	// Bind the listener BEFORE writing daemon.json, so a bind failure
 	// doesn't clobber a live daemon's state.

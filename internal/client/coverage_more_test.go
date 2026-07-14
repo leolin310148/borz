@@ -14,6 +14,30 @@ import (
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
+func TestLaunchManagedBrowserWrapper(t *testing.T) {
+	oldLaunch := launchManagedBrowserAtPort
+	t.Cleanup(func() { launchManagedBrowserAtPort = oldLaunch })
+
+	launchedPort := 0
+	launchManagedBrowserAtPort = func(port int) (*CDPEndpoint, error) {
+		launchedPort = port
+		return &CDPEndpoint{Host: "127.0.0.1", Port: port}, nil
+	}
+	if err := LaunchManagedBrowser(19825); err != nil {
+		t.Fatalf("LaunchManagedBrowser: %v", err)
+	}
+	if launchedPort != 19825 {
+		t.Fatalf("launched port = %d, want 19825", launchedPort)
+	}
+
+	launchManagedBrowserAtPort = func(int) (*CDPEndpoint, error) {
+		return nil, os.ErrNotExist
+	}
+	if err := LaunchManagedBrowser(1); err == nil {
+		t.Fatal("LaunchManagedBrowser should surface launch errors")
+	}
+}
+
 func TestRemoteConfigAndHTTPErrorBranches(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)

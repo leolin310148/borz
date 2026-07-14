@@ -155,6 +155,49 @@ func TestServerOptionsFromArgsRejectsBlankToken(t *testing.T) {
 	}
 }
 
+func TestServerOptionsEnsureBrowser(t *testing.T) {
+	t.Setenv("BORZ_SERVER_HOST", "")
+	t.Setenv("BB_BROWSER_SERVER_HOST", "")
+	t.Setenv("BORZ_SERVER_PORT", "")
+	t.Setenv("BB_BROWSER_SERVER_PORT", "")
+	t.Setenv("BORZ_TOKEN", "")
+	t.Setenv("BB_BROWSER_TOKEN", "")
+	t.Setenv("BORZ_TAB_IDLE_TIMEOUT", "")
+	t.Setenv("BB_BROWSER_TAB_IDLE_TIMEOUT", "")
+
+	opts, err := serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1"}, "0.0.0.0")
+	if err != nil {
+		t.Fatalf("serverOptionsFromArgs returned error: %v", err)
+	}
+	if opts.EnsureBrowser != nil {
+		t.Fatal("EnsureBrowser should be nil without --ensure-browser")
+	}
+
+	opts, err = serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1", "--ensure-browser"}, "0.0.0.0")
+	if err != nil {
+		t.Fatalf("serverOptionsFromArgs with --ensure-browser returned error: %v", err)
+	}
+	if opts.EnsureBrowser == nil {
+		t.Fatal("EnsureBrowser should be set with --ensure-browser")
+	}
+
+	if _, err := serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1", "--cdp-host", "192.168.1.10", "--ensure-browser"}, "0.0.0.0"); err == nil {
+		t.Fatal("--ensure-browser with a non-loopback --cdp-host should fail")
+	} else if !strings.Contains(err.Error(), "loopback") {
+		t.Fatalf("error %q should mention loopback", err)
+	}
+
+	got := strings.Join(serviceRunArgs("borz-test", opts), " ")
+	if !strings.Contains(got, "--ensure-browser") {
+		t.Fatalf("service args %q missing --ensure-browser", got)
+	}
+	opts.EnsureBrowser = nil
+	got = strings.Join(serviceRunArgs("borz-test", opts), " ")
+	if strings.Contains(got, "--ensure-browser") {
+		t.Fatalf("service args %q should not include --ensure-browser", got)
+	}
+}
+
 func TestServiceRunArgs(t *testing.T) {
 	t.Cleanup(func() { _ = config.SetProfile("") })
 	opts, err := serverOptionsFromArgs([]string{"service", "install", "--host", "127.0.0.1", "--port", "19824", "--token", "secret"}, "127.0.0.1")

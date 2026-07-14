@@ -261,6 +261,9 @@ The server refuses to bind a non-loopback address without a token. Clients authe
 | `--token` | `BORZ_TOKEN` | *(none)* | Required for non-loopback host |
 | `--cdp-host` | — | `127.0.0.1` | Chrome CDP host |
 | `--cdp-port` | — | `19825` | Chrome CDP port |
+| `--ensure-browser` | — | *(off)* | Launch the managed browser whenever CDP is unreachable |
+
+With `--ensure-browser`, the server owns its browser end-to-end: it launches the managed Chrome at startup if nothing is listening on the CDP port, and relaunches it after Chrome exits or updates — no external keep-alive needed. It only applies to a loopback `--cdp-host` (the server will not try to launch a browser on another machine), never touches a browser it did not launch (if something is already serving the CDP port it just attaches), and rate-limits launch attempts so a crash-looping browser is not respawned on every request.
 
 ### Windows service
 

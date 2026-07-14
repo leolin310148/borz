@@ -710,6 +710,15 @@ func defaultCanConnect(host string, port int) bool {
 
 // findBrowserExecutable is implemented per-platform in browser_*.go.
 
+// LaunchManagedBrowser starts the managed browser on the given CDP port and
+// waits until its endpoint is reachable. It exists for the daemon-side ensure
+// hook (`borz server --ensure-browser`), which main wires up as a callback so
+// the daemon package never imports client.
+func LaunchManagedBrowser(port int) error {
+	_, err := launchManagedBrowserAtPort(port)
+	return err
+}
+
 func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	executable := browserExecutableFinder()
 	if executable == "" {

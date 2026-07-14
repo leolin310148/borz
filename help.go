@@ -705,12 +705,15 @@ var commandHelp = map[string]cmdHelp{
 			"                         (env BORZ_TOKEN)",
 			"  --cdp-host <h>         Chrome DevTools host (default 127.0.0.1)",
 			"  --cdp-port <p>         Chrome DevTools port (default 19825)",
+			"  --ensure-browser       Launch the managed browser whenever the CDP endpoint",
+			"                         is unreachable (start and reconnect); loopback --cdp-host only",
 			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
 			"                         (flag > env BORZ_TAB_IDLE_TIMEOUT > profile idleTabTimeout > 30; 0=disable)",
 		},
 		Examples: []string{
 			"  borz server --host 127.0.0.1",
 			"  borz server --host 0.0.0.0 --token \"$BORZ_TOKEN\"",
+			"  borz server --host 0.0.0.0 --token \"$BORZ_TOKEN\" --ensure-browser",
 			"  borz server shutdown",
 		},
 		Notes: "Clients authenticate with 'Authorization: Bearer <token>'. " +
@@ -731,6 +734,8 @@ var commandHelp = map[string]cmdHelp{
 			"  --token <t>            Bearer token; required with non-loopback --host",
 			"  --cdp-host <h>         Chrome DevTools host (default 127.0.0.1)",
 			"  --cdp-port <p>         Chrome DevTools port (default 19825)",
+			"  --ensure-browser       Launch the managed browser whenever the CDP endpoint",
+			"                         is unreachable (loopback --cdp-host only)",
 			"  --idle-tab-timeout <m> Auto-close tabs idle for <m> minutes",
 		},
 		Examples: []string{

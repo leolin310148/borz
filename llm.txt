@@ -142,6 +142,8 @@ Recommended agent flow: `browser_tab_list` → `browser_navigate` (reuses tab wi
 ```bash
 borz server --host 0.0.0.0 --port 19824 --token "$(openssl rand -hex 16)"
 # refuses to bind non-loopback without --token
+# --ensure-browser: server launches/relaunches the managed Chrome whenever the
+# (loopback-only) CDP endpoint is unreachable — no external keep-alive needed
 ```
 
 Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, error?}`.
