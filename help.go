@@ -272,7 +272,7 @@ var commandHelp = map[string]cmdHelp{
 			"  borz screenshot",
 			"  borz screenshot ./out.png",
 		},
-		Notes: "With [path], the CLI writes the PNG on the machine running the CLI, including when --remote is used. Without [path] the image is returned as a base64 data URL in the JSON payload.",
+		Notes: "Snapshot ref highlights are automatically hidden while the image is captured. With [path], the CLI writes the PNG on the machine running the CLI, including when --remote is used. Without [path] the image is returned as a base64 data URL in the JSON payload.",
 	},
 	"viewport": {
 		Summary: "Inspect or emulate a tab viewport for responsive testing.",
@@ -692,7 +692,7 @@ var commandHelp = map[string]cmdHelp{
 			"  --max-tabs <n>          Keep at most <n> page tabs; close oldest non-current tabs",
 			"                         (flag > env BORZ_MAX_TABS > profile maxTabs > 30; 0=unlimited)",
 		},
-		Notes: "For a remote-accessible server with auth, use 'borz server' instead.",
+		Notes: "For an auto-started managed profile, shutdown also closes the Chrome instance owned by borz. External CDP-profile browsers are never closed. For a remote-accessible server with auth, use 'borz server' instead.",
 	},
 	"server": {
 		Summary: "Start the REST server (exposes /v1/* routes; requires a token when non-loopback).",
@@ -721,7 +721,8 @@ var commandHelp = map[string]cmdHelp{
 			"  borz server shutdown",
 		},
 		Notes: "Clients authenticate with 'Authorization: Bearer <token>'. " +
-			"Swagger UI is served at /docs and the OpenAPI spec at /openapi.yaml.",
+			"Swagger UI is served at /docs and the OpenAPI spec at /openapi.yaml. " +
+			"A managed browser actually launched by --ensure-browser is closed when the server shuts down; a pre-existing CDP endpoint is left running.",
 	},
 	"service": {
 		Summary: "Install or control borz as a Windows service.",
@@ -1116,19 +1117,21 @@ var commandHelp = map[string]cmdHelp{
 
 	// --- Subcommand pages: daemon.* ---
 	"daemon.status": {
-		Summary: "Print the daemon's JSON status, or 'Daemon is not running'.",
+		Summary: "Print daemon status; when stopped, explain that the next browser command auto-starts it.",
 		Usage:   "borz daemon status",
-		Notes:   "Identical payload to the top-level 'borz status'.",
+		Notes:   "Identical payload to the top-level 'borz status'. Status is read-only and does not start the daemon itself.",
 	},
 	"daemon.shutdown": {
 		Summary:  "Ask the running daemon to exit cleanly.",
 		Usage:    "borz daemon shutdown",
 		Examples: []string{"  borz daemon shutdown", "  borz daemon stop   # alias"},
+		Notes:    "Also closes a managed Chrome instance owned by borz. Browsers attached through a cdp profile are never closed.",
 	},
 	"daemon.stop": {
 		Summary:  "Alias for 'daemon shutdown'. Asks the running daemon to exit cleanly.",
 		Usage:    "borz daemon stop",
 		Examples: []string{"  borz daemon stop"},
+		Notes:    "Also closes a managed Chrome instance owned by borz. Browsers attached through a cdp profile are never closed.",
 	},
 
 	// --- Subcommand pages: server.* ---

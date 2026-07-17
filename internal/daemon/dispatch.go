@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/leolin310148/borz/internal/protocol"
@@ -22,6 +23,7 @@ var embeddedFS embed.FS
 var (
 	buildDomTreeScript     string
 	buildDomTreeScriptOnce sync.Once
+	screenshotMaskSequence atomic.Uint64
 )
 
 func loadBuildDomTreeScript() string {
@@ -360,6 +362,36 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 	}
 	tab.PrevDiffSnapshot = currDiff
 	return snapshot, diffData, nil
+}
+
+// captureScreenshot hides the DOM overlay produced by snapshot while Chrome
+// captures the page, then restores it. The temporary stylesheet is unique per
+// capture so concurrent screenshots of the same tab cannot unmask each other.
+// Masking is best-effort: a page without an execution context should still be
+// screenshot-able through CDP.
+func captureScreenshot(cdp *CdpConnection, targetID string) (json.RawMessage, error) {
+	token := strconv.FormatUint(screenshotMaskSequence.Add(1), 10)
+	tokenJSON, _ := json.Marshal(token)
+	hideScript := fmt.Sprintf(`((token) => {
+		const style = document.createElement('style');
+		style.setAttribute('data-borz-screenshot-mask', token);
+		style.textContent = '#playwright-highlight-container, [data-borz-snapshot-highlight-container] { visibility: hidden !important; }';
+		(document.head || document.documentElement).appendChild(style);
+	})(%s)`, tokenJSON)
+	if _, err := cdp.Evaluate(targetID, hideScript, false); err == nil {
+		defer func() {
+			restoreScript := fmt.Sprintf(`((token) => {
+				for (const style of document.querySelectorAll('style[data-borz-screenshot-mask]')) {
+					if (style.getAttribute('data-borz-screenshot-mask') === token) style.remove();
+				}
+			})(%s)`, tokenJSON)
+			_, _ = cdp.Evaluate(targetID, restoreScript, false)
+		}()
+	}
+
+	return cdp.SessionCommand(targetID, "Page.captureScreenshot", map[string]interface{}{
+		"format": "png", "fromSurface": true,
+	})
 }
 
 // --- Ref resolution ---
@@ -1119,9 +1151,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		})
 
 	case protocol.ActionScreenshot:
-		result, err := cdp.SessionCommand(target.ID, "Page.captureScreenshot", map[string]interface{}{
-			"format": "png", "fromSurface": true,
-		})
+		result, err := captureScreenshot(cdp, target.ID)
 		if err != nil {
 			return failResp(req.ID, err)
 		}

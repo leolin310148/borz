@@ -29,6 +29,17 @@ type ServerOptions struct {
 	CDPHost string
 	CDPPort int
 
+	// CloseOwnedBrowser closes the CDP browser during daemon shutdown. It is
+	// set only by the local client after discovery proves that the endpoint
+	// was launched (or previously recorded) by borz. External CDP profiles
+	// must leave this false.
+	CloseOwnedBrowser bool
+
+	// BrowserOwned reports dynamic ownership for server --ensure-browser:
+	// false while attached to a pre-existing endpoint, true after the ensure
+	// hook successfully launches a managed browser.
+	BrowserOwned func() bool
+
 	// IdleTabCloseMinutes auto-closes tabs after this many minutes without a
 	// user-initiated action. 0 disables. Negative values are clamped to 0.
 	IdleTabCloseMinutes int
@@ -238,12 +249,24 @@ func (s *Server) shutdown() error {
 	s.shutdownOnce.Do(func() {
 		fmt.Fprintf(os.Stderr, "borz daemon shutting down\n")
 		s.log("info", "daemon_stopping", observability.Fields{})
-		// Clean up daemon.json
-		os.Remove(config.DaemonJSONPath())
 		if s.cancelReaper != nil {
 			s.cancelReaper()
 		}
+		browserOwned := s.opts.CloseOwnedBrowser
+		if s.opts.BrowserOwned != nil {
+			browserOwned = browserOwned || s.opts.BrowserOwned()
+		}
+		if browserOwned && s.cdp.Connected() {
+			if _, err := s.cdp.BrowserCommandWithTimeout("Browser.close", nil, 2*time.Second); err != nil {
+				fmt.Fprintf(os.Stderr, "close managed browser during daemon shutdown: %v\n", err)
+				s.log("warn", "managed_browser_close_failed", observability.Fields{ErrorCode: observability.ErrorCode(err.Error())})
+			}
+		}
 		s.cdp.Disconnect()
+		// Keep daemon.json present until the owned browser has closed and CDP is
+		// disconnected, preventing a concurrent CLI call from launching a
+		// replacement against the same user-data directory mid-shutdown.
+		os.Remove(config.DaemonJSONPath())
 		if s.httpSrv == nil {
 			return
 		}

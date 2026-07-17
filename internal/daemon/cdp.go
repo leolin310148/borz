@@ -1007,8 +1007,17 @@ func (c *CdpConnection) HasSession(targetID string) bool {
 
 // BrowserCommand sends a browser-level CDP command and returns the result.
 func (c *CdpConnection) BrowserCommand(method string, params interface{}) (json.RawMessage, error) {
+	return c.BrowserCommandWithTimeout(method, params, 30*time.Second)
+}
+
+// BrowserCommandWithTimeout sends a browser-level CDP command with a
+// caller-provided timeout.
+func (c *CdpConnection) BrowserCommandWithTimeout(method string, params interface{}, timeout time.Duration) (json.RawMessage, error) {
 	if !c.connected.Load() {
 		return nil, fmt.Errorf("CDP not connected")
+	}
+	if timeout <= 0 {
+		timeout = 30 * time.Second
 	}
 
 	id := c.nextID.Add(1)
@@ -1043,7 +1052,7 @@ func (c *CdpConnection) BrowserCommand(method string, params interface{}) (json.
 		return result, nil
 	case err := <-cmd.errCh:
 		return nil, err
-	case <-time.After(30 * time.Second):
+	case <-time.After(timeout):
 		c.pending.Delete(id)
 		return nil, fmt.Errorf("timeout waiting for %s", method)
 	}

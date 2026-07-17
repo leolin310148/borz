@@ -877,6 +877,51 @@ func TestDispatch_Screenshot(t *testing.T) {
 	if len(data) == 0 {
 		t.Fatal("saved screenshot is empty")
 	}
+
+	var actionCalls []fakeCall
+	for _, call := range f.Calls() {
+		if call.Method == "Runtime.evaluate" || call.Method == "Page.captureScreenshot" {
+			actionCalls = append(actionCalls, call)
+		}
+	}
+	if len(actionCalls) != 6 {
+		t.Fatalf("screenshot action calls = %d, want 6: %+v", len(actionCalls), actionCalls)
+	}
+	for i := 0; i < len(actionCalls); i += 3 {
+		if actionCalls[i].Method != "Runtime.evaluate" || !strings.Contains(string(actionCalls[i].Params), "visibility: hidden") {
+			t.Fatalf("call %d should hide snapshot highlights: %+v", i, actionCalls[i])
+		}
+		if actionCalls[i+1].Method != "Page.captureScreenshot" {
+			t.Fatalf("call %d should capture screenshot: %+v", i+1, actionCalls[i+1])
+		}
+		if actionCalls[i+2].Method != "Runtime.evaluate" || !strings.Contains(string(actionCalls[i+2].Params), "style.remove()") {
+			t.Fatalf("call %d should restore snapshot highlights: %+v", i+2, actionCalls[i+2])
+		}
+	}
+}
+
+func TestDispatch_Screenshot_RestoresHighlightsAfterCaptureFailure(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	f.On("Page.captureScreenshot", func(json.RawMessage) (interface{}, error) {
+		return nil, os.ErrInvalid
+	})
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionScreenshot})
+	if resp.Success {
+		t.Fatalf("screenshot should fail: %+v", resp)
+	}
+
+	var actionCalls []fakeCall
+	for _, call := range f.Calls() {
+		if call.Method == "Runtime.evaluate" || call.Method == "Page.captureScreenshot" {
+			actionCalls = append(actionCalls, call)
+		}
+	}
+	if len(actionCalls) != 3 || actionCalls[2].Method != "Runtime.evaluate" || !strings.Contains(string(actionCalls[2].Params), "style.remove()") {
+		t.Fatalf("snapshot highlights were not restored after capture failure: %+v", actionCalls)
+	}
 }
 
 func TestDispatch_Viewport_Mobile(t *testing.T) {

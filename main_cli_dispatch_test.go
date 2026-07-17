@@ -1033,6 +1033,7 @@ func TestStartDaemonForegroundBuildsServerOptions(t *testing.T) {
 			"--port", "21111",
 			"--cdp-host", "chrome.test",
 			"--cdp-port", "9223",
+			"--close-owned-browser",
 			"--idle-tab-timeout", "4",
 			"--max-tabs", "14",
 		})
@@ -1040,7 +1041,7 @@ func TestStartDaemonForegroundBuildsServerOptions(t *testing.T) {
 	if out != "" {
 		t.Fatalf("unexpected stderr = %q", out)
 	}
-	if got.Host != "127.0.0.1" || got.Port != 21111 || got.CDPHost != "chrome.test" || got.CDPPort != 9223 || got.IdleTabCloseMinutes != 4 || got.MaxTabs != 14 || got.Token == "" {
+	if got.Host != "127.0.0.1" || got.Port != 21111 || got.CDPHost != "chrome.test" || got.CDPPort != 9223 || !got.CloseOwnedBrowser || got.IdleTabCloseMinutes != 4 || got.MaxTabs != 14 || got.Token == "" {
 		t.Fatalf("server options = %+v", got)
 	}
 }
@@ -1070,7 +1071,7 @@ func TestHandleServerBuildsServerOptions(t *testing.T) {
 	if !strings.Contains(errOut, "server starting on 127.0.0.1:21112") || !strings.Contains(errOut, "Authorization required") {
 		t.Fatalf("stderr = %q", errOut)
 	}
-	if got.Host != "127.0.0.1" || got.Port != 21112 || got.Token != "secret" || got.CDPHost != "chrome.test" || got.CDPPort != 9224 || got.IdleTabCloseMinutes != 8 || got.MaxTabs != 18 || got.Version != version {
+	if got.Host != "127.0.0.1" || got.Port != 21112 || got.Token != "secret" || got.CDPHost != "chrome.test" || got.CDPPort != 9224 || got.CloseOwnedBrowser || got.IdleTabCloseMinutes != 8 || got.MaxTabs != 18 || got.Version != version {
 		t.Fatalf("server options = %+v", got)
 	}
 }

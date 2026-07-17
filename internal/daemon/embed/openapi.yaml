@@ -648,6 +648,7 @@ paths:
     post:
       tags: [observation]
       summary: Capture a PNG screenshot
+      description: Snapshot ref highlights are temporarily hidden while the image is captured.
       requestBody:
         content:
           application/json:

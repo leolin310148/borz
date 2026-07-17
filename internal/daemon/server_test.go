@@ -414,3 +414,57 @@ func TestServerShutdownCleansState(t *testing.T) {
 		t.Fatal("reaper context was not cancelled")
 	}
 }
+
+func TestServerShutdownClosesOnlyOwnedManagedBrowser(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts ServerOptions
+		want int
+	}{
+		{name: "owned managed browser", opts: ServerOptions{CloseOwnedBrowser: true}, want: 1},
+		{name: "ensure hook launched browser", opts: ServerOptions{BrowserOwned: func() bool { return true }}, want: 1},
+		{name: "external cdp browser", opts: ServerOptions{BrowserOwned: func() bool { return false }}, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeCDP(t)
+			setupOnePage(f, "T1", "https://a", "A")
+			f.On("Browser.close", func(json.RawMessage) (interface{}, error) {
+				return map[string]interface{}{}, nil
+			})
+			c := connectCdp(t, f)
+
+			s := NewServer(tc.opts)
+			s.cdp = c
+			if err := s.shutdown(); err != nil {
+				t.Fatalf("shutdown: %v", err)
+			}
+			closed := 0
+			for _, call := range f.Calls() {
+				if call.Method == "Browser.close" {
+					closed++
+				}
+			}
+			if closed != tc.want {
+				t.Fatalf("Browser.close calls = %d, want %d", closed, tc.want)
+			}
+		})
+	}
+}
+
+func TestServerShutdownContinuesWhenOwnedBrowserCloseFails(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	f.On("Browser.close", func(json.RawMessage) (interface{}, error) {
+		return nil, errors.New("close failed")
+	})
+	c := connectCdp(t, f)
+
+	s := NewServer(ServerOptions{CloseOwnedBrowser: true})
+	s.cdp = c
+	if err := s.shutdown(); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	if c.Connected() {
+		t.Fatal("daemon should disconnect even when Browser.close fails")
+	}
+}

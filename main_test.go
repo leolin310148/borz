@@ -182,6 +182,9 @@ func TestServerOptionsEnsureBrowser(t *testing.T) {
 	if opts.EnsureBrowser == nil {
 		t.Fatal("EnsureBrowser should be set with --ensure-browser")
 	}
+	if opts.BrowserOwned == nil || opts.BrowserOwned() {
+		t.Fatal("BrowserOwned should start false until the ensure hook launches Chrome")
+	}
 
 	if _, err := serverOptionsFromArgs([]string{"server", "--host", "127.0.0.1", "--cdp-host", "192.168.1.10", "--ensure-browser"}, "0.0.0.0"); err == nil {
 		t.Fatal("--ensure-browser with a non-loopback --cdp-host should fail")

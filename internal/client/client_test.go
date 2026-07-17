@@ -961,6 +961,9 @@ func TestDiscoverCDPPort_EnvVar(t *testing.T) {
 	if ep == nil {
 		t.Fatal("nil endpoint")
 	}
+	if ep.OwnedByBorz {
+		t.Fatal("BORZ_CDP_URL endpoint must not be marked as borz-owned")
+	}
 }
 
 func TestDiscoverCDPPort_ManagedPortFile(t *testing.T) {
@@ -991,6 +994,9 @@ func TestDiscoverCDPPort_ManagedPortFile(t *testing.T) {
 	}
 	if ep.Port != toInt(portStr) {
 		t.Errorf("port = %d, want %s", ep.Port, portStr)
+	}
+	if !ep.OwnedByBorz {
+		t.Fatal("managed port-file endpoint should be marked as borz-owned")
 	}
 }
 
@@ -1068,6 +1074,9 @@ func TestDiscoverCDPPort_NamedProfileUsesProfileState(t *testing.T) {
 	}
 	if ep.Port == config.DefaultCDPPort {
 		t.Fatalf("named profile should not use default CDP port: %+v", ep)
+	}
+	if !ep.OwnedByBorz {
+		t.Fatal("newly launched managed endpoint should be marked as borz-owned")
 	}
 	wantUserDataArg := "--user-data-dir=" + filepath.Join(home, "profiles", "work", "browser", "user-data")
 	if !containsArg(launchedArgs, wantUserDataArg) {
@@ -1307,7 +1316,9 @@ func TestEnsureDaemon_NamedProfileSpawnsProfileDaemon(t *testing.T) {
 	oldDiscover := discoverCDPPort
 	oldExecutable := osExecutable
 	oldCommand := execCommand
-	discoverCDPPort = func() (*CDPEndpoint, error) { return &CDPEndpoint{Host: "127.0.0.1", Port: 33333}, nil }
+	discoverCDPPort = func() (*CDPEndpoint, error) {
+		return &CDPEndpoint{Host: "127.0.0.1", Port: 33333, OwnedByBorz: true}, nil
+	}
 	osExecutable = func() (string, error) { return "/bin/echo", nil }
 	var daemonArgs []string
 	execCommand = func(_ string, args ...string) *exec.Cmd {
@@ -1337,6 +1348,9 @@ func TestEnsureDaemon_NamedProfileSpawnsProfileDaemon(t *testing.T) {
 	}
 	if !containsArg(daemonArgs, "--port") {
 		t.Fatalf("daemon args should include an auto-selected --port: %v", daemonArgs)
+	}
+	if !containsArg(daemonArgs, "--close-owned-browser") {
+		t.Fatalf("owned managed endpoint should close with its daemon: %v", daemonArgs)
 	}
 	if cachedInfo == nil || !daemonReady || cachedProfile != "work" {
 		t.Fatalf("named profile daemon state not cached: info=%+v ready=%v profile=%q", cachedInfo, daemonReady, cachedProfile)
@@ -1441,6 +1455,9 @@ func TestEnsureDaemon_CDPProfileSpawnsDaemonAtDeclaredEndpoint(t *testing.T) {
 		if !containsArg(daemonArgs, want) {
 			t.Fatalf("daemon args missing %q: %v", want, daemonArgs)
 		}
+	}
+	if containsArg(daemonArgs, "--close-owned-browser") {
+		t.Fatalf("external cdp profile must not close its browser: %v", daemonArgs)
 	}
 }
 

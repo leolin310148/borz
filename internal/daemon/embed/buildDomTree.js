@@ -153,6 +153,9 @@ window.buildDomTree = (
         container.style.display = showHighlightElements ? 'block' : 'none';
         document.body.appendChild(container);
       }
+      // Mark borz-owned highlights so observation commands such as screenshot
+      // can temporarily exclude them without changing the page itself.
+      container.setAttribute('data-borz-snapshot-highlight-container', '');
 
       // Get element client rects
       const rects = element.getClientRects(); // Use getClientRects()

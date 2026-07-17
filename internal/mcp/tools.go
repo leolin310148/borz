@@ -248,7 +248,7 @@ var snapshotTool = mcp.NewTool("browser_snapshot",
 )
 
 var screenshotTool = mcp.NewTool("browser_screenshot",
-	mcp.WithDescription("Screenshot the user's real Chrome tab as they see it (logged in, JS-rendered, styled). Returns base64-encoded PNG. Use when visual state matters — layout, rendered charts, canvas, media, or verifying a UI change — since fetched HTML can't show any of that."),
+	mcp.WithDescription("Screenshot the user's real Chrome tab as they see it (logged in, JS-rendered, styled), automatically excluding ref highlights added by browser_snapshot. Returns base64-encoded PNG. Use when visual state matters — layout, rendered charts, canvas, media, or verifying a UI change — since fetched HTML can't show any of that."),
 	tabParam(),
 )
 

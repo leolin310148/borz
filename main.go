@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/leolin310148/borz/internal/client"
@@ -30,6 +31,8 @@ import (
 )
 
 var version = "0.1.0"
+
+const daemonNotRunningMessage = "Daemon is not running. This is normal in on-demand mode; it will start automatically with the next browser command."
 
 var jqExpression string
 var exitFunc = os.Exit
@@ -62,7 +65,7 @@ var cliValueFlagSet = makeFlagSet(cliValueFlags)
 
 var cliBoolFlags = []string{
 	"-i", "-c",
-	"--all", "--baked", "--check", "--clear", "--compact", "--diff", "--ensure-browser", "--focused",
+	"--all", "--baked", "--check", "--clear", "--close-owned-browser", "--compact", "--diff", "--ensure-browser", "--focused",
 	"--force", "--help", "--interactive", "--json", "--lossless", "--managed",
 	"--mask-by-default", "--mobile", "--new", "--no-auto-await", "--no-check",
 	"--no-touch", "--paste", "--recover", "--recursive", "--remote", "--reset", "--save-as",
@@ -667,6 +670,10 @@ func main() {
 	case "status":
 		raw, err := client.GetDaemonStatus()
 		if err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "daemon is not running") {
+				fmt.Println(daemonNotRunningMessage)
+				return
+			}
 			fatal(err.Error())
 		}
 		var pretty json.RawMessage
@@ -1158,8 +1165,11 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 		}
 		raw, err := client.GetLocalDaemonStatus()
 		if err != nil {
-			fmt.Println("Daemon is not running")
-			return
+			if strings.Contains(strings.ToLower(err.Error()), "daemon is not running") {
+				fmt.Println(daemonNotRunningMessage)
+				return
+			}
+			fatal(fmt.Sprintf("check daemon status: %v", err))
 		}
 		out, _ := json.MarshalIndent(json.RawMessage(raw), "", "  ")
 		fmt.Println(string(out))
@@ -1292,6 +1302,7 @@ func startDaemonForeground(rawArgs []string) {
 		Token:               token,
 		CDPHost:             cdpHost,
 		CDPPort:             cdpPort,
+		CloseOwnedBrowser:   hasFlag(rawArgs, "--close-owned-browser"),
 		IdleTabCloseMinutes: resolveIdleTabTimeout(rawArgs),
 		MaxTabs:             resolveMaxTabs(rawArgs),
 		Version:             version,
@@ -1400,12 +1411,21 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 	}
 
 	var ensureBrowser func() error
+	var browserOwned func() bool
 	if hasFlag(rawArgs, "--ensure-browser") {
 		if isRemoteBind(cdpHost) {
 			return daemon.ServerOptions{}, fmt.Errorf("--ensure-browser only manages a local browser, but --cdp-host=%s is not loopback. Drop the flag or point --cdp-host at 127.0.0.1", cdpHost)
 		}
 		launchPort := cdpPort
-		ensureBrowser = func() error { return client.LaunchManagedBrowser(launchPort) }
+		var owned atomic.Bool
+		ensureBrowser = func() error {
+			if err := client.LaunchManagedBrowser(launchPort); err != nil {
+				return err
+			}
+			owned.Store(true)
+			return nil
+		}
+		browserOwned = owned.Load
 	}
 
 	return daemon.ServerOptions{
@@ -1418,6 +1438,7 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 		MaxTabs:             resolveMaxTabs(rawArgs),
 		Version:             version,
 		EnsureBrowser:       ensureBrowser,
+		BrowserOwned:        browserOwned,
 	}, nil
 }
 

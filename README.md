@@ -176,6 +176,10 @@ When you run any command, `borz`:
 
 The daemon runs in the background and auto-discovers your browser. You don't need to manage it manually. If a Borz-managed Chrome exits while the local daemon survives, the next CLI or MCP command relaunches Chrome on the daemon's existing CDP port and reconnects automatically; custom and remote CDP endpoints remain caller-managed.
 
+`borz status` and `borz daemon status` are read-only. If the daemon is stopped,
+they explicitly report that this is normal in on-demand mode and that the next
+browser command will start it automatically.
+
 ## MCP Server
 
 `borz` includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server, letting AI assistants like Claude control your browser directly.
@@ -223,7 +227,7 @@ through the selected profile. `server` resolves adapters and trust on the
 selected daemon instead. This lets a local adapter drive a browser behind a
 local CDP daemon or a remote borz server without installing the adapter there.
 
-The workflow mirrors the CLI: call `browser_snapshot` to see the page structure with element refs, then use those refs with interaction tools like `browser_click` or `browser_fill`. Screenshots are returned as inline base64 PNG images.
+The workflow mirrors the CLI: call `browser_snapshot` to see the page structure with element refs, then use those refs with interaction tools like `browser_click` or `browser_fill`. Screenshots are returned as inline base64 PNG images and automatically exclude snapshot ref highlights.
 
 Most action tools accept optional `waitFor` (CSS selector) and `timeout` (ms, default 10000) params — after the action runs, the daemon polls `document.querySelector(waitFor)` until it returns a non-null node or the timeout elapses. Use this for SPA loads or modals instead of fixed `browser_wait` calls.
 
@@ -393,6 +397,11 @@ Behaviour worth knowing:
   silently starting a managed Chrome.
 - A `remote` profile runs **no local daemon**; `borz daemon status --profile
   mini` says so instead of pretending one exists.
+- An auto-started daemon owns the managed Chrome instance it discovered or
+  launched, and closes that instance on daemon shutdown. A `cdp` profile only
+  attaches to an external browser, so shutting down its daemon never closes
+  the browser. Likewise, `server --ensure-browser` closes Chrome on shutdown
+  only if its ensure hook actually launched that Chrome instance.
 - `idleTabTimeout` (minutes, `0` = never auto-close idle tabs) applies to
   `managed` and `cdp` profiles and rides along when the CLI auto-spawns the
   daemon — useful for a cdp target you don't own and must never reap.
@@ -643,6 +652,8 @@ Example output:
 The `[ref=N]` numbers are what you use with interaction commands like `click`, `fill`, `type`, etc.
 
 #### `screenshot`
+
+Snapshot ref highlights are temporarily hidden during capture, so they do not appear in the PNG.
 
 ```bash
 # Capture screenshot (returned as base64 data URL in JSON)

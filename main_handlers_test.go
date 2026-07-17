@@ -278,12 +278,22 @@ func TestHandleDaemonAndServerStatusWhenStopped(t *testing.T) {
 	t.Cleanup(client.ResetForTests)
 	t.Setenv("BORZ_HOME", t.TempDir())
 	out := captureStdout(t, func() { handleDaemon([]string{"status"}, nil) })
-	if !strings.Contains(out, "Daemon is not running") {
+	if !strings.Contains(out, "Daemon is not running") || !strings.Contains(out, "start automatically") || !strings.Contains(out, "next browser command") {
 		t.Fatalf("daemon status output = %q", out)
 	}
 	out = captureStdout(t, func() { handleServer([]string{"status"}, nil) })
 	if !strings.Contains(out, "Server is not running") {
 		t.Fatalf("server status output = %q", out)
+	}
+}
+
+func TestMainStatusWhenStoppedExplainsAutostart(t *testing.T) {
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+	t.Setenv("BORZ_HOME", t.TempDir())
+	out := captureStdout(t, func() { runMainArgsForExit("status") })
+	if !strings.Contains(out, "Daemon is not running") || !strings.Contains(out, "start automatically") || !strings.Contains(out, "next browser command") {
+		t.Fatalf("top-level status output = %q", out)
 	}
 }
 

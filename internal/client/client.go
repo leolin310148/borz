@@ -460,6 +460,9 @@ func EnsureDaemon() error {
 		"--cdp-host", cdpInfo.Host,
 		"--cdp-port", strconv.Itoa(cdpInfo.Port),
 	}
+	if cdpInfo.OwnedByBorz {
+		args = append(args, "--close-owned-browser")
+	}
 	// The profile's idleTabTimeout rides along so an auto-spawned daemon
 	// honours it without a hand-crafted service definition. The env var
 	// outranks the profile and the daemon inherits our environment, so the
@@ -696,8 +699,9 @@ func GetLocalDaemonStatus() (json.RawMessage, error) {
 
 // CDPEndpoint holds host:port for a CDP connection.
 type CDPEndpoint struct {
-	Host string
-	Port int
+	Host        string
+	Port        int
+	OwnedByBorz bool // true only for a browser launched or previously recorded by borz
 }
 
 func defaultCanConnect(host string, port int) bool {
@@ -803,7 +807,7 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		if canConnect("127.0.0.1", port) {
-			return &CDPEndpoint{Host: "127.0.0.1", Port: port}, nil
+			return &CDPEndpoint{Host: "127.0.0.1", Port: port, OwnedByBorz: true}, nil
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
@@ -868,7 +872,7 @@ func DiscoverCDPPort() (*CDPEndpoint, error) {
 	if data, err := os.ReadFile(config.ManagedPortFile()); err == nil {
 		if port, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && port > 0 && port <= 65535 {
 			if canConnect("127.0.0.1", port) {
-				return &CDPEndpoint{Host: "127.0.0.1", Port: port}, nil
+				return &CDPEndpoint{Host: "127.0.0.1", Port: port, OwnedByBorz: true}, nil
 			}
 		}
 	}

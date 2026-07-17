@@ -50,7 +50,7 @@ borz eval --unwrap <script>                  # print result raw (strings unquote
 borz eval --file <path>                      # read script from disk
 borz eval --file ./x.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSON args as top-level consts
 borz eval "await fetch('/x').then(...)"      # top-level await auto-wraps in async IIFE
-borz screenshot                              # base64 PNG in JSON
+borz screenshot                              # base64 PNG in JSON; snapshot ref highlights excluded
 borz get <url|title|text|href|value|class> [ref]
 borz network [requests|clear] [--filter] [--method] [--status code|class] [--with-body] [--limit n]
 borz network requests --tail [--interval duration|ms]   # live stream of new requests (Ctrl+C to stop)
@@ -72,7 +72,7 @@ borz window list|new|focus|close           # browser windows (extension)
 borz site list|search|info|run [--scope client|server]  # client catalog by default; server = selected daemon
 borz site update|new|lint|trust             # manage client-side adapters
 borz <platform>/<adapter> [args]            # shorthand for "site run"
-borz status | daemon [shutdown]
+borz status | daemon [status|shutdown]         # status is read-only; if stopped, next browser command auto-starts it
 borz doctor [--json]                         # diagnose CLI/daemon/CDP/tabs end-to-end
 borz logs path|tail|stats [--since 7d]       # inspect privacy-safe local operational logs
 borz server --host 0.0.0.0 --token ... [shutdown]
@@ -80,6 +80,8 @@ borz profile list|show|add|set|rm            # named browser targets (profiles.j
 borz help [command [sub]]                    # per-command help
 borz <command> --help                        # same, inline form
 ```
+
+Shutting down an auto-started daemon also closes its borz-owned managed Chrome instance. Browsers attached through a `cdp` profile remain externally owned and are never closed by daemon shutdown. `server --ensure-browser` closes Chrome only when its ensure hook actually launched that instance.
 
 Global flags: `--profile <name>`, `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only), `--since <seq|last_action>`.
 
