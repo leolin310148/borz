@@ -260,3 +260,27 @@ func ManagedPortFile() string {
 func ManagedUserDataDir() string {
 	return filepath.Join(ManagedBrowserDir(), "user-data")
 }
+
+// ManagedStateFile returns the profile-scoped managed browser identity file.
+// Unlike cdp-port, this records the browser-level CDP identity so a stale port
+// cannot make an unrelated Chrome look borz-owned.
+func ManagedStateFile() string {
+	return filepath.Join(ManagedBrowserDir(), "browser.json")
+}
+
+// StartupLockPath serializes client-side daemon discovery and auto-start for
+// one profile across independent CLI processes.
+func StartupLockPath() string {
+	return filepath.Join(runtimeDir(), "startup.lock")
+}
+
+// BrowserLockPath serializes managed Chrome launch/recovery for one profile.
+func BrowserLockPath() string {
+	return filepath.Join(ManagedBrowserDir(), "browser.lock")
+}
+
+// DaemonLockPath is held for the lifetime of a daemon, making daemon.json a
+// single-writer state file even when named profiles use dynamic listen ports.
+func DaemonLockPath() string {
+	return filepath.Join(runtimeDir(), "daemon.lock")
+}

@@ -392,6 +392,10 @@ In `profiles.json` a cdp endpoint is spelled `cdpUrl`, or alternatively
 
 Behaviour worth knowing:
 
+- `BORZ_CDP_URL` remains a legacy override for the default profile only. It
+  cannot redirect a named `managed` profile; declare a `cdp` profile for an
+  external endpoint instead. This keeps a profile name bound to one browser
+  identity.
 - A `cdp` profile **never launches a browser**. If the endpoint is unreachable
   (tunnel down, Chrome quit), the command fails with a clear error instead of
   silently starting a managed Chrome.
@@ -417,8 +421,10 @@ Behaviour worth knowing:
   `maxTabs`. “Oldest” means the daemon's observed `CreatedAt` order; for tabs
   that predate daemon startup, CDP does not expose their original creation time.
 - `daemon.json`, the managed `browser/user-data` dir, and `browser/cdp-port`
-  remain per-profile **runtime state** — do not hand-edit them into
-  `profiles.json`.
+  remain per-profile **runtime state**. Managed profiles also record a
+  `browser/browser.json` CDP identity and use per-profile lifecycle locks so
+  concurrent CLI processes cannot publish different browser/daemon instances.
+  Do not hand-edit these files into `profiles.json`.
 
 ### CLI help and typo hints
 

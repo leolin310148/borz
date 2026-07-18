@@ -35,6 +35,7 @@ func resetState() {
 	cachedProfile = ""
 	resolvedTarget = nil
 	resolvedTargetProfile = ""
+	readBrowserID = readCDPBrowserID
 	_ = config.SetProfile("")
 }
 
@@ -966,10 +967,24 @@ func TestDiscoverCDPPort_EnvVar(t *testing.T) {
 	}
 }
 
+func TestDiscoverCDPPort_RejectsEnvOverrideForNamedManagedProfile(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
+	t.Setenv("BORZ_CDP_URL", "http://127.0.0.1:9222")
+	if err := config.SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := DiscoverCDPPort(); err == nil || !strings.Contains(err.Error(), "cannot override named managed profile") {
+		t.Fatalf("DiscoverCDPPort error = %v", err)
+	}
+}
+
 func TestDiscoverCDPPort_ManagedPortFile(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/json/version" {
-			w.Write([]byte("{}"))
+			fmt.Fprintf(w, `{"webSocketDebuggerUrl":"ws://%s/devtools/browser/legacy-browser"}`, r.Host)
 		}
 	}))
 	defer ts.Close()
@@ -997,6 +1012,46 @@ func TestDiscoverCDPPort_ManagedPortFile(t *testing.T) {
 	}
 	if !ep.OwnedByBorz {
 		t.Fatal("managed port-file endpoint should be marked as borz-owned")
+	}
+	state, err := readManagedBrowserState()
+	if err != nil {
+		t.Fatalf("legacy state was not migrated: %v", err)
+	}
+	if state.Port != ep.Port || state.BrowserID != "legacy-browser" {
+		t.Fatalf("migrated state = %+v", state)
+	}
+}
+
+func TestDiscoverCDPPort_RejectsManagedBrowserIdentityMismatch(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/json/version" {
+			fmt.Fprintf(w, `{"webSocketDebuggerUrl":"ws://%s/devtools/browser/live-browser"}`, r.Host)
+		}
+	}))
+	defer ts.Close()
+	host, portStr, _ := net.SplitHostPort(strings.TrimPrefix(ts.URL, "http://"))
+	if host != "127.0.0.1" {
+		t.Skipf("test server host = %s, managed discovery requires 127.0.0.1", host)
+	}
+	port := toInt(portStr)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	t.Setenv("BORZ_CDP_URL", "")
+	if err := os.MkdirAll(config.ManagedBrowserDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	state := managedBrowserState{
+		Version: managedBrowserStateVersion, Port: port, BrowserID: "recorded-browser", UserDataDir: config.ManagedUserDataDir(),
+	}
+	data, _ := json.Marshal(state)
+	if err := os.WriteFile(config.ManagedStateFile(), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := DiscoverCDPPort(); err == nil || !strings.Contains(err.Error(), "identity mismatch") {
+		t.Fatalf("DiscoverCDPPort error = %v", err)
 	}
 }
 
@@ -1053,12 +1108,16 @@ func TestDiscoverCDPPort_NamedProfileUsesProfileState(t *testing.T) {
 	oldFinder := browserExecutableFinder
 	oldCanConnect := canConnect
 	oldCommand := execCommand
+	oldReadBrowserID := readBrowserID
 	browserExecutableFinder = func() string { return "/bin/echo" }
+	launched := false
 	canConnect = func(host string, port int) bool {
-		return host == "127.0.0.1" && port != config.DefaultCDPPort
+		return launched && host == "127.0.0.1" && port != config.DefaultCDPPort
 	}
+	readBrowserID = func(string, int, time.Duration) (string, error) { return "managed-browser", nil }
 	var launchedArgs []string
 	execCommand = func(_ string, args ...string) *exec.Cmd {
+		launched = true
 		launchedArgs = append([]string(nil), args...)
 		return exec.Command("/bin/sh", "-c", "exit 0")
 	}
@@ -1066,6 +1125,7 @@ func TestDiscoverCDPPort_NamedProfileUsesProfileState(t *testing.T) {
 		browserExecutableFinder = oldFinder
 		canConnect = oldCanConnect
 		execCommand = oldCommand
+		readBrowserID = oldReadBrowserID
 	})
 
 	ep, err := DiscoverCDPPort()
@@ -1265,6 +1325,41 @@ func TestRecoverDisconnectedDaemonSkipsUnmanagedAndMismatchedEndpoints(t *testin
 	}
 	if launches != 0 {
 		t.Fatalf("unexpected managed browser launches: %d", launches)
+	}
+}
+
+func TestRecoverDisconnectedDaemonRejectsReachableDifferentBrowser(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	t.Setenv("BORZ_HOME", t.TempDir())
+	if err := publishManagedBrowserState(config.DefaultCDPPort, "recorded-browser"); err != nil {
+		t.Fatal(err)
+	}
+
+	oldCanConnect := canConnect
+	oldReadBrowserID := readBrowserID
+	oldLaunch := launchManagedBrowserAtPort
+	canConnect = func(string, int) bool { return true }
+	readBrowserID = func(string, int, time.Duration) (string, error) { return "different-browser", nil }
+	launches := 0
+	launchManagedBrowserAtPort = func(port int) (*CDPEndpoint, error) {
+		launches++
+		return &CDPEndpoint{Host: "127.0.0.1", Port: port}, nil
+	}
+	t.Cleanup(func() {
+		canConnect = oldCanConnect
+		readBrowserID = oldReadBrowserID
+		launchManagedBrowserAtPort = oldLaunch
+	})
+
+	err := recoverDisconnectedDaemon(protocol.DaemonStatus{
+		Running: true, CDPConnected: true, CDPHost: "127.0.0.1", CDPPort: config.DefaultCDPPort,
+	})
+	if err == nil || !strings.Contains(err.Error(), "identity check failed") {
+		t.Fatalf("recovery error = %v", err)
+	}
+	if launches != 0 {
+		t.Fatalf("identity mismatch launched %d browsers", launches)
 	}
 }
 

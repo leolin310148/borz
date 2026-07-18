@@ -123,6 +123,11 @@ setup` writes the `remote` profile; a legacy `~/.borz/client.json` is migrated
 into profiles.json automatically (and left on disk). `--remote` combined with
 an explicit `--profile` is an error.
 
+`BORZ_CDP_URL` is a legacy override for the default profile only. Named
+managed profiles reject it; use a declared `cdp` profile for an external CDP
+endpoint. Managed browser identity and lifecycle locks are profile-scoped, so
+concurrent CLI processes converge on one daemon and one recorded Chrome.
+
 ## MCP (for AI agents)
 
 ```bash

@@ -18,6 +18,7 @@ import (
 	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/daemon/extbridge"
 	"github.com/leolin310148/borz/internal/observability"
+	"github.com/leolin310148/borz/internal/processlock"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -157,6 +158,19 @@ func (s *Server) RunContext(ctx context.Context) error {
 			_ = ln.Close()
 		}
 	}()
+
+	if _, err := config.EnsureRuntimeDir(); err != nil {
+		return err
+	}
+	daemonLock, err := processlock.Acquire(config.DaemonLockPath(), 0)
+	if err != nil {
+		profileName := config.Profile()
+		if profileName == "" {
+			profileName = "default"
+		}
+		return fmt.Errorf("daemon already running for profile %q: %w", profileName, err)
+	}
+	defer daemonLock.Release()
 
 	if logger, logErr := observability.Open("daemon", s.opts.Version); logErr != nil {
 		fmt.Fprintf(os.Stderr, "borz operational log unavailable: %v\n", logErr)

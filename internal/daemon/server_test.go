@@ -14,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/daemon/extbridge"
 	"github.com/leolin310148/borz/internal/observability"
+	"github.com/leolin310148/borz/internal/processlock"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -387,6 +389,33 @@ func TestServerRunReportsAddressInUse(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "address already in use") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestServerRunRejectsSecondDaemonForProfile(t *testing.T) {
+	t.Setenv("BORZ_HOME", t.TempDir())
+	if err := config.SetProfile("locked"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = config.SetProfile("") })
+	if _, err := config.EnsureRuntimeDir(); err != nil {
+		t.Fatal(err)
+	}
+	held, err := processlock.Acquire(config.DaemonLockPath(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	s := NewServer(ServerOptions{Host: "127.0.0.1", Port: port, CDPHost: "127.0.0.1", CDPPort: 1})
+	if err := s.RunContext(context.Background()); err == nil || !strings.Contains(err.Error(), "daemon already running for profile") {
+		t.Fatalf("RunContext error = %v", err)
 	}
 }
 

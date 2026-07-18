@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -175,6 +176,62 @@ func TestEnsureDaemonCacheDaemonJSONAndSpawnBranches(t *testing.T) {
 	}
 }
 
+func TestEnsureDaemonSerializesConcurrentAutostart(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	t.Setenv("BORZ_CDP_URL", "")
+
+	statusServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"running":true,"cdpConnected":true}`))
+	}))
+	defer statusServer.Close()
+	info := infoForServer(t, statusServer, "")
+
+	oldDiscover := discoverCDPPort
+	oldExecutable := osExecutable
+	oldCommand := execCommand
+	discoveries := 0
+	spawns := 0
+	discoverCDPPort = func() (*CDPEndpoint, error) {
+		discoveries++
+		return &CDPEndpoint{Host: "127.0.0.1", Port: 9222}, nil
+	}
+	osExecutable = func() (string, error) { return "/bin/echo", nil }
+	execCommand = func(string, ...string) *exec.Cmd {
+		spawns++
+		data, _ := json.Marshal(info)
+		if err := os.WriteFile(config.DaemonJSONPath(), data, 0o600); err != nil {
+			t.Errorf("write daemon state: %v", err)
+		}
+		return exec.Command("/bin/sh", "-c", "exit 0")
+	}
+	t.Cleanup(func() {
+		discoverCDPPort = oldDiscover
+		osExecutable = oldExecutable
+		execCommand = oldCommand
+	})
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			errs <- EnsureDaemon()
+		}()
+	}
+	close(start)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatalf("EnsureDaemon: %v", err)
+		}
+	}
+	if discoveries != 1 || spawns != 1 {
+		t.Fatalf("discoveries=%d spawns=%d, want one serialized autostart", discoveries, spawns)
+	}
+}
+
 func TestLocalJSONFallbackAndLaunchManagedBrowserBranches(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
@@ -216,19 +273,24 @@ func TestLocalJSONFallbackAndLaunchManagedBrowserBranches(t *testing.T) {
 	oldFinder := browserExecutableFinder
 	oldCanConnect := canConnect
 	oldCommand := execCommand
+	oldReadBrowserID := readBrowserID
 	browserExecutableFinder = func() string { return "" }
 	if _, err := launchManagedBrowser(33333); err == nil || !strings.Contains(err.Error(), "no browser") {
 		t.Fatalf("no browser err = %v", err)
 	}
 	browserExecutableFinder = func() string { return "/bin/echo" }
-	canConnect = func(host string, port int) bool { return true }
+	launched := false
+	canConnect = func(host string, port int) bool { return launched }
+	readBrowserID = func(string, int, time.Duration) (string, error) { return "fake-browser", nil }
 	execCommand = func(string, ...string) *exec.Cmd {
+		launched = true
 		return exec.Command("/bin/sh", "-c", "exit 0")
 	}
 	t.Cleanup(func() {
 		browserExecutableFinder = oldFinder
 		canConnect = oldCanConnect
 		execCommand = oldCommand
+		readBrowserID = oldReadBrowserID
 	})
 	ep, err := launchManagedBrowser(33334)
 	if err != nil {

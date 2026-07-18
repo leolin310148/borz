@@ -239,6 +239,10 @@ func TestDerivedPaths(t *testing.T) {
 		{"ManagedBrowserDir", ManagedBrowserDir, "/tmp/borz/browser"},
 		{"ManagedPortFile", ManagedPortFile, "/tmp/borz/browser/cdp-port"},
 		{"ManagedUserDataDir", ManagedUserDataDir, "/tmp/borz/browser/user-data"},
+		{"ManagedStateFile", ManagedStateFile, "/tmp/borz/browser/browser.json"},
+		{"StartupLockPath", StartupLockPath, "/tmp/borz/startup.lock"},
+		{"BrowserLockPath", BrowserLockPath, "/tmp/borz/browser/browser.lock"},
+		{"DaemonLockPath", DaemonLockPath, "/tmp/borz/daemon.lock"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -271,6 +275,10 @@ func TestProfileRuntimePaths(t *testing.T) {
 		{"ManagedBrowserDir", ManagedBrowserDir(), "/tmp/borz/profiles/work/browser"},
 		{"ManagedPortFile", ManagedPortFile(), "/tmp/borz/profiles/work/browser/cdp-port"},
 		{"ManagedUserDataDir", ManagedUserDataDir(), "/tmp/borz/profiles/work/browser/user-data"},
+		{"ManagedStateFile", ManagedStateFile(), "/tmp/borz/profiles/work/browser/browser.json"},
+		{"StartupLockPath", StartupLockPath(), "/tmp/borz/profiles/work/startup.lock"},
+		{"BrowserLockPath", BrowserLockPath(), "/tmp/borz/profiles/work/browser/browser.lock"},
+		{"DaemonLockPath", DaemonLockPath(), "/tmp/borz/profiles/work/daemon.lock"},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

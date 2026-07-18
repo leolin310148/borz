@@ -14,11 +14,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/observability"
+	"github.com/leolin310148/borz/internal/processlock"
 	"github.com/leolin310148/borz/internal/profile"
 	"github.com/leolin310148/borz/internal/protocol"
 )
@@ -36,6 +38,8 @@ var (
 	// resolvedTarget memoizes profile.ResolveTarget for the active profile.
 	resolvedTarget        *profile.Target
 	resolvedTargetProfile string
+	resolvedTargetMu      sync.Mutex
+	ensureDaemonMu        sync.Mutex
 
 	// discoverCDPPort is indirected so tests can bypass real CDP discovery.
 	discoverCDPPort            = DiscoverCDPPort
@@ -45,6 +49,7 @@ var (
 	execCommand             = exec.Command
 	browserExecutableFinder = findBrowserExecutable
 	canConnect              = defaultCanConnect
+	readBrowserID           = readCDPBrowserID
 )
 
 // SetLocalVersion records the CLI version so daemon mismatches can be warned
@@ -98,6 +103,8 @@ func SetLegacyRemoteFlag(enabled bool) {
 // ActiveTarget resolves the selected profile into its declared browser
 // target. The result is memoized per profile name; ResetForTests clears it.
 func ActiveTarget() (profile.Target, error) {
+	resolvedTargetMu.Lock()
+	defer resolvedTargetMu.Unlock()
 	name := profile.Normalize(config.Profile())
 	if resolvedTarget != nil && resolvedTargetProfile == name {
 		return *resolvedTarget, nil
@@ -326,7 +333,7 @@ func daemonVersionMatches(daemonVersion string) bool {
 // A remote/custom CDP endpoint remains under the caller's control, and a
 // daemon version mismatch stays warning-only without changing lifecycle.
 func recoverDisconnectedDaemon(status protocol.DaemonStatus) error {
-	if status.CDPConnected || status.CDPPort <= 0 || status.CDPPort > 65535 || !daemonVersionMatches(status.Version) {
+	if status.CDPPort <= 0 || status.CDPPort > 65535 || !daemonVersionMatches(status.Version) {
 		return nil
 	}
 
@@ -335,13 +342,21 @@ func recoverDisconnectedDaemon(status protocol.DaemonStatus) error {
 		return nil
 	}
 
-	managedEndpoint := false
-	if data, err := os.ReadFile(config.ManagedPortFile()); err == nil {
-		if port, parseErr := strconv.Atoi(strings.TrimSpace(string(data))); parseErr == nil && port == status.CDPPort {
-			managedEndpoint = true
-		}
+	managedPort, managedEndpoint := recordedManagedPort()
+	managedEndpoint = managedEndpoint && managedPort == status.CDPPort
+	if !managedEndpoint {
+		return nil
 	}
-	if !managedEndpoint || canConnect(host, status.CDPPort) {
+	if canConnect(host, status.CDPPort) {
+		if err := verifyManagedEndpoint(status.CDPPort, true); err != nil {
+			return fmt.Errorf("borz: managed Chrome identity check failed at %s:%d: %w", host, status.CDPPort, err)
+		}
+		return nil
+	}
+	// A live daemon WebSocket is stronger evidence than a transient failure of
+	// the HTTP version endpoint. Never launch a replacement while it is still
+	// connected.
+	if status.CDPConnected {
 		return nil
 	}
 
@@ -369,6 +384,9 @@ func adoptRunningDaemon(info *protocol.DaemonInfo, status protocol.DaemonStatus)
 
 // EnsureDaemon makes sure the daemon is running and ready.
 func EnsureDaemon() error {
+	ensureDaemonMu.Lock()
+	defer ensureDaemonMu.Unlock()
+
 	target, err := ActiveTarget()
 	if err != nil {
 		return err
@@ -376,6 +394,14 @@ func EnsureDaemon() error {
 	if target.Kind == profile.TransportRemote {
 		return fmt.Errorf("profile %q is a remote profile (%s); there is no local daemon", profile.Normalize(config.Profile()), target.Remote.URL)
 	}
+	if _, err := config.EnsureRuntimeDir(); err != nil {
+		return err
+	}
+	startupLock, err := processlock.Acquire(config.StartupLockPath(), 15*time.Second)
+	if err != nil {
+		return fmt.Errorf("serialize profile %q startup: %w", profile.Normalize(config.Profile()), err)
+	}
+	defer startupLock.Release()
 
 	if cachedProfile != config.Profile() {
 		daemonReady = false
@@ -734,6 +760,24 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	if _, err := config.EnsureHomeDir(); err != nil {
 		return nil, err
 	}
+	if err := os.MkdirAll(config.ManagedBrowserDir(), 0o755); err != nil {
+		return nil, fmt.Errorf("prepare managed browser profile: %w", err)
+	}
+	browserLock, err := processlock.Acquire(config.BrowserLockPath(), 12*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("serialize managed browser launch: %w", err)
+	}
+	defer browserLock.Release()
+
+	// Another process may have completed the launch while this caller waited
+	// for the browser lock. Reuse it only after proving the recorded browser
+	// identity still matches the live CDP browser target.
+	if port > 0 && canConnect("127.0.0.1", port) {
+		if err := verifyManagedEndpoint(port, true); err != nil {
+			return nil, err
+		}
+		return &CDPEndpoint{Host: "127.0.0.1", Port: port, OwnedByBorz: true}, nil
+	}
 
 	userDataDir := config.ManagedUserDataDir()
 	if err := os.MkdirAll(userDataDir, 0o755); err != nil {
@@ -795,18 +839,18 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	}
 	cmd.Process.Release()
 
-	// Write port file
-	if err := os.MkdirAll(config.ManagedBrowserDir(), 0o755); err != nil {
-		return nil, fmt.Errorf("prepare managed browser directory: %w", err)
-	}
-	if err := os.WriteFile(config.ManagedPortFile(), []byte(strconv.Itoa(port)), 0o644); err != nil {
-		return nil, fmt.Errorf("write managed browser port file: %w", err)
-	}
-
 	// Wait for browser to become reachable
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
 		if canConnect("127.0.0.1", port) {
+			browserID, err := readBrowserID("127.0.0.1", port, 1200*time.Millisecond)
+			if err != nil {
+				time.Sleep(250 * time.Millisecond)
+				continue
+			}
+			if err := publishManagedBrowserState(port, browserID); err != nil {
+				return nil, err
+			}
 			return &CDPEndpoint{Host: "127.0.0.1", Port: port, OwnedByBorz: true}, nil
 		}
 		time.Sleep(250 * time.Millisecond)
@@ -863,18 +907,21 @@ func cdpPortForProfile() (int, error) {
 func DiscoverCDPPort() (*CDPEndpoint, error) {
 	// Priority 1: BORZ_CDP_URL env var (legacy BB_BROWSER_CDP_URL supported).
 	if envURL := config.Env("BORZ_CDP_URL", "BB_BROWSER_CDP_URL"); envURL != "" {
+		if config.Profile() != "" {
+			return nil, fmt.Errorf("BORZ_CDP_URL cannot override named managed profile %q; declare a cdp profile instead", config.Profile())
+		}
 		if host, port, ok := profile.ParseCDPEndpoint(envURL); ok && canConnect(host, port) {
 			return &CDPEndpoint{Host: host, Port: port}, nil
 		}
 	}
 
-	// Priority 2: Managed browser port file
-	if data, err := os.ReadFile(config.ManagedPortFile()); err == nil {
-		if port, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && port > 0 && port <= 65535 {
-			if canConnect("127.0.0.1", port) {
-				return &CDPEndpoint{Host: "127.0.0.1", Port: port, OwnedByBorz: true}, nil
-			}
+	// Priority 2: profile-scoped managed browser identity (with one-time
+	// migration from the legacy cdp-port-only state).
+	if port, ok := recordedManagedPort(); ok && canConnect("127.0.0.1", port) {
+		if err := verifyManagedEndpoint(port, true); err != nil {
+			return nil, err
 		}
+		return &CDPEndpoint{Host: "127.0.0.1", Port: port, OwnedByBorz: true}, nil
 	}
 
 	// Priority 3: Default CDP port. Named profiles intentionally skip this
@@ -893,7 +940,7 @@ func DiscoverCDPPort() (*CDPEndpoint, error) {
 		return endpoint, nil
 	}
 
-	return nil, fmt.Errorf("no CDP endpoint found")
+	return nil, fmt.Errorf("no CDP endpoint found: %w", err)
 }
 
 // CheckCDPEndpoint verifies a CDP endpoint answers /json/version. Used by
