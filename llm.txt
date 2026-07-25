@@ -98,11 +98,19 @@ with `--profile <name>` or `BORZ_PROFILE`. Undeclared names (including
 | `remote` | send every command to a remote `borz server` (`url`, `token`) | no |
 
 ```bash
-borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN"
+borz profile list                                # what each name means — run this first
+borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN" \
+    --description "Mac Mini's logged-in Chrome"
 borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 --max-tabs 30
 borz --profile mini open https://example.com     # HTTP to the Mini server
 BORZ_PROFILE=mdt borz snapshot                   # tunnel-attached Chrome
 ```
+
+Optional `description` is one line of free text on any transport, set with
+`--description <text>` (`""` clears it) and shown by `profile list` / `profile
+show`. It never affects resolution; it is how a caller learns which browser a
+profile name actually drives, so read it before picking a profile rather than
+inferring intent from the name.
 
 Optional `idleTabTimeout` (minutes, 0 = never auto-close idle tabs) on
 `managed`/`cdp` profiles is honoured by auto-spawned daemons; precedence is

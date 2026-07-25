@@ -380,6 +380,71 @@ func TestFileJSONShapeMatchesDesign(t *testing.T) {
 	}
 }
 
+func TestDescriptionNormalizeAndSanitize(t *testing.T) {
+	for _, tc := range []struct {
+		in      string
+		want    string
+		wantErr string
+	}{
+		{in: "  MDT VPN Chrome  ", want: "MDT VPN Chrome"},
+		{in: "   ", want: ""},
+		{in: "one\ntwo", wantErr: "single line"},
+		{in: "one\ttwo", wantErr: "single line"},
+		{in: strings.Repeat("x", MaxDescriptionLen), want: strings.Repeat("x", MaxDescriptionLen)},
+		{in: strings.Repeat("x", MaxDescriptionLen+1), wantErr: "at most"},
+	} {
+		got, err := NormalizeDescription(tc.in)
+		if tc.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("NormalizeDescription(%q) err = %v, want %q", tc.in, err, tc.wantErr)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Fatalf("NormalizeDescription(%q) = %q, %v", tc.in, got, err)
+		}
+	}
+
+	// A hand-edited profiles.json is sanitized on read rather than rejected:
+	// a stray newline must not be able to scramble 'profile list'.
+	if got := SanitizeDescription(" a\nb\tc "); got != "a b c" {
+		t.Fatalf("SanitizeDescription = %q", got)
+	}
+	long := SanitizeDescription(strings.Repeat("y", MaxDescriptionLen*2))
+	if len([]rune(long)) != MaxDescriptionLen || !strings.HasSuffix(long, "…") {
+		t.Fatalf("SanitizeDescription did not truncate: %q", long)
+	}
+}
+
+func TestDescriptionDoesNotAffectResolution(t *testing.T) {
+	home := setHome(t)
+	// Descriptions are labels: they are valid on every transport and must
+	// never change or block the resolved target.
+	writeProfiles(t, home, `{"version":1,"profiles":{
+		"mini":{"transport":"remote","url":"http://10.0.0.1:13333","description":"Mac Mini Chrome"},
+		"mdt":{"transport":"cdp","cdpUrl":"http://127.0.0.1:19845","description":"bad\nline"}
+	}}`)
+	target, err := ResolveTarget("mini")
+	if err != nil || target.Kind != TransportRemote || target.Remote.URL != "http://10.0.0.1:13333" {
+		t.Fatalf("remote target = %+v, %v", target, err)
+	}
+	target, err = ResolveTarget("mdt")
+	if err != nil || target.Kind != TransportCDP || target.CDP.Port != 19845 {
+		t.Fatalf("cdp target = %+v, %v", target, err)
+	}
+
+	data, err := json.Marshal(Entry{Transport: "managed", Description: "throwaway Chrome"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"description":"throwaway Chrome"`) {
+		t.Fatalf("description missing from serialized entry: %s", data)
+	}
+	if plain, _ := json.Marshal(Entry{Transport: "managed"}); strings.Contains(string(plain), "description") {
+		t.Fatalf("empty description should be omitted: %s", plain)
+	}
+}
+
 func TestResolveTargetIdleTabTimeout(t *testing.T) {
 	home := setHome(t)
 

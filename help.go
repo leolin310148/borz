@@ -760,7 +760,7 @@ var commandHelp = map[string]cmdHelp{
 		Summary: "Manage named browser targets in ~/.borz/profiles.json (managed, cdp, or remote transport).",
 		Usage:   "borz profile [list|show|add|set|rm] [<name>] [flags]",
 		Flags: []string{
-			"  list                     Declared profiles: name, transport, target",
+			"  list                     Declared profiles: name, transport, target, description",
 			"  show <name>              One profile's details (token redacted)",
 			"  add <name>               Declare a profile (pick exactly one transport)",
 			"  set <name>               Edit a declared profile in place",
@@ -769,6 +769,8 @@ var commandHelp = map[string]cmdHelp{
 			"  --cdp <url|host:port>    Transport: attach to an existing CDP endpoint",
 			"  --remote <url>           Transport: talk HTTP to a remote borz server",
 			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
+			"  --description <text>     One line saying what this profile is for",
+			"                           (\"\" clears it); shown by list/show",
 			"  --idle-tab-timeout <m>   Idle-tab auto-close in minutes for managed/cdp",
 			"                           (0=disable, 'default'=unset; invalid for remote)",
 			"  --max-tabs <n>           Maximum page tabs for managed/cdp",
@@ -777,8 +779,9 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Examples: []string{
 			"  borz profile add mini --remote http://100.116.143.73:13333 --token \"$BORZ_TOKEN\"",
-			"  borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0",
-			"  borz profile add clean --managed",
+			"  borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 \\",
+			"      --description \"MDT VPN Chrome via the SSH tunnel; never reap its tabs\"",
+			"  borz profile add clean --managed --description \"throwaway logged-out Chrome\"",
 			"  borz --profile mini open https://example.com",
 			"  BORZ_PROFILE=mdt borz snapshot",
 		},
@@ -789,25 +792,31 @@ var commandHelp = map[string]cmdHelp{
 			"run no local daemon at all. idleTabTimeout and maxTabs are carried onto\n" +
 			"auto-spawned daemons. idleTabTimeout defaults to 0 (disabled); maxTabs\n" +
 			"defaults to 30. Each uses flag > env > profile > default.\n" +
+			"description is free text (one line) that only exists so 'profile list' can\n" +
+			"say which browser a name means — run it before picking a profile instead of\n" +
+			"guessing from the name.\n" +
 			"profiles.json is stored with 0600 permissions\n" +
 			"because it can hold bearer tokens; show/list never print them.",
 	},
 	"profile.list": {
-		Summary: "List declared profiles with their transport and target.",
+		Summary: "List declared profiles with their transport, target, and description.",
 		Usage:   "borz profile list [--json]",
+		Notes: "Run this before choosing a profile: the description column says what each\n" +
+			"one is for, which the name alone rarely does.",
 	},
 	"profile.show": {
-		Summary: "Show one profile's transport and target; tokens are redacted.",
+		Summary: "Show one profile's transport, target, and purpose; tokens are redacted.",
 		Usage:   "borz profile show <name> [--json]",
 	},
 	"profile.add": {
 		Summary: "Declare a new profile with exactly one transport.",
-		Usage:   "borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]",
+		Usage:   "borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--description <text>] [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]",
 		Flags: []string{
 			"  --managed                borz launches and owns a local Chrome (default behaviour)",
 			"  --cdp <url|host:port>    Attach to an existing CDP endpoint; never launches a browser",
 			"  --remote <url>           Route commands to a remote borz server; no local daemon",
 			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
+			"  --description <text>     One line saying what this profile is for; any transport",
 			"  --idle-tab-timeout <m>   Idle-tab auto-close in minutes (0=disable); managed/cdp only",
 			"  --max-tabs <n>            Maximum page tabs (0=unlimited); managed/cdp only",
 			"  --no-check               Skip probing (/status for remote, /json/version for cdp)",
@@ -815,14 +824,17 @@ var commandHelp = map[string]cmdHelp{
 		Examples: []string{
 			"  borz profile add mini --remote http://server:13333 --token \"$BORZ_TOKEN\"",
 			"  borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0",
+			"  borz profile add mini --remote http://server:13333 --description \"Mac Mini's logged-in Chrome\"",
 		},
 	},
 	"profile.set": {
-		Summary: "Edit a declared profile: switch transport or update token/target/tab lifecycle settings.",
-		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]",
+		Summary: "Edit a declared profile: switch transport or update token/description/target/tab lifecycle settings.",
+		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--description <text>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]",
 		Examples: []string{
 			"  borz profile set mini --token \"$NEW_TOKEN\"",
 			"  borz profile set mdt --cdp 127.0.0.1:9222",
+			"  borz profile set mdt --description \"MDT VPN Chrome (SSH tunnel); work sites only\"",
+			"  borz profile set mdt --description \"\"          # drop the description again",
 			"  borz profile set mdt --idle-tab-timeout 0        # never auto-close its tabs",
 			"  borz profile set mdt --idle-tab-timeout default  # back to flag/env/0 (disabled)",
 			"  borz profile set mdt --max-tabs 30               # cap runaway tab creation",

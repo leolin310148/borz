@@ -12,7 +12,7 @@ import (
 	borzprofile "github.com/leolin310148/borz/internal/profile"
 )
 
-const profileAddUsage = "Usage: borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]"
+const profileAddUsage = "Usage: borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--description <text>] [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]"
 
 func handleProfile(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 	sub := "list"
@@ -35,7 +35,7 @@ func handleProfile(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 		handleProfileAdd(cmdArgs[1], rawArgs, jsonOutput)
 	case "set":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]")
+			fatal("Usage: borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--description <text>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]")
 		}
 		handleProfileSet(cmdArgs[1], rawArgs, jsonOutput)
 	case "rm", "remove":
@@ -77,29 +77,52 @@ func handleProfileList(jsonOutput bool) {
 		fmt.Println("Add one with 'borz profile add <name> --remote <url> | --cdp <host:port> | --managed'")
 		return
 	}
-	nameWidth, transportWidth := len("NAME"), len("TRANSPORT")
+	nameWidth, transportWidth, targetWidth := len("NAME"), len("TRANSPORT"), len("TARGET")
+	targets := make(map[string]string, len(names))
+	anyDescribed := false
 	for _, name := range names {
+		entry := registry.Profiles[name]
 		if len(name) > nameWidth {
 			nameWidth = len(name)
 		}
-		if l := len(registry.Profiles[name].Transport); l > transportWidth {
+		if l := len(entry.Transport); l > transportWidth {
 			transportWidth = l
 		}
-	}
-	fmt.Printf("%-*s  %-*s  %s\n", nameWidth, "NAME", transportWidth, "TRANSPORT", "TARGET")
-	for _, name := range names {
-		entry := registry.Profiles[name]
-		desc := profileTargetDescription(name, entry)
+		target := profileTargetDescription(name, entry)
 		if entry.IdleTabTimeout != nil {
-			desc += fmt.Sprintf(" [idleTabTimeout=%d]", *entry.IdleTabTimeout)
+			target += fmt.Sprintf(" [idleTabTimeout=%d]", *entry.IdleTabTimeout)
 		}
 		if entry.MaxTabs != nil {
-			desc += fmt.Sprintf(" [maxTabs=%d]", *entry.MaxTabs)
+			target += fmt.Sprintf(" [maxTabs=%d]", *entry.MaxTabs)
 		}
-		fmt.Printf("%-*s  %-*s  %s\n", nameWidth, name, transportWidth, entry.Transport, desc)
+		targets[name] = target
+		if len(target) > targetWidth {
+			targetWidth = len(target)
+		}
+		if borzprofile.SanitizeDescription(entry.Description) != "" {
+			anyDescribed = true
+		}
+	}
+	// The DESCRIPTION column only appears once some profile has one, so the
+	// listing keeps its old shape for registries that never set descriptions.
+	if anyDescribed {
+		fmt.Printf("%-*s  %-*s  %-*s  %s\n", nameWidth, "NAME", transportWidth, "TRANSPORT", targetWidth, "TARGET", "DESCRIPTION")
+	} else {
+		fmt.Printf("%-*s  %-*s  %s\n", nameWidth, "NAME", transportWidth, "TRANSPORT", "TARGET")
+	}
+	for _, name := range names {
+		entry := registry.Profiles[name]
+		if anyDescribed {
+			fmt.Printf("%-*s  %-*s  %-*s  %s\n", nameWidth, name, transportWidth, entry.Transport, targetWidth, targets[name], borzprofile.SanitizeDescription(entry.Description))
+			continue
+		}
+		fmt.Printf("%-*s  %-*s  %s\n", nameWidth, name, transportWidth, entry.Transport, targets[name])
 	}
 	fmt.Printf("\nConfig path: %s\n", config.ProfilesJSONPath())
 	fmt.Println("Undeclared names (including 'default') resolve to the managed transport.")
+	if !anyDescribed {
+		fmt.Println("No profile says what it is for; add one with 'borz profile set <name> --description \"...\"'.")
+	}
 }
 
 func handleProfileShow(name string, jsonOutput bool) {
@@ -133,6 +156,9 @@ func handleProfileShow(name string, jsonOutput bool) {
 	fmt.Printf("Profile:   %s\n", name)
 	fmt.Printf("Transport: %s\n", entry.Transport)
 	fmt.Printf("Target:    %s\n", profileTargetDescription(name, entry))
+	if desc := borzprofile.SanitizeDescription(entry.Description); desc != "" {
+		fmt.Printf("Purpose:   %s\n", desc)
+	}
 	if borzprofile.TransportKind(entry.Transport) == borzprofile.TransportRemote {
 		if strings.TrimSpace(entry.Token) != "" {
 			fmt.Println("Token:     configured")
@@ -176,12 +202,19 @@ func handleProfileSet(name string, rawArgs []string, jsonOutput bool) {
 	if !exists {
 		fatal(fmt.Sprintf("profile %q is not declared; use 'borz profile add %s ...' to create it", name, name))
 	}
+	stored := entry
 	entry, changed, err := profileEntryFromFlags(entry, rawArgs)
 	if err != nil {
 		fatal(err.Error())
 	}
 	if !changed {
-		fatal("nothing to change; pass --managed, --cdp <endpoint>, --remote <url>, --token <t>, --idle-tab-timeout <m|default>, or --max-tabs <n|default>")
+		fatal("nothing to change; pass --managed, --cdp <endpoint>, --remote <url>, --token <t>, --description <text>, --idle-tab-timeout <m|default>, or --max-tabs <n|default>")
+	}
+	if profileTargetUnchanged(stored, entry) {
+		// Editing only the description or tab-lifecycle fields must not fail
+		// because a tunnel happens to be down: the target is already declared
+		// and nothing about how borz reaches it changed.
+		rawArgs = append(rawArgs, "--no-check")
 	}
 	saveProfileEntry(registry, name, entry, rawArgs, jsonOutput, "updated")
 }
@@ -205,13 +238,15 @@ func handleProfileRemove(name string, jsonOutput bool) {
 	fmt.Printf("Profile %q removed. Its name now resolves to the managed transport again.\n", name)
 }
 
-// profileEntryFromFlags applies the transport/token/tab-lifecycle flags to
-// base. It returns the updated entry and whether any flag actually changed it.
+// profileEntryFromFlags applies the transport/token/description/tab-lifecycle
+// flags to base. It returns the updated entry and whether any flag actually
+// changed it.
 func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofile.Entry, bool, error) {
 	managedSet := hasFlag(rawArgs, "--managed")
 	cdpValue, cdpSet := getArgValueOK(rawArgs, "--cdp")
 	remoteValue, remoteSet := getArgValueOK(rawArgs, "--remote")
 	tokenValue, tokenSet := getArgValueOK(rawArgs, "--token")
+	descValue, descSet := getArgValueOK(rawArgs, "--description")
 	idleValue, idleSet := getArgValueOK(rawArgs, "--idle-tab-timeout")
 	maxTabsValue, maxTabsSet := getArgValueOK(rawArgs, "--max-tabs")
 
@@ -228,19 +263,27 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 	entry := base
 	switch {
 	case managedSet:
-		entry = borzprofile.Entry{Transport: string(borzprofile.TransportManaged), IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
+		entry = borzprofile.Entry{Transport: string(borzprofile.TransportManaged), Description: base.Description, IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
 	case cdpSet:
 		if strings.TrimSpace(cdpValue) == "" {
 			return borzprofile.Entry{}, false, fmt.Errorf("--cdp requires a value (http://host:port or host:port)")
 		}
-		entry = borzprofile.Entry{Transport: string(borzprofile.TransportCDP), CDPURL: strings.TrimSpace(cdpValue), IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
+		entry = borzprofile.Entry{Transport: string(borzprofile.TransportCDP), Description: base.Description, CDPURL: strings.TrimSpace(cdpValue), IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
 	case remoteSet:
 		if strings.TrimSpace(remoteValue) == "" {
 			return borzprofile.Entry{}, false, fmt.Errorf("--remote requires a server URL")
 		}
 		// Tab lifecycle settings do not apply to remote targets, so they are dropped
-		// rather than carried into an entry that would fail validation.
-		entry = borzprofile.Entry{Transport: string(borzprofile.TransportRemote), URL: strings.TrimSpace(remoteValue), Token: base.Token}
+		// rather than carried into an entry that would fail validation. The
+		// description survives: it describes the profile, not the transport.
+		entry = borzprofile.Entry{Transport: string(borzprofile.TransportRemote), Description: base.Description, URL: strings.TrimSpace(remoteValue), Token: base.Token}
+	}
+	if descSet {
+		desc, err := borzprofile.NormalizeDescription(descValue)
+		if err != nil {
+			return borzprofile.Entry{}, false, err
+		}
+		entry.Description = desc
 	}
 	if idleSet {
 		if strings.EqualFold(strings.TrimSpace(idleValue), "default") {
@@ -278,7 +321,18 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 		}
 		entry.Token = strings.TrimSpace(tokenValue)
 	}
-	return entry, transports == 1 || tokenSet || idleSet || maxTabsSet, nil
+	return entry, transports == 1 || tokenSet || descSet || idleSet || maxTabsSet, nil
+}
+
+// profileTargetUnchanged reports whether two entries reach the same browser
+// the same way, i.e. whether re-probing the target could tell us anything new.
+func profileTargetUnchanged(old, updated borzprofile.Entry) bool {
+	return old.Transport == updated.Transport &&
+		old.URL == updated.URL &&
+		old.Token == updated.Token &&
+		old.CDPURL == updated.CDPURL &&
+		old.CDPHost == updated.CDPHost &&
+		old.CDPPort == updated.CDPPort
 }
 
 // saveProfileEntry validates, optionally probes, persists, and reports one
@@ -348,6 +402,9 @@ func profilePayload(name string, entry borzprofile.Entry) map[string]interface{}
 		"name":      name,
 		"transport": entry.Transport,
 		"target":    profileTargetDescription(name, entry),
+	}
+	if desc := borzprofile.SanitizeDescription(entry.Description); desc != "" {
+		payload["description"] = desc
 	}
 	if borzprofile.TransportKind(entry.Transport) == borzprofile.TransportRemote {
 		payload["tokenConfigured"] = strings.TrimSpace(entry.Token) != ""

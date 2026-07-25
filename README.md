@@ -365,12 +365,15 @@ zero-config behaviour described above.
 | `remote` | talk HTTP to a remote `borz server`; nothing runs locally | no |
 
 ```bash
-borz profile list                       # name, transport, target (tokens never shown)
+borz profile list                       # name, transport, target, description (tokens never shown)
 borz profile show mini
-borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN"
+borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN" \
+    --description "Mac Mini's logged-in Chrome"
 borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 --max-tabs 30
 borz profile add clean --managed
 borz profile set mini --token "$NEW_TOKEN"
+borz profile set mdt --description "MDT VPN Chrome (SSH tunnel); work sites only"
+borz profile set mdt --description ""             # drop the description
 borz profile set mdt --idle-tab-timeout default   # clear the field again
 borz profile rm mdt
 ```
@@ -384,13 +387,24 @@ In `profiles.json` a cdp endpoint is spelled `cdpUrl`, or alternatively
 {
   "version": 1,
   "profiles": {
-    "mini": { "transport": "remote", "url": "http://100.116.143.73:13333", "token": "..." },
+    "mini": {
+      "transport": "remote",
+      "url": "http://100.116.143.73:13333",
+      "token": "...",
+      "description": "Mac Mini's logged-in Chrome"
+    },
     "mdt":  { "transport": "cdp", "cdpUrl": "http://127.0.0.1:19845", "idleTabTimeout": 0, "maxTabs": 30 }
   }
 }
 ```
 
 Behaviour worth knowing:
+
+- `description` is one line of free text saying what a profile is for. It never
+  affects resolution — it exists so `profile list` / `profile show` can tell a
+  human (or an agent) which browser a name means instead of leaving them to
+  guess from the name. Valid on every transport; `--description ""` clears it.
+  `profile list` only grows a `DESCRIPTION` column once some profile has one.
 
 - `BORZ_CDP_URL` remains a legacy override for the default profile only. It
   cannot redirect a named `managed` profile; declare a `cdp` profile for an

@@ -73,9 +73,20 @@ borz window list                           # Chrome windows (extension)
 borz <platform>/<adapter> [args]           # run a site adapter
 ```
 
-Global flags: `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only), `--since <seq|last_action>`.
+Global flags: `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only), `--since <seq|last_action>`, `--profile <name>`.
 
 Per-command help: `borz <cmd> --help` or `borz help <cmd>`.
+
+### Picking a profile
+
+`--profile <name>` (or `BORZ_PROFILE`) is the single handle for **which browser am I driving**: a local managed Chrome, an existing CDP endpoint, or a remote `borz server` on another machine. No flag means the `default` profile.
+
+```bash
+borz profile list          # name, transport, target, DESCRIPTION — what each one is for
+borz profile show <name>   # one profile's details (tokens redacted)
+```
+
+Never infer a profile from its name. Run `borz profile list` and read the description when the target browser isn't obvious, and ask the user when it stays ambiguous — the wrong profile means acting inside the wrong logged-in session. Descriptions are set with `borz profile set <name> --description "..."`.
 
 ### 3. HTTP / REST (for n8n, Make, external services)
 

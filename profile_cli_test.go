@@ -259,6 +259,113 @@ func TestProfileCLIMaxTabs(t *testing.T) {
 	}
 }
 
+func TestProfileCLIDescription(t *testing.T) {
+	setupProfileHome(t)
+	descOf := func(name string) string {
+		t.Helper()
+		registry, err := borzprofile.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return registry.Profiles[name].Description
+	}
+
+	// A registry with no descriptions keeps the old three-column shape and
+	// points at the flag that fixes it.
+	runProfileCLI(t, "profile", "add", "plain", "--managed")
+	out := runProfileCLI(t, "profile", "list")
+	if strings.Contains(out, "DESCRIPTION") {
+		t.Fatalf("undescribed registry should not grow a column:\n%s", out)
+	}
+	if !strings.Contains(out, "No profile says what it is for") {
+		t.Fatalf("list should nudge toward --description:\n%s", out)
+	}
+
+	out = runProfileCLI(t, "profile", "add", "mdt", "--cdp", "127.0.0.1:19845", "--no-check",
+		"--description", "MDT VPN Chrome via the SSH tunnel")
+	if !strings.Contains(out, `Profile "mdt" added`) {
+		t.Fatalf("add output = %q", out)
+	}
+	if got := descOf("mdt"); got != "MDT VPN Chrome via the SSH tunnel" {
+		t.Fatalf("stored description = %q", got)
+	}
+
+	out = runProfileCLI(t, "profile", "list")
+	if !strings.Contains(out, "DESCRIPTION") || !strings.Contains(out, "MDT VPN Chrome via the SSH tunnel") {
+		t.Fatalf("list should show the description column:\n%s", out)
+	}
+	if !strings.Contains(runProfileCLI(t, "profile", "show", "mdt"), "Purpose:   MDT VPN Chrome via the SSH tunnel") {
+		t.Fatal("show should surface the description")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(runProfileCLI(t, "profile", "show", "mdt", "--json")), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["description"] != "MDT VPN Chrome via the SSH tunnel" {
+		t.Fatalf("show payload = %+v", payload)
+	}
+
+	// The description describes the profile, so it survives a transport switch.
+	runProfileCLI(t, "profile", "set", "mdt", "--remote", "http://10.8.8.8:1111", "--no-check")
+	if got := descOf("mdt"); got != "MDT VPN Chrome via the SSH tunnel" {
+		t.Fatalf("description after remote switch = %q", got)
+	}
+	runProfileCLI(t, "profile", "set", "mdt", "--managed")
+	if got := descOf("mdt"); got != "MDT VPN Chrome via the SSH tunnel" {
+		t.Fatalf("description after managed switch = %q", got)
+	}
+
+	// An empty value clears it again.
+	runProfileCLI(t, "profile", "set", "mdt", "--description", "")
+	if got := descOf("mdt"); got != "" {
+		t.Fatalf("description after clearing = %q", got)
+	}
+
+	// A description-only edit must not re-probe a target that did not change:
+	// a cdp profile whose endpoint is down still accepts the edit.
+	runProfileCLI(t, "profile", "set", "mdt", "--cdp", "127.0.0.1:19845", "--no-check")
+	out = runProfileCLI(t, "profile", "set", "mdt", "--description", "still reachable? does not matter")
+	if !strings.Contains(out, `Profile "mdt" updated`) {
+		t.Fatalf("description-only set output = %q", out)
+	}
+	if got := descOf("mdt"); got != "still reachable? does not matter" {
+		t.Fatalf("description after probe-free set = %q", got)
+	}
+
+	// Multi-line and over-long descriptions are rejected: 'profile list' is a
+	// one-line-per-profile table.
+	errOut := captureStderr(t, func() {
+		expectExit(t, 1, func() {
+			runMainArgsForExit("profile", "set", "plain", "--description", "first\nsecond")
+		})
+	})
+	if !strings.Contains(errOut, "must be a single line") {
+		t.Fatalf("multiline stderr = %q", errOut)
+	}
+	errOut = captureStderr(t, func() {
+		expectExit(t, 1, func() {
+			runMainArgsForExit("profile", "set", "plain", "--description", strings.Repeat("x", borzprofile.MaxDescriptionLen+1))
+		})
+	})
+	if !strings.Contains(errOut, "at most") {
+		t.Fatalf("over-long stderr = %q", errOut)
+	}
+}
+
+func TestProfileDescriptionSanitize(t *testing.T) {
+	// Hand-edited profiles.json must not be able to scramble the listing.
+	if got := borzprofile.SanitizeDescription("  two\nlines\there  "); got != "two lines here" {
+		t.Fatalf("SanitizeDescription = %q", got)
+	}
+	long := borzprofile.SanitizeDescription(strings.Repeat("y", borzprofile.MaxDescriptionLen+50))
+	if len([]rune(long)) != borzprofile.MaxDescriptionLen || !strings.HasSuffix(long, "…") {
+		t.Fatalf("SanitizeDescription did not truncate: %d runes", len([]rune(long)))
+	}
+	if got, err := borzprofile.NormalizeDescription("   "); got != "" || err != nil {
+		t.Fatalf("NormalizeDescription(blank) = %q, %v", got, err)
+	}
+}
+
 func TestProfileCLIErrors(t *testing.T) {
 	setupProfileHome(t)
 

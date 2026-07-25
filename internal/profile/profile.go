@@ -62,11 +62,16 @@ type Target struct {
 // Entry is one declared profile in profiles.json.
 type Entry struct {
 	Transport string `json:"transport"`
-	URL       string `json:"url,omitempty"`
-	Token     string `json:"token,omitempty"`
-	CDPURL    string `json:"cdpUrl,omitempty"`
-	CDPHost   string `json:"cdpHost,omitempty"`
-	CDPPort   int    `json:"cdpPort,omitempty"`
+	// Description says what this profile is for in one line ("MDT VPN
+	// Chrome over the SSH tunnel"). It never affects resolution; it exists
+	// so 'profile list'/'show' can tell a human or an agent which browser
+	// a name means instead of leaving them to guess from the name.
+	Description string `json:"description,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Token       string `json:"token,omitempty"`
+	CDPURL      string `json:"cdpUrl,omitempty"`
+	CDPHost     string `json:"cdpHost,omitempty"`
+	CDPPort     int    `json:"cdpPort,omitempty"`
 	// IdleTabTimeout, in minutes, overrides the daemon's idle-tab reaper for
 	// managed and cdp transports (0 disables auto-close). It is invalid on
 	// remote profiles: the server on the other side owns tab lifecycle.
@@ -186,6 +191,43 @@ func ResolveTarget(name string) (Target, error) {
 		return Target{Kind: TransportManaged}, nil
 	}
 	return ResolveEntry(name, entry)
+}
+
+// MaxDescriptionLen bounds a profile description so 'profile list' stays a
+// readable one-line-per-profile table.
+const MaxDescriptionLen = 200
+
+// NormalizeDescription trims a description written through the CLI and
+// rejects what would break that table. Resolution deliberately does not call
+// it: a hand-edited profiles.json must never stop borz from reaching the
+// browser, so reads sanitize (SanitizeDescription) instead of failing.
+func NormalizeDescription(raw string) (string, error) {
+	desc := strings.TrimSpace(raw)
+	if desc == "" {
+		return "", nil
+	}
+	if strings.ContainsAny(desc, "\n\r\t") {
+		return "", fmt.Errorf("profile description must be a single line (no newlines or tabs)")
+	}
+	if len([]rune(desc)) > MaxDescriptionLen {
+		return "", fmt.Errorf("profile description must be at most %d characters", MaxDescriptionLen)
+	}
+	return desc, nil
+}
+
+// SanitizeDescription renders a possibly hand-edited description as one line,
+// so a stray newline in profiles.json cannot scramble the listing.
+func SanitizeDescription(raw string) string {
+	desc := strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return ' '
+		}
+		return r
+	}, raw))
+	if runes := []rune(desc); len(runes) > MaxDescriptionLen {
+		return strings.TrimSpace(string(runes[:MaxDescriptionLen-1])) + "…"
+	}
+	return desc
 }
 
 // ResolveEntry validates one declared entry and converts it into a Target.
