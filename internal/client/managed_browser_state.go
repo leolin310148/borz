@@ -131,7 +131,12 @@ func verifyManagedEndpoint(port int, allowLegacy bool) error {
 	state, stateErr := readManagedBrowserState()
 	if stateErr == nil {
 		if state.Port != port || state.BrowserID != browserID {
-			return fmt.Errorf("managed browser identity mismatch on port %d; refusing to attach to or own a different Chrome instance", port)
+			// Deliberately not self-healing: from here a stale record and a
+			// foreign Chrome squatting on the port look identical, and
+			// adopting the wrong one means driving someone else's session.
+			// 'browser adopt' is the explicit, one-command way out.
+			return fmt.Errorf("managed browser identity mismatch on port %d; refusing to attach to or own a different Chrome instance"+
+				" (if that Chrome is borz's own — e.g. launched by an older borz — record it with 'borz browser adopt')", port)
 		}
 		return nil
 	}
@@ -143,6 +148,47 @@ func verifyManagedEndpoint(port int, allowLegacy bool) error {
 		return fmt.Errorf("CDP port %d is reachable but is not recorded as this profile's managed browser", port)
 	}
 	return publishManagedBrowserState(port, browserID)
+}
+
+// ManagedBrowserPort is the port borz looks for this profile's managed browser
+// on: the recorded one, else the default CDP port.
+func ManagedBrowserPort() int {
+	if port, ok := recordedManagedPort(); ok {
+		return port
+	}
+	return config.DefaultCDPPort
+}
+
+// ManagedBrowserIdentity reports the recorded managed-browser identity and the
+// id the browser now answering that port reports. Either half may be empty: no
+// record yet, or nothing listening.
+func ManagedBrowserIdentity(port int) (recordedID string, liveID string, recordedPort int) {
+	if state, err := readManagedBrowserState(); err == nil {
+		recordedID, recordedPort = state.BrowserID, state.Port
+	}
+	if id, err := readBrowserID("127.0.0.1", port, 2*time.Second); err == nil {
+		liveID = id
+	}
+	return recordedID, liveID, recordedPort
+}
+
+// AdoptManagedBrowser records the Chrome currently answering on port as this
+// profile's managed browser, replacing any stale identity. This is the
+// sanctioned recovery from an identity mismatch — e.g. a browser launched by a
+// borz old enough not to record identities — and is deliberately explicit:
+// borz will not silently take ownership of a browser it cannot prove is its own.
+func AdoptManagedBrowser(port int) (int, string, error) {
+	if port <= 0 {
+		port = ManagedBrowserPort()
+	}
+	browserID, err := readBrowserID("127.0.0.1", port, 2*time.Second)
+	if err != nil {
+		return 0, "", fmt.Errorf("no CDP endpoint answered on 127.0.0.1:%d: %w", port, err)
+	}
+	if err := publishManagedBrowserState(port, browserID); err != nil {
+		return 0, "", err
+	}
+	return port, browserID, nil
 }
 
 func recordedManagedPort() (int, bool) {

@@ -520,11 +520,30 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		sendMethodNotAllowed(w, http.MethodGet)
 		return
 	}
-	sendJSON(w, 200, map[string]interface{}{
+	payload := map[string]interface{}{
 		"ok":           true,
 		"cdpConnected": s.cdp.Connected(),
 		"uptime":       s.uptime(),
-	})
+	}
+	// /healthz is the only unauthenticated route, so identity is limited to
+	// loopback callers: they are already on this machine, and it is what lets
+	// a CLI name the process squatting on the daemon port when daemon.json is
+	// missing. Remote callers of 'borz server' get nothing extra to fingerprint.
+	if requestFromLoopback(r) {
+		payload["pid"] = os.Getpid()
+		payload["version"] = s.opts.Version
+	}
+	sendJSON(w, 200, payload)
+}
+
+// requestFromLoopback reports whether r came from this machine.
+func requestFromLoopback(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {

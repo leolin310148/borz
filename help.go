@@ -756,6 +756,39 @@ var commandHelp = map[string]cmdHelp{
 			"The service entry runs the REST server in the foreground under the Windows Service Control Manager. " +
 			"Non-Windows platforms should use launchd, systemd, or a process manager instead.",
 	},
+	"browser": {
+		Summary: "Inspect or repair which Chrome borz owns as this profile's managed browser.",
+		Usage:   "borz browser [status|adopt] [--port <p>] [--json]",
+		Flags: []string{
+			"  status                 Recorded vs live browser identity on the port (default)",
+			"  adopt                  Record the browser now on that port as borz's own",
+			"  --port <p>             CDP port to inspect (default: the recorded one, else 19825)",
+		},
+		Examples: []string{
+			"  borz browser status",
+			"  borz browser adopt              # after 'managed browser identity mismatch'",
+			"  borz browser adopt --port 19825",
+		},
+		Notes: "borz records the exact Chrome instance it launched (~/.borz/browser/browser.json)\n" +
+			"so it never attaches to, or closes, a browser that is not its own. If that record\n" +
+			"goes stale — a browser launched by a borz old enough not to record identities, or\n" +
+			"a lost record — commands fail with 'managed browser identity mismatch' rather than\n" +
+			"guessing. 'browser adopt' is the explicit fix: it records whatever is answering on\n" +
+			"the port. Only adopt a browser you know is borz's own; adopting someone else's\n" +
+			"Chrome means driving, and eventually closing, their session.",
+	},
+	"browser.status": {
+		Summary: "Show the recorded managed-browser identity next to the one now on the port.",
+		Usage:   "borz browser status [--port <p>] [--json]",
+	},
+	"browser.adopt": {
+		Summary: "Record the browser currently on the CDP port as this profile's managed browser.",
+		Usage:   "borz browser adopt [--port <p>] [--json]",
+		Examples: []string{
+			"  borz browser adopt",
+			"  borz browser adopt --port 19825",
+		},
+	},
 	"profile": {
 		Summary: "Manage named browser targets in ~/.borz/profiles.json (managed, cdp, or remote transport).",
 		Usage:   "borz profile [list|show|add|set|rm] [<name>] [flags]",

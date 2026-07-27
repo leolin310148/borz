@@ -74,6 +74,7 @@ borz site update|new|lint|trust             # manage client-side adapters
 borz <platform>/<adapter> [args]            # shorthand for "site run"
 borz status | daemon [status|shutdown]         # status is read-only; if stopped, next browser command auto-starts it
 borz doctor [--json]                         # diagnose CLI/daemon/CDP/tabs end-to-end
+borz browser status|adopt [--port N]         # which Chrome borz owns; adopt fixes an identity mismatch
 borz logs path|tail|stats [--since 7d]       # inspect privacy-safe local operational logs
 borz server --host 0.0.0.0 --token ... [shutdown]
 borz profile list|show|add|set|rm            # named browser targets (profiles.json)

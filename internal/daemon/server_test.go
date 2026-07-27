@@ -236,6 +236,54 @@ func TestHandleHealthz(t *testing.T) {
 	}
 }
 
+func TestHandleHealthzIdentityIsLoopbackOnly(t *testing.T) {
+	s := newTestServer(t, "")
+	s.opts.Version = "test-version"
+
+	healthz := func(remoteAddr string) map[string]interface{} {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		req.RemoteAddr = remoteAddr
+		s.handleHealthz(rec, req)
+		var body map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("body: %v", err)
+		}
+		return body
+	}
+
+	// Loopback callers get pid/version: that is what lets a CLI name the
+	// daemon squatting on the port when daemon.json is gone.
+	local := healthz("127.0.0.1:54321")
+	if local["version"] != "test-version" {
+		t.Fatalf("loopback healthz should report the version: %+v", local)
+	}
+	if pid, ok := local["pid"].(float64); !ok || int(pid) != os.Getpid() {
+		t.Fatalf("loopback healthz should report the pid: %+v", local)
+	}
+
+	// Remote callers of 'borz server' get nothing extra to fingerprint.
+	remote := healthz("10.1.2.3:54321")
+	if _, ok := remote["version"]; ok {
+		t.Fatalf("remote healthz leaked the version: %+v", remote)
+	}
+	if _, ok := remote["pid"]; ok {
+		t.Fatalf("remote healthz leaked the pid: %+v", remote)
+	}
+	if remote["ok"] != true {
+		t.Fatalf("remote healthz should still report health: %+v", remote)
+	}
+
+	// IPv6 loopback counts, and an unparsable RemoteAddr does not.
+	if _, ok := healthz("[::1]:54321")["pid"]; !ok {
+		t.Fatal("IPv6 loopback should count as local")
+	}
+	if _, ok := healthz("garbage")["pid"]; ok {
+		t.Fatal("unparsable RemoteAddr must not be treated as loopback")
+	}
+}
+
 func TestHandleStatus(t *testing.T) {
 	s := newTestServer(t, "")
 	s.opts.Version = "test-version"

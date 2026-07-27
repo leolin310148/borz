@@ -544,9 +544,77 @@ func EnsureDaemon() error {
 	logClientEvent("warn", "daemon_autostart_failed", observability.Fields{
 		DurationMS: time.Since(autostartStarted).Milliseconds(), Success: clientBoolPtr(false), ErrorCode: "daemon_start_failed",
 	})
+	// A daemon we cannot address — its daemon.json is gone, so we have no
+	// token — still holds the port, and every spawn we just tried died on
+	// "address already in use". Say so instead of blaming the browser.
+	if squatter, ok := probeDaemonPort(daemonPort); ok {
+		return fmt.Errorf("borz: Daemon did not start in time.\n\n"+
+			"A borz daemon (%s) is already listening on 127.0.0.1:%d, but %s is\n"+
+			"missing, so borz has no token to talk to it — every start attempt loses\n"+
+			"the port to it. This usually means a daemon from an older borz is still\n"+
+			"running.\n\n"+
+			"Fix: %s, then re-run this command.",
+			squatter.describe(), daemonPort, config.DaemonJSONPath(), squatter.stopHint())
+	}
 	return fmt.Errorf("borz: Daemon did not start in time.\n\n" +
 		"Chrome CDP is reachable, but the daemon process failed to initialize.\n" +
 		"Try: borz daemon status")
+}
+
+// daemonPortSquatter is an unaddressable borz daemon found on the port we
+// wanted: it answers /healthz (the one unauthenticated route) but we hold no
+// token for it because daemon.json is gone.
+type daemonPortSquatter struct {
+	PID     int    `json:"pid"`
+	Version string `json:"version"`
+}
+
+func (d daemonPortSquatter) describe() string {
+	switch {
+	case d.Version != "" && d.PID > 0:
+		return fmt.Sprintf("version %s, pid %d", d.Version, d.PID)
+	case d.PID > 0:
+		return fmt.Sprintf("pid %d", d.PID)
+	case d.Version != "":
+		return "version " + d.Version
+	default:
+		return "unknown version"
+	}
+}
+
+func (d daemonPortSquatter) stopHint() string {
+	if d.PID > 0 {
+		return fmt.Sprintf("stop it with 'kill %d'", d.PID)
+	}
+	return "stop that process"
+}
+
+// probeDaemonPort asks a port whether a borz daemon is listening. Only /healthz
+// is unauthenticated, and it reveals pid/version to loopback callers exactly so
+// this diagnosis is possible.
+func probeDaemonPort(port int) (daemonPortSquatter, bool) {
+	var found daemonPortSquatter
+	httpClient := &http.Client{Timeout: 2 * time.Second}
+	resp, err := httpClient.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+	if err != nil {
+		return found, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return found, false
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if err != nil {
+		return found, false
+	}
+	var payload struct {
+		OK bool `json:"ok"`
+		daemonPortSquatter
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || !payload.OK {
+		return found, false
+	}
+	return payload.daemonPortSquatter, true
 }
 
 func logClientEvent(level, event string, fields observability.Fields) {

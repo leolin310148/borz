@@ -1185,6 +1185,18 @@ borz doctor --json   # structured {ok, checks[]} for scripts
 
 Exit code is `1` on any fail; warnings (e.g. daemon not started yet) do not fail. The same diagnostic is exposed to AI agents as the `browser_doctor` MCP tool and to remote integrations as `GET /v1/doctor` (returns 503 on a failing check).
 
+Two failures are specific enough to get their own remediation:
+
+- **`managed browser identity mismatch on port N`** — borz records which Chrome it owns in `~/.borz/browser/browser.json`, and refuses to attach to a different one. That record can go stale (a Chrome launched by an older borz that didn't record identities, or a hand-killed record). `borz browser status` shows the recorded and the live browser side by side; `borz browser adopt` re-records the live one when it really is borz's own. borz never adopts on its own: from its side a stale record and someone else's Chrome on that port look identical.
+
+  ```bash
+  borz browser status            # Port / Recorded / Live / State (--json for scripts)
+  borz browser status --port N   # inspect a specific port instead of the recorded one
+  borz browser adopt             # record the live browser as borz's managed browser
+  ```
+
+- **`Daemon did not start in time`** — if a daemon is already listening on the daemon port but `~/.borz/daemon.json` is gone, borz has no token for it and every spawn loses the port to it. The error now names the squatter (version and pid, read from its `/healthz`, which reports identity to loopback callers only) and tells you to `kill` it.
+
 ### Local operational logs
 
 borz keeps bounded, structured JSONL logs for client autostart, daemon commands, and MCP tool calls:

@@ -685,6 +685,10 @@ func main() {
 	case "doctor":
 		runDoctor(jsonOutput)
 
+	// --- Managed browser identity ---
+	case "browser":
+		handleBrowser(cmdArgs, args, jsonOutput)
+
 	// --- Local operational logs ---
 	case "logs":
 		handleLogs(cmdArgs, args, globalSince, jsonOutput)
@@ -2415,6 +2419,7 @@ Utility:
   doctor [--json]               Run diagnostic checks on the full stack
   logs path|tail|stats          Inspect local operational logs and failures
   daemon [shutdown]             Start/stop the local daemon
+  browser status|adopt          Inspect or repair which Chrome borz owns
   server --host H --port P --token T [shutdown]
                                 Start remote-accessible HTTP server
                                 (--token required on non-loopback binds)

@@ -125,6 +125,8 @@ Pull community adapters: `borz site update` (CLI only — triggers a git pull, i
 - "Chrome not connected" → the daemon is up but CDP is down. Start Chrome, or let the daemon auto-launch: check `borz status`.
 - "a daemon may already be running" → `borz daemon status`, `borz daemon shutdown` if stale.
 - When unsure where the stack is broken, run `borz doctor` — it walks through home dir, daemon JSON, daemon process, daemon HTTP, CDP attach, tabs, and direct CDP discovery, and reports the first failing layer.
+- "managed browser identity mismatch on port N" → the Chrome borz recorded as its own is not the one now on that port. `borz browser status` shows recorded vs live; `borz browser adopt` re-records the live one when it is borz's own (e.g. launched by an older borz). Do not delete `~/.borz/browser/browser.json` by hand.
+- "Daemon did not start in time" → the message names the daemon squatting on the port (version + pid) when `~/.borz/daemon.json` is missing; `kill` that pid and re-run.
 - Element ref not found → page changed between snapshot and action. Re-snapshot.
 - Remote `server` refuses to start → non-loopback bind without `--token`. Set `BORZ_TOKEN` or pass `--token`.
 
