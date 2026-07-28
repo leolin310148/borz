@@ -140,7 +140,7 @@ func TestProbeDaemonPortIdentifiesSquattingDaemon(t *testing.T) {
 	if got := found.describe(); got != "version 0.24.0, pid 4242" {
 		t.Fatalf("describe() = %q", got)
 	}
-	if got := found.stopHint(); !strings.Contains(got, "kill 4242") {
+	if got := found.stopHint(); !strings.Contains(got, "borz daemon restart") || !strings.Contains(got, "preserving managed Chrome") {
 		t.Fatalf("stopHint() = %q", got)
 	}
 
@@ -149,7 +149,7 @@ func TestProbeDaemonPortIdentifiesSquattingDaemon(t *testing.T) {
 	if got := bare.describe(); got != "unknown version" {
 		t.Fatalf("bare describe() = %q", got)
 	}
-	if got := bare.stopHint(); got != "stop that process" {
+	if got := bare.stopHint(); got != "stop that process, then re-run this command" {
 		t.Fatalf("bare stopHint() = %q", got)
 	}
 

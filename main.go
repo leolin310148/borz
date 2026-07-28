@@ -85,6 +85,8 @@ var newDaemonServer = func(opts daemon.ServerOptions) daemonRunner {
 	return daemon.NewServer(opts)
 }
 
+var restartLocalDaemon = client.RestartDaemonPreservingBrowser
+
 func main() {
 	client.SetLocalVersion(version)
 
@@ -1196,6 +1198,35 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 			exitFunc(1)
 		}
 		fmt.Println("Daemon stopped")
+	case "restart":
+		if url, isRemote := remoteProfileURL(); isRemote {
+			fatal(remoteProfileLifecycleNote("daemon", url))
+			return
+		}
+		if len(cmdArgs) != 1 {
+			fatal("Usage: borz daemon restart [--json]")
+			return
+		}
+		result, err := restartLocalDaemon()
+		if err != nil {
+			if hasFlag(rawArgs, "--json") {
+				printJSON(map[string]interface{}{"success": false, "error": err.Error()})
+				exitFunc(1)
+				return
+			}
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			exitFunc(1)
+			return
+		}
+		if hasFlag(rawArgs, "--json") {
+			printJSON(result)
+			return
+		}
+		if result.PreviousPID > 0 {
+			fmt.Printf("Daemon restarted: PID %d -> %d (managed browser preserved)\n", result.PreviousPID, result.NewPID)
+		} else {
+			fmt.Printf("Daemon started: PID %d (managed browser preserved)\n", result.NewPID)
+		}
 	default:
 		startDaemonForeground(rawArgs)
 	}
@@ -1263,7 +1294,7 @@ func stopDaemonAfterUpdate() {
 	}
 	if kerr := client.KillDaemon(info.PID); kerr != nil {
 		fmt.Fprintf(os.Stderr, "Note: could not kill stuck daemon (pid %d): %v\n", info.PID, kerr)
-		fmt.Fprintln(os.Stderr, "      Restart it manually so the new binary is in effect: borz daemon shutdown")
+		fmt.Fprintln(os.Stderr, "      Restart it manually so the new binary is in effect without closing managed Chrome: borz daemon restart")
 		return
 	}
 	fmt.Fprintf(os.Stderr, "Killed stuck daemon (pid %d); next command will relaunch it from the new binary.\n", info.PID)

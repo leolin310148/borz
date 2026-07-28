@@ -1209,9 +1209,28 @@ borz daemon status
 # or
 borz status
 
-# Stop the daemon
+# Replace only the daemon and preserve managed Chrome, tabs, and session
+borz daemon restart
+borz daemon restart --json
+
+# Stop the daemon gracefully (also closes Chrome owned by borz)
 borz daemon shutdown
 ```
+
+`borz daemon restart` is the safe refresh path for a version mismatch or stale
+daemon. It verifies the exact local daemon PID through the loopback-only
+`/healthz` endpoint, forcibly replaces only that process, and reconnects to the
+same managed Chrome. This intentionally bypasses graceful browser cleanup, so
+the Chrome process, tab IDs, and session survive. For the default profile, whose
+daemon port is stable, it can also recover an older daemon that still owns the
+port after `daemon.json` was lost. A named profile with missing daemon state is
+refused because its dynamic daemon port cannot be safely guessed. The command
+also refuses remote profiles, non-loopback servers, and any PID it cannot
+verify. In-flight daemon requests and recordings are interrupted.
+
+With `--json`, success includes `success`, `previousPid` (when a daemon was
+replaced), `newPid`, optional `recoveredStale`, and `browserPreserved`; errors
+emit `{"success":false,"error":"..."}` and exit non-zero.
 
 ### Diagnosing the stack
 
@@ -1234,7 +1253,7 @@ Two failures are specific enough to get their own remediation:
   borz browser adopt             # record the live browser as borz's managed browser
   ```
 
-- **`Daemon did not start in time`** — if a daemon is already listening on the daemon port but `~/.borz/daemon.json` is gone, borz has no token for it and every spawn loses the port to it. The error now names the squatter (version and pid, read from its `/healthz`, which reports identity to loopback callers only) and tells you to `kill` it.
+- **`Daemon did not start in time`** — if a daemon is already listening on the daemon port but `~/.borz/daemon.json` is gone, borz has no token for it and every spawn loses the port to it. The error names the squatter (version and pid, read from its `/healthz`, which reports identity to loopback callers only) and tells you to run `borz daemon restart`, which verifies and replaces only that daemon while preserving managed Chrome.
 
 ### Local operational logs
 

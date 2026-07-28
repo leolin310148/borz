@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -78,6 +80,63 @@ func TestHandleDaemon_Shutdown(t *testing.T) {
 	})
 	if !strings.Contains(out, "stopped") {
 		t.Fatalf("shutdown output: %q", out)
+	}
+}
+
+func TestHandleDaemon_Restart(t *testing.T) {
+	old := restartLocalDaemon
+	restartLocalDaemon = func() (*client.DaemonRestartResult, error) {
+		return &client.DaemonRestartResult{
+			Success:          true,
+			PreviousPID:      111,
+			NewPID:           222,
+			RecoveredStale:   true,
+			BrowserPreserved: true,
+		}, nil
+	}
+	t.Cleanup(func() { restartLocalDaemon = old })
+
+	out := captureStdout(t, func() {
+		handleDaemon([]string{"restart"}, []string{"daemon", "restart"})
+	})
+	if !strings.Contains(out, "PID 111 -> 222") || !strings.Contains(out, "managed browser preserved") {
+		t.Fatalf("restart output: %q", out)
+	}
+
+	out = captureStdout(t, func() {
+		handleDaemon([]string{"restart"}, []string{"daemon", "restart", "--json"})
+	})
+	var got client.DaemonRestartResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("restart JSON = %q: %v", out, err)
+	}
+	if !got.Success || got.PreviousPID != 111 || got.NewPID != 222 || !got.RecoveredStale || !got.BrowserPreserved {
+		t.Fatalf("restart JSON result = %+v", got)
+	}
+}
+
+func TestHandleDaemon_RestartJSONError(t *testing.T) {
+	oldRestart := restartLocalDaemon
+	oldExit := exitFunc
+	restartLocalDaemon = func() (*client.DaemonRestartResult, error) {
+		return nil, errors.New("health PID mismatch")
+	}
+	exitCode := 0
+	exitFunc = func(code int) { exitCode = code }
+	t.Cleanup(func() {
+		restartLocalDaemon = oldRestart
+		exitFunc = oldExit
+	})
+
+	out := captureStdout(t, func() {
+		handleDaemon([]string{"restart"}, []string{"daemon", "restart", "--json"})
+	})
+	var got map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("restart error JSON = %q: %v", out, err)
+	}
+	if exitCode != 1 || got["success"] != false || got["error"] != "health PID mismatch" {
+		t.Fatalf("exit=%d payload=%v", exitCode, got)
 	}
 }
 

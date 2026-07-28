@@ -799,10 +799,11 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"daemon": {
 		Summary: "Start or control the local daemon (loopback only).",
-		Usage:   "borz daemon [status|shutdown|stop] [--profile N] [--host H --port P --cdp-host H --cdp-port P]",
+		Usage:   "borz daemon [status|restart|shutdown|stop] [--profile N] [--host H --port P --cdp-host H --cdp-port P]",
 		Flags: []string{
 			"  (no subcommand)        Start the daemon in the foreground",
 			"  status                 Show JSON status (or 'not running')",
+			"  restart                Replace only the daemon; preserve managed Chrome",
 			"  shutdown|stop          Ask the running daemon to exit",
 			"  --profile <n>          Use a named local browser profile",
 			"  --host <h>             Bind address (default 127.0.0.1)",
@@ -814,7 +815,7 @@ var commandHelp = map[string]cmdHelp{
 			"  --max-tabs <n>          Keep at most <n> page tabs; close oldest non-current tabs",
 			"                         (flag > env BORZ_MAX_TABS > profile maxTabs > 30; 0=unlimited)",
 		},
-		Notes: "For an auto-started managed profile, shutdown also closes the Chrome instance owned by borz. External CDP-profile browsers are never closed. For a remote-accessible server with auth, use 'borz server' instead.",
+		Notes: "Restart verifies the local daemon PID through its loopback health endpoint, then replaces only that process so the managed Chrome, tabs, and browser session survive. For the default profile, whose daemon port is stable, it also recovers a stale daemon whose daemon.json is missing. Shutdown is graceful and closes an auto-started Chrome instance owned by borz. External CDP-profile browsers are never closed. For a remote-accessible server with auth, use 'borz server' instead.",
 	},
 	"server": {
 		Summary: "Start the REST server (exposes /v1/* routes; requires a token when non-loopback).",
@@ -1293,6 +1294,12 @@ var commandHelp = map[string]cmdHelp{
 		Usage:    "borz daemon shutdown",
 		Examples: []string{"  borz daemon shutdown", "  borz daemon stop   # alias"},
 		Notes:    "Also closes a managed Chrome instance owned by borz. Browsers attached through a cdp profile are never closed.",
+	},
+	"daemon.restart": {
+		Summary:  "Replace only the verified local daemon while preserving managed Chrome.",
+		Usage:    "borz daemon restart [--json]",
+		Examples: []string{"  borz daemon restart", "  borz daemon restart --json"},
+		Notes:    "Uses the loopback-only health endpoint to verify the exact daemon PID, then forcibly replaces that process without running browser cleanup. This preserves the managed Chrome process, tab IDs, and browser session. --json returns success, previousPid (when present), newPid, recoveredStale (when applicable), and browserPreserved; failures return success:false plus error. The default profile can also recover an older stale daemon with no daemon.json because its port is stable; a named profile with missing state is refused because its dynamic daemon port cannot be safely guessed. In-flight daemon requests or recordings are interrupted. Refuses remote profiles, non-loopback servers, and unverified PIDs.",
 	},
 	"daemon.stop": {
 		Summary:  "Alias for 'daemon shutdown'. Asks the running daemon to exit cleanly.",

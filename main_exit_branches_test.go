@@ -147,6 +147,13 @@ func TestServiceAndServerExitBranches(t *testing.T) {
 	client.ResetForTests()
 	t.Setenv("BORZ_HOME", t.TempDir())
 	expectExit(t, 1, func() { handleDaemon([]string{"stop"}, []string{"daemon", "stop"}) })
+	oldRestart := restartLocalDaemon
+	restartLocalDaemon = func() (*client.DaemonRestartResult, error) {
+		return nil, errors.New("restart failed")
+	}
+	t.Cleanup(func() { restartLocalDaemon = oldRestart })
+	expectExit(t, 1, func() { handleDaemon([]string{"restart"}, []string{"daemon", "restart"}) })
+	expectExit(t, 1, func() { handleDaemon([]string{"restart", "extra"}, []string{"daemon", "restart", "extra"}) })
 	expectExit(t, 1, func() { handleServer([]string{"stop"}, []string{"server", "stop"}) })
 	expectExit(t, 1, func() { handleServer(nil, []string{"server", "--host", "0.0.0.0"}) })
 

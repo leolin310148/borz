@@ -252,7 +252,7 @@ func TestCommandHelpCoversSubcommands(t *testing.T) {
 		// site (handleSite)
 		"site.list", "site.search", "site.info", "site.update", "site.new", "site.lint", "site.trust", "site.run",
 		// daemon (handleDaemon)
-		"daemon.status", "daemon.shutdown", "daemon.stop",
+		"daemon.status", "daemon.restart", "daemon.shutdown", "daemon.stop",
 		// server (handleServer)
 		"server.status", "server.shutdown", "server.stop",
 		// service (handleService)
@@ -307,6 +307,7 @@ func TestResolveHelpKey(t *testing.T) {
 		{"flag-looking arg is skipped", "tab", []string{"-h", "close"}, "tab.close"},
 		{"second non-flag does not match", "tab", []string{"close", "new"}, "tab.close"},
 		{"alias resolves", "daemon", []string{"stop"}, "daemon.stop"},
+		{"restart resolves", "daemon", []string{"restart"}, "daemon.restart"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := resolveHelpKey(tc.parent, tc.cmdArgs); got != tc.want {

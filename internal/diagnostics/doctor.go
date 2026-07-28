@@ -124,7 +124,7 @@ func checkDaemonProcess(info *protocol.DaemonInfo) Check {
 		return Check{
 			Name:   "Daemon process",
 			Status: StatusFail,
-			Detail: fmt.Sprintf("pid %d is gone — stale daemon.json (run 'borz daemon stop' or delete %s)", info.PID, config.DaemonJSONPath()),
+			Detail: fmt.Sprintf("pid %d is gone — stale daemon.json (run 'borz daemon restart' to safely refresh daemon state, or delete %s)", info.PID, config.DaemonJSONPath()),
 		}
 	}
 	return Check{Name: "Daemon process", Status: StatusOK, Detail: fmt.Sprintf("pid %d alive", info.PID)}

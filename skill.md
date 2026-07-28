@@ -127,10 +127,10 @@ Pull community adapters: `borz site update` (CLI only — triggers a git pull, i
 ## Troubleshooting
 
 - "Chrome not connected" → the daemon is up but CDP is down. Start Chrome, or let the daemon auto-launch: check `borz status`.
-- "a daemon may already be running" → `borz daemon status`, `borz daemon shutdown` if stale.
+- "a daemon may already be running" or CLI/daemon version mismatch → `borz daemon status`, then `borz daemon restart` to replace only the verified daemon while preserving managed Chrome and tabs. Use `borz daemon shutdown` only when closing a borz-owned managed Chrome is intended.
 - When unsure where the stack is broken, run `borz doctor` — it walks through home dir, daemon JSON, daemon process, daemon HTTP, CDP attach, tabs, and direct CDP discovery, and reports the first failing layer.
 - "managed browser identity mismatch on port N" → the Chrome borz recorded as its own is not the one now on that port. `borz browser status` shows recorded vs live; `borz browser adopt` re-records the live one when it is borz's own (e.g. launched by an older borz). Do not delete `~/.borz/browser/browser.json` by hand.
-- "Daemon did not start in time" → the message names the daemon squatting on the port (version + pid) when `~/.borz/daemon.json` is missing; `kill` that pid and re-run.
+- "Daemon did not start in time" → the message names the daemon squatting on the port (version + pid) when `~/.borz/daemon.json` is missing; run `borz daemon restart` so borz verifies and replaces that exact daemon while preserving managed Chrome.
 - Element ref not found → page changed between snapshot and action. Re-snapshot.
 - Remote `server` refuses to start → non-loopback bind without `--token`. Set `BORZ_TOKEN` or pass `--token`.
 - Hit a papercut (confusing command, missing flag, unhelpful output)? Record it: `borz feedback "<what was awkward>" [--category ux|bug|feature] [--command <cmd>]`. It appends to the local file `~/.borz/feedback.jsonl` for the maintainer to review — takes one command, do it whenever borz slows you down.

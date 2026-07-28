@@ -74,7 +74,7 @@ borz window list|new|focus|close           # browser windows (extension)
 borz site list|search|info|run [--scope client|server]  # client catalog by default; server = selected daemon
 borz site update|new|lint|trust             # manage client-side adapters
 borz <platform>/<adapter> [args]            # shorthand for "site run"
-borz status | daemon [status|shutdown]         # status is read-only; if stopped, next browser command auto-starts it
+borz status | daemon [status|restart|shutdown] # restart replaces only daemon and preserves Chrome; status is read-only
 borz doctor [--json]                         # diagnose CLI/daemon/CDP/tabs end-to-end
 borz browser status|adopt [--port N]         # which Chrome borz owns; adopt fixes an identity mismatch
 borz logs path|tail|stats [--since 7d]       # inspect privacy-safe local operational logs
@@ -85,7 +85,7 @@ borz help [command [sub]]                    # per-command help
 borz <command> --help                        # same, inline form
 ```
 
-Shutting down an auto-started daemon also closes its borz-owned managed Chrome instance. Browsers attached through a `cdp` profile remain externally owned and are never closed by daemon shutdown. `server --ensure-browser` closes Chrome only when its ensure hook actually launched that instance.
+Use `borz daemon restart [--json]` for a version refresh or stale default-profile daemon: it verifies the exact local PID through loopback `/healthz`, forcibly replaces only the daemon, and preserves the managed Chrome process, tab IDs, and session. A named profile with missing daemon state is refused because its dynamic port cannot be safely guessed. The command also refuses remote/non-loopback/unverified targets and interrupts in-flight daemon work. Shutting down an auto-started daemon is different: `borz daemon shutdown` performs graceful cleanup and also closes its borz-owned managed Chrome instance. Browsers attached through a `cdp` profile remain externally owned and are never closed by daemon shutdown. `server --ensure-browser` closes Chrome only when its ensure hook actually launched that instance.
 
 Global flags: `--profile <name>`, `--tab <id>`, `--json`, `--jq <expr>`, `--unwrap` (eval/site only), `--since <seq|last_action>`.
 

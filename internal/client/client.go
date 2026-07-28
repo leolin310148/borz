@@ -317,7 +317,7 @@ func warnDaemonVersionMismatch(daemonVersion string) {
 		return
 	}
 	versionWarningShown = true
-	fmt.Fprintf(os.Stderr, "Warning: borz daemon is version %s, but CLI is version %s; run `borz daemon stop` to refresh when convenient.\n", daemonVersion, localVersion)
+	fmt.Fprintf(os.Stderr, "Warning: borz daemon is version %s, but CLI is version %s; run `borz daemon restart` to refresh it without closing managed Chrome.\n", daemonVersion, localVersion)
 }
 
 func daemonVersionMatches(daemonVersion string) bool {
@@ -584,9 +584,9 @@ func (d daemonPortSquatter) describe() string {
 
 func (d daemonPortSquatter) stopHint() string {
 	if d.PID > 0 {
-		return fmt.Sprintf("stop it with 'kill %d'", d.PID)
+		return "run 'borz daemon restart' to replace only the daemon while preserving managed Chrome"
 	}
-	return "stop that process"
+	return "stop that process, then re-run this command"
 }
 
 // probeDaemonPort asks a port whether a borz daemon is listening. Only /healthz
