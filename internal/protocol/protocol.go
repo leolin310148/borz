@@ -56,6 +56,9 @@ const (
 	// ActionFileChooser pre-arms a handler for the next native file-picker
 	// dialog (Page.setInterceptFileChooserDialog). See Request.FileChooserCommand.
 	ActionFileChooser ActionType = "filechooser"
+	// ActionWebAuthn controls Chrome's target-scoped WebAuthn virtual
+	// authenticator domain. See Request.WebAuthnCommand.
+	ActionWebAuthn ActionType = "webauthn"
 )
 
 // Request is sent from CLI to daemon.
@@ -225,6 +228,35 @@ type Request struct {
 	// editing shortcuts (macOS handles Cmd+A/C/V/X in the browser process).
 	// When empty, well-known meta-modifier combos are auto-mapped.
 	Commands []string `json:"commands,omitempty"`
+
+	// WebAuthnCommand (ActionWebAuthn) is one of:
+	//   "enable", "disable", "add", "credentials", "remove",
+	//   "set-user-verified", or "set-automatic-presence".
+	// These map to the corresponding named Chrome CDP WebAuthn methods; this
+	// surface intentionally does not expose arbitrary CDP passthrough.
+	WebAuthnCommand string `json:"webAuthnCommand,omitempty"`
+	// AuthenticatorID is returned by WebAuthn.addVirtualAuthenticator and is
+	// required by every authenticator-specific WebAuthn command.
+	AuthenticatorID string `json:"authenticatorId,omitempty"`
+	// VirtualAuthenticator is required by WebAuthnCommand "add".
+	VirtualAuthenticator *VirtualAuthenticatorOptions `json:"virtualAuthenticator,omitempty"`
+	// UserVerified is required by WebAuthnCommand "set-user-verified".
+	UserVerified *bool `json:"userVerified,omitempty"`
+	// AutomaticPresence is required by WebAuthnCommand
+	// "set-automatic-presence".
+	AutomaticPresence *bool `json:"automaticPresence,omitempty"`
+}
+
+// VirtualAuthenticatorOptions is the safe, typed subset of CDP
+// WebAuthn.VirtualAuthenticatorOptions that borz exposes. Defaults are applied
+// at the CLI/REST/MCP boundary; the daemon still validates every field.
+type VirtualAuthenticatorOptions struct {
+	Protocol                    string `json:"protocol"`
+	Transport                   string `json:"transport"`
+	HasResidentKey              bool   `json:"hasResidentKey"`
+	HasUserVerification         bool   `json:"hasUserVerification"`
+	IsUserVerified              bool   `json:"isUserVerified"`
+	AutomaticPresenceSimulation bool   `json:"automaticPresenceSimulation"`
 }
 
 // RefInfo stores element reference information from a snapshot.

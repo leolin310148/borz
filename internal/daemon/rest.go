@@ -111,6 +111,13 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			TabID:      body.tabID(),
 		})
 	}))
+	mux.HandleFunc("/v1/webauthn", s.restJSONE(func(body restBody) (*protocol.Request, error) {
+		req, err := body.webAuthnRequest()
+		if err != nil {
+			return nil, err
+		}
+		return body.withActivate(req), nil
+	}))
 	mux.HandleFunc("/v1/mouse", s.restJSON(func(body restBody) *protocol.Request {
 		return body.withActivate(&protocol.Request{
 			Action:     protocol.ActionMouse,
@@ -404,6 +411,87 @@ type restBody struct {
 	// Editing commands sent with keyDown for /v1/press and /v1/key
 	// (Input.dispatchKeyEvent `commands`, e.g. ["selectAll"]).
 	Commands []string `json:"commands,omitempty"`
+
+	// Typed WebAuthn virtual-authenticator controls for /v1/webauthn.
+	Protocol            string `json:"protocol,omitempty"`
+	Transport           string `json:"transport,omitempty"`
+	AuthenticatorID     string `json:"authenticatorId,omitempty"`
+	HasResidentKey      *bool  `json:"hasResidentKey,omitempty"`
+	HasUserVerification *bool  `json:"hasUserVerification,omitempty"`
+	IsUserVerified      *bool  `json:"isUserVerified,omitempty"`
+	AutomaticPresence   *bool  `json:"automaticPresence,omitempty"`
+}
+
+func (b restBody) webAuthnRequest() (*protocol.Request, error) {
+	command := strings.ToLower(strings.TrimSpace(b.Command))
+	req := &protocol.Request{
+		Action:          protocol.ActionWebAuthn,
+		WebAuthnCommand: command,
+		AuthenticatorID: strings.TrimSpace(b.AuthenticatorID),
+		TabID:           b.tabID(),
+	}
+	switch command {
+	case "enable", "disable":
+		return req, nil
+	case "add":
+		opts := &protocol.VirtualAuthenticatorOptions{
+			Protocol:                    "ctap2",
+			Transport:                   "internal",
+			HasResidentKey:              true,
+			HasUserVerification:         true,
+			IsUserVerified:              true,
+			AutomaticPresenceSimulation: true,
+		}
+		if value := strings.TrimSpace(b.Protocol); value != "" {
+			opts.Protocol = value
+		}
+		if value := strings.TrimSpace(b.Transport); value != "" {
+			opts.Transport = value
+		}
+		if b.HasResidentKey != nil {
+			opts.HasResidentKey = *b.HasResidentKey
+		}
+		if b.HasUserVerification != nil {
+			opts.HasUserVerification = *b.HasUserVerification
+		}
+		if b.IsUserVerified != nil {
+			opts.IsUserVerified = *b.IsUserVerified
+		}
+		if b.AutomaticPresence != nil {
+			opts.AutomaticPresenceSimulation = *b.AutomaticPresence
+		}
+		normalized, err := validateVirtualAuthenticatorOptions(opts)
+		if err != nil {
+			return nil, err
+		}
+		req.VirtualAuthenticator = normalized
+		return req, nil
+	case "credentials", "remove":
+		if req.AuthenticatorID == "" {
+			return nil, fmt.Errorf("authenticatorId is required for command=%s", command)
+		}
+		return req, nil
+	case "set-user-verified":
+		if req.AuthenticatorID == "" {
+			return nil, fmt.Errorf("authenticatorId is required for command=%s", command)
+		}
+		if b.IsUserVerified == nil {
+			return nil, fmt.Errorf("isUserVerified is required for command=%s", command)
+		}
+		req.UserVerified = b.IsUserVerified
+		return req, nil
+	case "set-automatic-presence":
+		if req.AuthenticatorID == "" {
+			return nil, fmt.Errorf("authenticatorId is required for command=%s", command)
+		}
+		if b.AutomaticPresence == nil {
+			return nil, fmt.Errorf("automaticPresence is required for command=%s", command)
+		}
+		req.AutomaticPresence = b.AutomaticPresence
+		return req, nil
+	default:
+		return nil, fmt.Errorf("command must be one of: enable, disable, add, credentials, remove, set-user-verified, set-automatic-presence")
+	}
 }
 
 // uploadFiles returns the file list for an /v1/upload request, accepting

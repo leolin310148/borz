@@ -1807,6 +1807,19 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			return failResp(req.ID, fmt.Sprintf("unknown visibility state: %s (expected visible, hidden, or reset)", req.Visibility))
 		}
 
+	case protocol.ActionWebAuthn:
+		result, err := dispatchWebAuthn(cdp, target.ID, req)
+		if err != nil {
+			return failResp(req.ID, err)
+		}
+		seq := tab.RecordAction()
+		return okResp(req.ID, &protocol.ResponseData{
+			Result: result,
+			TabID:  target.ID,
+			Tab:    shortID,
+			Seq:    intPtr(seq),
+		})
+
 	case protocol.ActionFileChooser:
 		subCmd := req.FileChooserCommand
 		if subCmd == "" {

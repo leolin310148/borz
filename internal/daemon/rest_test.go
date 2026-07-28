@@ -509,7 +509,7 @@ func TestRestRoutes_NewEndpointsRegistered(t *testing.T) {
 	mux := http.NewServeMux()
 	s.registerRESTRoutes(mux)
 
-	for _, path := range []string{"/v1/tabs/front", "/v1/page/visibility", "/v1/filechooser"} {
+	for _, path := range []string{"/v1/tabs/front", "/v1/page/visibility", "/v1/filechooser", "/v1/webauthn"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusMethodNotAllowed {

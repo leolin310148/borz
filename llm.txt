@@ -41,6 +41,8 @@ borz fill <ref> <text>                       # clear + fill
 borz type <ref> <text>                       # append
 borz upload <ref> <file...>                  # attach files to <input type=file> (paths on daemon host)
 borz filechooser accept <file...>            # arm the next native file-picker dialog (no <input> needed)
+borz webauthn enable|add|credentials|remove [--tab id]  # typed Passkey virtual-authenticator lifecycle
+borz webauthn set-user-verified <id> <bool>   # control UV result; set-automatic-presence controls presence
 borz press <key> [--modifiers <csv>] [--commands <csv>]  # Enter, Tab; modifiers: alt,ctrl,meta,shift
                                              # meta combos (a/c/x/v/z) auto-map to CDP editing commands
 borz clipboard-write <text> [--paste]        # set clipboard; --paste fires Ctrl+Shift+V (atomic terminal paste)
@@ -150,10 +152,11 @@ MCP client config (e.g. Claude Code `.claude/settings.json`):
 { "mcpServers": { "borz": { "command": "borz", "args": ["mcp"] } } }
 ```
 
-Tools (41 total):
+Tools (44 total):
 
 - **Navigation:** `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close`
 - **Interaction:** `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_filechooser`, `browser_press`, `browser_page_visibility`, `browser_clipboard_write`, `browser_scroll`
+- **Browser testing:** `browser_webauthn` (typed tab-scoped WebAuthn virtual-authenticator lifecycle)
 - **Observation:** `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_term_text`, `browser_wait`
 - **Tabs:** `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_front`, `browser_tab_close`
 - **Diagnostics:** `browser_network`, `browser_console`, `browser_errors`, `browser_doctor`
@@ -196,6 +199,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 | POST | `/v1/upload` | `{ref, files: [path,...] \| file, tab?, waitFor?, timeoutMs?}` (paths resolved on daemon host) |
 | POST | `/v1/filechooser` | `{command?: accept\|cancel\|disarm\|status, files?: [path,...] \| file, tab?}` — arm BEFORE the click that opens the picker |
 | POST | `/v1/page/visibility` | `{visibility?: visible\|hidden\|reset, tab?}` — override `document.visibilityState` (omit for status) |
+| POST | `/v1/webauthn` | `{command, authenticatorId?, protocol?, transport?, hasResidentKey?, hasUserVerification?, isUserVerified?, automaticPresence?, tab?}` — typed virtual-authenticator lifecycle |
 | POST | `/v1/press` | `{key, modifiers?, commands?, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/key` | raw OS-level key input |
 | POST | `/v1/mouse` | raw OS-level mouse input |
@@ -243,6 +247,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 - **Site adapters have an explicit scope.** CLI and MCP default to `client`: they read the adapter and SHA256 trust beside the CLI/MCP process, build its JavaScript locally, and can send it through a managed, cdp, or remote profile. `--scope server` / MCP `scope:"server"` uses `/v1/sites/*`, so catalog, trust, and usage come from the selected daemon's `~/.borz/sites` or `~/.borz/bb-sites`. Direct `/v1/sites/*` calls are always server-scoped. `site update/new/lint/trust` are client-only; manage server adapters on the daemon host. When no tab is specified, adapters reuse or open their domain first; explicit tabs still enforce the domain guard unless `force` is set.
 - **Backgrounded tabs report `visibilityState: "hidden"` and pages throttle on it.** Many apps (Teams, Slack, most upload flows) refuse to start work while hidden — the request is simply never made. `borz tab front` / `/v1/tabs/front` really unhides the window (restores it if minimized, then activates + focuses), and needs no Chrome extension. When the window must stay where it is (unattended automation on a headless-ish host), `borz page visibility visible` / `/v1/page/visibility` makes the page *believe* it is visible: `document.visibilityState` / `document.hidden` are overridden, a synthetic `visibilitychange` fires, focus is emulated, and the web lifecycle state is set to active. That override persists across navigations in the tab until `reset`, but it cannot un-throttle requestAnimationFrame or compositor rendering — for real rendering use `tab front`.
 - **`filechooser` is for file inputs that don't exist in the DOM yet.** `upload <ref>` needs a stable `<input type=file>`. When a site builds the input on click or opens the OS dialog directly, arm `borz filechooser accept <file>` *before* the click: the native dialog is intercepted and fulfilled. Arming is one-shot, like `dialog`.
+- **WebAuthn virtual authenticators are tab-session scoped.** For real browser Passkey E2E, run `webauthn enable --tab T`, then `webauthn add --tab T --json`; the safe add defaults are CTAP2/internal with resident keys, UV capability, `isUserVerified=true`, and automatic presence. Keep `data.result.authenticatorId` for `credentials`, `set-user-verified`, `set-automatic-presence`, and `remove`; finish with `disable`. This is a typed WebAuthn surface, not arbitrary raw CDP.
 - **Network/console/error buffers are per-tab rings.** Use `--since last_action` for incremental queries.
 - **Operational logs are persistent and privacy-safe by default.** `borz logs tail` shows recent tool/action outcomes; `borz logs stats --since 7d` aggregates failures and latency. Raw field text, scripts, clipboard data, headers, URL queries, snapshots, and response bodies are never logged.
 - **A surviving local daemon recovers its managed browser automatically.** If Chrome exits while the daemon remains alive, the next CLI/MCP command relaunches the managed browser on the daemon's existing CDP port and reconnects. Custom/remote CDP endpoints are never launched locally.

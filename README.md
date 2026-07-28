@@ -209,12 +209,13 @@ Add to your MCP client configuration (e.g. `.claude/settings.json` for Claude Co
 
 ### Available Tools
 
-The MCP server exposes 41 tools:
+The MCP server exposes 44 tools:
 
 | Category | Tools |
 |----------|-------|
 | **Navigation** | `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close` |
 | **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_filechooser`, `browser_press`, `browser_page_visibility`, `browser_clipboard_write`, `browser_scroll` |
+| **Browser testing** | `browser_webauthn` |
 | **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_term_text`, `browser_wait` |
 | **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_front`, `browser_tab_close` |
 | **Diagnostics** | `browser_network`, `browser_console`, `browser_errors`, `browser_doctor` |
@@ -492,6 +493,7 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/upload` | `{ref, files: [path,...] \| file, tab?, waitFor?, timeoutMs?}` — attach files to `<input type=file>` (paths resolved on daemon host) |
 | POST | `/v1/filechooser` | `{command?: accept\|cancel\|disarm\|status, files?: [path,...] \| file, tab?}` — pre-arm the next native file-picker dialog (arm BEFORE the click that opens it) |
 | POST | `/v1/page/visibility` | `{visibility?: visible\|hidden\|reset, tab?}` — override what the page believes about `document.visibilityState`; omit `visibility` for status |
+| POST | `/v1/webauthn` | `{command, authenticatorId?, protocol?, transport?, hasResidentKey?, hasUserVerification?, isUserVerified?, automaticPresence?, tab?}` — typed tab-scoped virtual-authenticator lifecycle |
 | POST | `/v1/press` | `{key, modifiers?, commands?, tab?, waitFor?, timeoutMs?}` — `commands` are CDP editing commands sent with keyDown (e.g. `["selectAll"]`) |
 | POST | `/v1/key` | `{keyType?, key?, code?, text?, modifiers?, tab?}` — raw OS-level key input (reaches canvas apps / SSH) |
 | POST | `/v1/mouse` | `{mouseType?, x?, y?, button?, deltaX?, deltaY?, clickCount?, modifiers?, tab?}` — raw OS-level mouse input |
@@ -867,6 +869,43 @@ Arming is one-shot, like `borz dialog`. Wraps CDP
 `Page.setInterceptFileChooserDialog` + `Page.fileChooserOpened` +
 `DOM.setFileInputFiles`: the native dialog never opens. Paths resolve on the
 daemon's filesystem.
+
+#### `webauthn` - Real Chrome Passkey E2E
+
+Use Chrome's target-scoped CDP WebAuthn domain to run registration and login
+ceremonies through the browser's real WebAuthn stack. The surface is typed;
+it does not expose arbitrary raw CDP.
+
+```bash
+# Pick one existing tab and enable WebAuthn for its CDP target session.
+borz webauthn enable --tab ab1c --json
+
+# Add a Passkey-ready authenticator. Defaults:
+# CTAP2, internal, resident key, UV capability, verified user, auto presence.
+borz webauthn add --tab ab1c --json
+# Keep data.result.authenticatorId from the JSON response.
+
+# After registration, observe Chrome's virtual credentials.
+borz webauthn credentials AUTHENTICATOR_ID --tab ab1c --json
+
+# Control pending/failure/success paths for registration or login.
+borz webauthn set-user-verified AUTHENTICATOR_ID false --tab ab1c
+borz webauthn set-automatic-presence AUTHENTICATOR_ID false --tab ab1c
+borz webauthn set-user-verified AUTHENTICATOR_ID true --tab ab1c
+borz webauthn set-automatic-presence AUTHENTICATOR_ID true --tab ab1c
+
+# Clean up without navigating or closing the tab.
+borz webauthn remove AUTHENTICATOR_ID --tab ab1c --json
+borz webauthn disable --tab ab1c --json
+```
+
+`webauthn add` accepts `--protocol ctap2|u2f`,
+`--transport internal|usb|nfc|ble`, `--has-resident-key true|false`,
+`--has-user-verification true|false`, `--is-user-verified true|false`, and
+`--automatic-presence true|false`. U2F requires the resident-key and
+user-verification options to be false. Virtual state and authenticator IDs are
+scoped to the selected tab's current CDP session and disappear when that
+session or WebAuthn domain is disabled.
 
 #### `press`
 

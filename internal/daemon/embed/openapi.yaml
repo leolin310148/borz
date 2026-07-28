@@ -25,6 +25,7 @@ tags:
   - name: interaction
   - name: input
   - name: observation
+  - name: webauthn
   - name: tabs
   - name: extension
   - name: sites
@@ -333,6 +334,65 @@ paths:
                       description: Omit to report status only.
       responses:
         "200": { $ref: "#/components/responses/Ok" }
+
+  /v1/webauthn:
+    post:
+      tags: [webauthn]
+      summary: Control a tab-scoped Chrome WebAuthn virtual authenticator
+      description: |
+        Typed access to Chrome's CDP WebAuthn domain; this is not a raw CDP
+        passthrough. Use the lifecycle `enable` → `add` → registration/login
+        ceremonies → `credentials` → `remove` → `disable`. `add` defaults to
+        a Passkey-ready CTAP2/internal authenticator with resident keys, user
+        verification, verified-user state, and automatic presence enabled.
+        `authenticatorId` returned by `add` is required for the credential,
+        control, and remove commands. State is scoped to the selected tab's
+        CDP target session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  required: [command]
+                  properties:
+                    command:
+                      type: string
+                      enum: [enable, disable, add, credentials, remove, set-user-verified, set-automatic-presence]
+                    authenticatorId:
+                      type: string
+                      description: Required except for enable, disable, and add.
+                    protocol:
+                      type: string
+                      enum: [ctap2, u2f]
+                      default: ctap2
+                      description: Used by add.
+                    transport:
+                      type: string
+                      enum: [internal, usb, nfc, ble]
+                      default: internal
+                      description: Used by add.
+                    hasResidentKey:
+                      type: boolean
+                      default: true
+                      description: Used by add.
+                    hasUserVerification:
+                      type: boolean
+                      default: true
+                      description: Used by add.
+                    isUserVerified:
+                      type: boolean
+                      default: true
+                      description: Used by add and required by set-user-verified.
+                    automaticPresence:
+                      type: boolean
+                      default: true
+                      description: Used by add and required by set-automatic-presence.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/Error" }
 
   /v1/press:
     post:

@@ -38,7 +38,7 @@ If `borz` is configured as an MCP server, call tools directly. Workflow:
 
 All tools accept an optional `tab` param (short id from `browser_tab_list`) to target a specific tab.
 
-Tool categories (37 total): navigation, interaction, observation (includes `browser_viewport` for responsive layouts and `browser_eval` for arbitrary JS), tab management, diagnostics, extension-backed Chrome APIs (`browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`), site adapters (`browser_site_list`/`_info`/`_run`).
+Tool categories (44 total): navigation, interaction, observation (includes `browser_viewport` for responsive layouts and `browser_eval` for arbitrary JS), browser testing (`browser_webauthn` for typed Passkey virtual authenticators), tab management, diagnostics, extension-backed Chrome APIs (`browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`), site adapters (`browser_site_list`/`_info`/`_run`).
 
 ### 2. Shell / CLI
 
@@ -70,6 +70,9 @@ borz bookmarks search github               # Chrome bookmarks (extension)
 borz browser-history search github --limit 20
 borz downloads list --limit 20
 borz window list                           # Chrome windows (extension)
+borz webauthn enable --tab <id>            # enable real Chrome WebAuthn test domain
+borz webauthn add --tab <id> --json        # Passkey-ready CTAP2/internal authenticator
+borz webauthn credentials <auth-id> --tab <id> --json
 borz <platform>/<adapter> [args]           # run a site adapter
 ```
 
@@ -113,6 +116,7 @@ Site adapters over HTTP: `GET /v1/sites`, `POST /v1/sites/info {name}`, `POST /v
 9. **Prefer `--wait-for '<selector>'` over `wait <ms>`** for any DOM change. Works on `open`, `click`, `fill`, `press`, `eval`, etc. — the action runs, then the daemon polls `document.querySelector(...)` until non-null or timeout (default 10s, override with `--timeout <ms>`). When no selector is available (animations, backend polling, "give it a moment"), reach for the **global `--pre-delay <ms>` / `--post-delay <ms>` flags** (`preDelay`/`postDelay` on MCP, `preDelayMs`/`postDelayMs` on REST) to absorb the `sleep N && borz ...` shell pattern into one daemon call. Both are capped by the 30s daemon command timeout.
 10. **Use `eval --unwrap` to strip `{success, data, result, ...}` envelopes** when you only want the value — strings are emitted unquoted, other shapes as JSON. Combine with `--file <path>` for non-trivial scripts.
 11. **Use extension-backed tools for browser-level state CDP cannot see**: all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser events. Check `browser_extension_status` / `borz extension status` first if one of these reports that no extension is connected.
+12. **Use the typed WebAuthn lifecycle for Passkey E2E**: target one tab, `enable`, `add`, run the real registration/login UI, inspect with `credentials`, control negative/success paths with `set-user-verified` and `set-automatic-presence`, then `remove` and `disable`. `add` defaults to CTAP2/internal with resident key, UV, verified user, and automatic presence enabled. Keep `data.result.authenticatorId`; virtual state is scoped to that tab's CDP session.
 
 ## Site adapters
 

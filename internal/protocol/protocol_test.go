@@ -138,6 +138,7 @@ func TestActionTypeConstants(t *testing.T) {
 		ActionTabList:    "tab_list",
 		ActionKey:        "key",
 		ActionMouse:      "mouse",
+		ActionWebAuthn:   "webauthn",
 	}
 	for k, v := range pairs {
 		if string(k) != v {

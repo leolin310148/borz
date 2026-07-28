@@ -205,6 +205,19 @@ var pageVisibilityTool = mcp.NewTool("browser_page_visibility",
 	tabParam(),
 )
 
+var webAuthnTool = mcp.NewTool("browser_webauthn",
+	mcp.WithDescription("Control Chrome CDP WebAuthn virtual authenticators for a specific tab without exposing raw CDP. Lifecycle: enable → add → run registration/login ceremonies → credentials to observe registrations → remove → disable. add defaults to a Passkey-ready CTAP2/internal authenticator with resident keys, user verification, verified-user state, and automatic presence."),
+	mcp.WithString("command", mcp.Required(), mcp.Description("Typed WebAuthn operation"), mcp.Enum("enable", "disable", "add", "credentials", "remove", "set-user-verified", "set-automatic-presence")),
+	mcp.WithString("authenticatorId", mcp.Description("ID returned by command=add; required by credentials/remove/set commands")),
+	mcp.WithString("protocol", mcp.Description("Virtual authenticator protocol for command=add (default ctap2)"), mcp.Enum("ctap2", "u2f")),
+	mcp.WithString("transport", mcp.Description("Virtual authenticator transport for command=add (default internal)"), mcp.Enum("internal", "usb", "nfc", "ble")),
+	mcp.WithBoolean("hasResidentKey", mcp.Description("Resident/discoverable credential support for command=add (default true)")),
+	mcp.WithBoolean("hasUserVerification", mcp.Description("User-verification capability for command=add (default true)")),
+	mcp.WithBoolean("isUserVerified", mcp.Description("Initial UV result for command=add (default true), or required value for command=set-user-verified")),
+	mcp.WithBoolean("automaticPresence", mcp.Description("Automatic presence for command=add (default true), or required value for command=set-automatic-presence")),
+	tabParam(),
+)
+
 var clipboardWriteTool = mcp.NewTool("browser_clipboard_write",
 	mcp.WithDescription("Write text to the tab's clipboard, optionally pasting it into a focused terminal. With paste=true the daemon fires Ctrl+Shift+V after writing, so an xterm.js / SSH terminal (e.g. JumpServer Luna) receives the whole string in one atomic paste — no per-character key streaming, no Enter race. Ideal for sending long commands or base64-encoded scripts to a canvas-rendered terminal. The terminal must have focus; the daemon best-effort focuses the xterm textarea (incl. same-origin iframes) first."),
 	mcp.WithString("text", mcp.Required(), mcp.Description("Text to place on the clipboard (e.g. a command or base64-encoded script)")),

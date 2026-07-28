@@ -59,6 +59,8 @@ var cliValueFlags = []string{
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
 	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--role",
 	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect", "--ref", "--scope",
+	"--protocol", "--transport", "--has-resident-key", "--has-user-verification",
+	"--is-user-verified", "--automatic-presence",
 }
 
 var cliValueFlagSet = makeFlagSet(cliValueFlags)
@@ -435,6 +437,9 @@ func main() {
 
 	case "viewport":
 		handleViewport(cmdArgs, jsonOutput, globalTabID, args)
+
+	case "webauthn":
+		handleWebAuthn(cmdArgs, args, jsonOutput, globalTabID)
 
 	case "close":
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionClose}
@@ -2393,6 +2398,10 @@ Observation:
                                 errors live
   trace [start|stop|status]     Record user actions
   record start|stop|render      Capture browser flows into .borzrec bundles
+
+Browser testing:
+  webauthn enable/add/...       Passkey-ready virtual authenticators scoped
+                                to a selected tab's Chrome CDP session
 
 Tab Management:
   tab                           List tabs

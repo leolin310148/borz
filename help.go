@@ -562,6 +562,92 @@ var commandHelp = map[string]cmdHelp{
 			"(where Chrome runs) — for remote daemons the files must live on that host.",
 	},
 
+	// --- WebAuthn virtual authenticators ---
+	"webauthn": {
+		Summary: "Control a target tab's Chrome WebAuthn virtual authenticators.",
+		Usage:   "borz webauthn <enable|disable|add|credentials|remove|set-user-verified|set-automatic-presence> [options] [--tab <id>]",
+		Flags: []string{
+			"  enable                                     Enable CDP WebAuthn for the tab",
+			"  add [options]                               Add a typed virtual authenticator",
+			"  credentials <authenticator-id>              Observe registered credentials",
+			"  set-user-verified <id> <true|false>         Change user-verification result",
+			"  set-automatic-presence <id> <true|false>    Change automatic presence",
+			"  remove <authenticator-id>                   Remove the authenticator",
+			"  disable                                    Disable WebAuthn and clear virtual state",
+		},
+		Examples: []string{
+			"  borz webauthn enable --tab ab1c",
+			"  borz webauthn add --tab ab1c --json",
+			"  borz webauthn credentials AUTHENTICATOR_ID --tab ab1c --json",
+			"  borz webauthn set-user-verified AUTHENTICATOR_ID false --tab ab1c",
+			"  borz webauthn remove AUTHENTICATOR_ID --tab ab1c",
+			"  borz webauthn disable --tab ab1c",
+		},
+		Notes: "Virtual authenticators are scoped to the selected tab's CDP session and are\n" +
+			"intended for test automation only. Run enable before add. The add defaults are\n" +
+			"Passkey-ready: CTAP2, internal transport, resident key, user-verification\n" +
+			"capability, isUserVerified=true, and automatic presence=true. The response to\n" +
+			"add contains data.result.authenticatorId; keep it for subsequent commands.\n" +
+			"Removing the authenticator and then disabling WebAuthn is the clean lifecycle.",
+	},
+	"webauthn.enable": {
+		Summary:  "Enable Chrome's WebAuthn CDP domain for one tab.",
+		Usage:    "borz webauthn enable [--tab <id>] [--json]",
+		Examples: []string{"  borz webauthn enable --tab ab1c --json"},
+		Notes:    "Enable is target-session scoped. Run it before adding a virtual authenticator.",
+	},
+	"webauthn.disable": {
+		Summary:  "Disable Chrome's WebAuthn CDP domain for one tab.",
+		Usage:    "borz webauthn disable [--tab <id>] [--json]",
+		Examples: []string{"  borz webauthn disable --tab ab1c"},
+		Notes:    "Disabling clears virtual-authenticator state for that target session. Remove known authenticators first when you want explicit lifecycle evidence.",
+	},
+	"webauthn.add": {
+		Summary: "Add a typed Chrome WebAuthn virtual authenticator.",
+		Usage:   "borz webauthn add [--protocol ctap2|u2f] [--transport internal|usb|nfc|ble] [boolean options] [--tab <id>] [--json]",
+		Flags: []string{
+			"  --protocol <ctap2|u2f>                 Authenticator protocol (default ctap2)",
+			"  --transport <internal|usb|nfc|ble>     Authenticator transport (default internal)",
+			"  --has-resident-key <true|false>        Resident/discoverable credentials (default true)",
+			"  --has-user-verification <true|false>   UV capability (default true)",
+			"  --is-user-verified <true|false>         Initial UV result (default true)",
+			"  --automatic-presence <true|false>      Auto-satisfy presence requests (default true)",
+		},
+		Examples: []string{
+			"  borz webauthn add --tab ab1c --json",
+			"  borz webauthn add --automatic-presence=false --is-user-verified=false --tab ab1c --json",
+			"  borz webauthn add --protocol u2f --transport usb --has-resident-key=false --has-user-verification=false --is-user-verified=false",
+		},
+		Notes: "Run 'webauthn enable' first. Safe Passkey defaults make a CTAP2 internal\n" +
+			"authenticator with resident keys, user verification, verified-user state,\n" +
+			"and automatic presence. Every boolean option requires an explicit true/false\n" +
+			"value. JSON returns the authenticator ID at data.result.authenticatorId.",
+	},
+	"webauthn.credentials": {
+		Summary:  "List credentials stored in a virtual authenticator.",
+		Usage:    "borz webauthn credentials <authenticator-id> [--tab <id>] [--json]",
+		Examples: []string{"  borz webauthn credentials AUTHENTICATOR_ID --tab ab1c --json"},
+		Notes:    "Returns Chrome's structured virtual credentials at data.result.credentials. The alias 'list-credentials' is also accepted.",
+	},
+	"webauthn.remove": {
+		Summary:  "Remove a virtual authenticator from one tab's CDP session.",
+		Usage:    "borz webauthn remove <authenticator-id> [--tab <id>] [--json]",
+		Examples: []string{"  borz webauthn remove AUTHENTICATOR_ID --tab ab1c --json"},
+		Notes:    "The alias 'remove-authenticator' is also accepted. Follow with 'webauthn disable' when the test is finished.",
+	},
+	"webauthn.set-user-verified": {
+		Summary:  "Control whether a virtual authenticator reports a verified user.",
+		Usage:    "borz webauthn set-user-verified <authenticator-id> <true|false> [--tab <id>] [--json]",
+		Examples: []string{"  borz webauthn set-user-verified AUTHENTICATOR_ID false --tab ab1c"},
+		Notes:    "Use false to test a failed/not-completed user-verification path, then true before the successful ceremony.",
+	},
+	"webauthn.set-automatic-presence": {
+		Summary:  "Control automatic user-presence simulation for a virtual authenticator.",
+		Usage:    "borz webauthn set-automatic-presence <authenticator-id> <true|false> [--tab <id>] [--json]",
+		Examples: []string{"  borz webauthn set-automatic-presence AUTHENTICATOR_ID false --tab ab1c"},
+		Notes:    "Disable automatic presence when a test needs the ceremony to remain pending; re-enable it to let Chrome complete the request.",
+	},
+
 	// --- Page-level emulation ---
 	"page": {
 		Summary: "Tab-level page emulation controls (visibility).",

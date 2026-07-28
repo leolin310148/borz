@@ -93,6 +93,7 @@ func newMCPServer(version string) *server.MCPServer {
 	s.AddTool(fileChooserTool, handleFileChooser)
 	s.AddTool(pressTool, handlePress)
 	s.AddTool(pageVisibilityTool, handlePageVisibility)
+	s.AddTool(webAuthnTool, handleWebAuthn)
 	s.AddTool(clipboardWriteTool, handleClipboardWrite)
 	s.AddTool(scrollTool, handleScroll)
 

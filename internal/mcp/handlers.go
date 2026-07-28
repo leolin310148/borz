@@ -431,6 +431,79 @@ func handlePageVisibility(ctx context.Context, r mcp.CallToolRequest) (*mcp.Call
 	}
 }
 
+func handleWebAuthn(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	command := strings.ToLower(strings.TrimSpace(r.GetString("command", "")))
+	req := &protocol.Request{
+		ID:              newID(),
+		Action:          protocol.ActionWebAuthn,
+		WebAuthnCommand: command,
+	}
+	setTab(req, r)
+	args := r.GetArguments()
+
+	switch command {
+	case "enable", "disable":
+	case "add":
+		opts := &protocol.VirtualAuthenticatorOptions{
+			Protocol:                    strings.ToLower(strings.TrimSpace(r.GetString("protocol", "ctap2"))),
+			Transport:                   strings.ToLower(strings.TrimSpace(r.GetString("transport", "internal"))),
+			HasResidentKey:              mcpBoolDefault(r, "hasResidentKey", true),
+			HasUserVerification:         mcpBoolDefault(r, "hasUserVerification", true),
+			IsUserVerified:              mcpBoolDefault(r, "isUserVerified", true),
+			AutomaticPresenceSimulation: mcpBoolDefault(r, "automaticPresence", true),
+		}
+		if opts.Protocol != "ctap2" && opts.Protocol != "u2f" {
+			return mcp.NewToolResultError("protocol must be ctap2 or u2f"), nil
+		}
+		switch opts.Transport {
+		case "internal", "usb", "nfc", "ble":
+		default:
+			return mcp.NewToolResultError("transport must be one of: internal, usb, nfc, ble"), nil
+		}
+		if opts.IsUserVerified && !opts.HasUserVerification {
+			return mcp.NewToolResultError("isUserVerified=true requires hasUserVerification=true"), nil
+		}
+		if opts.Protocol == "u2f" && (opts.HasResidentKey || opts.HasUserVerification || opts.IsUserVerified) {
+			return mcp.NewToolResultError("u2f requires hasResidentKey=false, hasUserVerification=false, and isUserVerified=false"), nil
+		}
+		req.VirtualAuthenticator = opts
+	case "credentials", "remove", "set-user-verified", "set-automatic-presence":
+		req.AuthenticatorID = strings.TrimSpace(r.GetString("authenticatorId", ""))
+		if req.AuthenticatorID == "" {
+			return mcp.NewToolResultError("authenticatorId is required for command=" + command), nil
+		}
+		if command == "set-user-verified" {
+			if _, ok := args["isUserVerified"]; !ok {
+				return mcp.NewToolResultError("isUserVerified is required for command=set-user-verified"), nil
+			}
+			value := r.GetBool("isUserVerified", false)
+			req.UserVerified = &value
+		}
+		if command == "set-automatic-presence" {
+			if _, ok := args["automaticPresence"]; !ok {
+				return mcp.NewToolResultError("automaticPresence is required for command=set-automatic-presence"), nil
+			}
+			value := r.GetBool("automaticPresence", false)
+			req.AutomaticPresence = &value
+		}
+	default:
+		return mcp.NewToolResultError("command must be one of: enable, disable, add, credentials, remove, set-user-verified, set-automatic-presence"), nil
+	}
+
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	return textResult(resp, "WebAuthn "+command+" completed"), nil
+}
+
+func mcpBoolDefault(r mcp.CallToolRequest, name string, defaultValue bool) bool {
+	if _, ok := r.GetArguments()[name]; !ok {
+		return defaultValue
+	}
+	return r.GetBool(name, defaultValue)
+}
+
 func handleClipboardWrite(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	text, err := r.RequireString("text")
 	if err != nil {

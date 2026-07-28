@@ -81,6 +81,22 @@ func TestOpenAPIRoutes(t *testing.T) {
 		}
 	})
 
+	t.Run("spec documents typed WebAuthn lifecycle", func(t *testing.T) {
+		body := string(openAPISpec)
+		for _, want := range []string{
+			"/v1/webauthn:",
+			"set-user-verified",
+			"set-automatic-presence",
+			"hasResidentKey:",
+			"automaticPresence:",
+			"this is not a raw CDP",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("WebAuthn OpenAPI missing %q", want)
+			}
+		}
+	})
+
 	t.Run("non-GET rejected", func(t *testing.T) {
 		for _, path := range []string{"/openapi.yaml", "/docs"} {
 			rec := httptest.NewRecorder()
