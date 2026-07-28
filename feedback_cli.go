@@ -13,7 +13,7 @@ import (
 	"github.com/leolin310148/borz/internal/config"
 )
 
-const feedbackUsage = "Usage: borz feedback <message> [--category <c>] [--command <cmd>]  |  borz feedback list [--limit N] | path"
+const feedbackUsage = "Usage: borz feedback <message> [--category ux|bug|feature|docs|perf] [--command <cmd>]  |  borz feedback list [--limit N] | path"
 
 // feedbackFileName lives directly under the borz home directory so feedback
 // survives profile switches and is trivial to find (~/.borz/feedback.jsonl).
@@ -74,6 +74,11 @@ func addFeedback(cmdArgs, rawArgs []string, jsonOutput bool) {
 		fatal(feedbackUsage)
 		return
 	}
+	category, command, err := parseFeedbackOptions(rawArgs)
+	if err != nil {
+		fatal(err.Error())
+		return
+	}
 	entry := feedbackEntry{
 		Time:    time.Now().UTC(),
 		Version: version,
@@ -81,8 +86,8 @@ func addFeedback(cmdArgs, rawArgs []string, jsonOutput bool) {
 		SessionID: cliSessionID(
 			os.Getenv("BORZ_SESSION_ID"), os.Getenv("TMUX_PANE"), os.Getenv("TERM_SESSION_ID"), os.Getppid(),
 		),
-		Category: strings.ToLower(strings.TrimSpace(getArgValue(rawArgs, "--category"))),
-		Command:  strings.TrimSpace(getArgValue(rawArgs, "--command")),
+		Category: category,
+		Command:  command,
 		Message:  message,
 	}
 	path, err := appendFeedback(entry)
@@ -95,6 +100,27 @@ func addFeedback(cmdArgs, rawArgs []string, jsonOutput bool) {
 		return
 	}
 	fmt.Printf("Feedback saved to %s\n", path)
+}
+
+func parseFeedbackOptions(args []string) (category, command string, err error) {
+	category, categorySet := getArgValueOK(args, "--category")
+	if categorySet {
+		category = strings.ToLower(strings.TrimSpace(category))
+		switch category {
+		case "ux", "bug", "feature", "docs", "perf":
+		case "":
+			return "", "", fmt.Errorf("--category requires a value (ux, bug, feature, docs, or perf)")
+		default:
+			return "", "", fmt.Errorf("--category must be one of: ux, bug, feature, docs, perf")
+		}
+	}
+
+	command, commandSet := getArgValueOK(args, "--command")
+	command = strings.TrimSpace(command)
+	if commandSet && command == "" {
+		return "", "", fmt.Errorf("--command requires a non-empty value")
+	}
+	return category, command, nil
 }
 
 // feedbackPositionals returns the non-flag tokens of cmdArgs, skipping the

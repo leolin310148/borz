@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,28 @@ func TestHandleFeedbackAddListPath(t *testing.T) {
 	}
 }
 
+func TestMainFeedbackCommandSpecificHelp(t *testing.T) {
+	home := setupFeedbackHome(t)
+	oldArgs := os.Args
+	os.Args = []string{"borz", "feedback", "--help"}
+	t.Cleanup(func() { os.Args = oldArgs })
+
+	out := captureStdout(t, main)
+	for _, want := range []string{
+		"Record usage feedback",
+		"Usage: borz feedback <message>",
+		"One of: ux, bug, feature, docs, perf",
+		"Purely local",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("feedback --help missing %q; got:\n%s", want, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, feedbackFileName)); !os.IsNotExist(err) {
+		t.Fatalf("feedback --help created feedback file; stat error = %v", err)
+	}
+}
+
 func TestHandleFeedbackExplicitAddAndJSON(t *testing.T) {
 	setupFeedbackHome(t)
 
@@ -98,8 +121,6 @@ func TestHandleFeedbackListLimitAndEmpty(t *testing.T) {
 }
 
 func TestHandleFeedbackErrors(t *testing.T) {
-	setupFeedbackHome(t)
-
 	for _, tc := range []struct {
 		name    string
 		cmdArgs []string
@@ -107,9 +128,13 @@ func TestHandleFeedbackErrors(t *testing.T) {
 	}{
 		{"no args", nil, nil},
 		{"flags only", []string{"--category", "ux"}, []string{"feedback", "--category", "ux"}},
+		{"missing category", []string{"message", "--category"}, []string{"feedback", "message", "--category"}},
+		{"invalid category", []string{"message", "--category", "other"}, []string{"feedback", "message", "--category", "other"}},
+		{"missing command", []string{"message", "--command"}, []string{"feedback", "message", "--command"}},
 		{"bad limit", []string{"list", "--limit", "0"}, []string{"feedback", "list", "--limit", "0"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			home := setupFeedbackHome(t)
 			exitCode := -1
 			oldExit := exitFunc
 			exitFunc = func(code int) { exitCode = code }
@@ -118,7 +143,83 @@ func TestHandleFeedbackErrors(t *testing.T) {
 			if exitCode != 1 {
 				t.Fatalf("expected exit code 1, got %d", exitCode)
 			}
+			if _, err := os.Stat(filepath.Join(home, feedbackFileName)); !os.IsNotExist(err) {
+				t.Fatalf("invalid input created feedback file; stat error = %v", err)
+			}
 		})
+	}
+}
+
+func TestParseFeedbackOptionsCategories(t *testing.T) {
+	for _, want := range []string{"ux", "bug", "feature", "docs", "perf"} {
+		t.Run(want, func(t *testing.T) {
+			got, command, err := parseFeedbackOptions([]string{
+				"feedback", "--category=" + strings.ToUpper(want), "--command", "borz feedback --help",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want || command != "borz feedback --help" {
+				t.Fatalf("parseFeedbackOptions = %q, %q; want %q, %q", got, command, want, "borz feedback --help")
+			}
+		})
+	}
+}
+
+func TestAppendFeedbackCreatesDirectoryEscapesJSONAndAppends(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "nested", ".borz")
+	t.Setenv(config.HomeEnv, home)
+	first := feedbackEntry{
+		Time:     time.Date(2026, 7, 29, 1, 2, 3, 0, time.UTC),
+		Category: "docs",
+		Command:  `borz feedback --help`,
+		Message:  "quotes \"stay\", slash \\\\ stays\nsecond line\tend",
+	}
+	second := feedbackEntry{
+		Time:    time.Date(2026, 7, 29, 2, 3, 4, 0, time.UTC),
+		Message: "second entry",
+	}
+	for _, entry := range []feedbackEntry{first, second} {
+		path, err := appendFeedback(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if path != filepath.Join(home, feedbackFileName) {
+			t.Fatalf("appendFeedback path = %q", path)
+		}
+	}
+
+	data, err := os.ReadFile(filepath.Join(home, feedbackFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(data), "\n") != 2 {
+		t.Fatalf("feedback JSONL must contain exactly two physical lines; got %q", data)
+	}
+	for _, escaped := range []string{`\"stay\"`, `\\\\ stays`, `\nsecond line\tend`} {
+		if !strings.Contains(string(data), escaped) {
+			t.Fatalf("feedback JSONL missing escaped sequence %q; got %q", escaped, data)
+		}
+	}
+
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	var got []feedbackEntry
+	for _, line := range lines {
+		var entry feedbackEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("invalid JSONL line %q: %v", line, err)
+		}
+		got = append(got, entry)
+	}
+	if len(got) != 2 || got[0].Message != first.Message || got[1].Message != second.Message {
+		t.Fatalf("appended entries = %+v", got)
+	}
+	info, err := os.Stat(filepath.Join(home, feedbackFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("feedback file mode = %v, want 0600", info.Mode().Perm())
 	}
 }
 

@@ -680,7 +680,7 @@ var commandHelp = map[string]cmdHelp{
 		Usage:   "borz feedback <message> [--category <c>] [--command <cmd>] | list [--limit N] | path",
 		Flags: []string{
 			"  <message>             Free-form feedback text (bare words are joined)",
-			"  --category <c>        Optional tag such as bug, ux, feature, docs, perf",
+			"  --category <c>        One of: ux, bug, feature, docs, perf",
 			"  --command <cmd>       The borz command the feedback is about (e.g. snapshot)",
 			"  list [--limit N]      Show recorded feedback, oldest first (default last 50)",
 			"  path                  Print the feedback file path",
