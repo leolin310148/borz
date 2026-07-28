@@ -129,6 +129,7 @@ Pull community adapters: `borz site update` (CLI only — triggers a git pull, i
 - "Daemon did not start in time" → the message names the daemon squatting on the port (version + pid) when `~/.borz/daemon.json` is missing; `kill` that pid and re-run.
 - Element ref not found → page changed between snapshot and action. Re-snapshot.
 - Remote `server` refuses to start → non-loopback bind without `--token`. Set `BORZ_TOKEN` or pass `--token`.
+- Hit a papercut (confusing command, missing flag, unhelpful output)? Record it: `borz feedback "<what was awkward>" [--category ux|bug|feature] [--command <cmd>]`. It appends to the local file `~/.borz/feedback.jsonl` for the maintainer to review — takes one command, do it whenever borz slows you down.
 
 ## Further reading
 

@@ -1210,6 +1210,19 @@ borz logs stats --since 24h --json
 
 Logs live under `~/.borz/logs/<profile>`, rotate at 10 MiB with five backups per component, and use file mode `0600`. They record metadata such as action/tool name, request/session correlation, duration, outcome, and stable error code. Raw field text, eval scripts, clipboard data, cookies/headers/tokens, URL paths and queries, snapshots, response bodies, and upload paths are never persisted. CLI commands automatically correlate by tmux pane, a one-way terminal-session digest, or parent process; set `BORZ_SESSION_ID` to override this with an agent/session identifier. MCP generates a process session id when it is absent. `logs stats` reports per-operation counts, failures, p50/p95/max latency, and the largest bursts of at least five identical operations in one second.
 
+### Usage feedback
+
+When borz gets in your way — a confusing command, a missing flag, output that's hard to parse — record it. This is aimed at AI agents: instead of silently working around a papercut, leave a note the maintainer can review later.
+
+```bash
+borz feedback "snapshot output is too verbose on long pages" --category ux --command snapshot
+borz feedback --category feature "want a --quiet flag on open"
+borz feedback list --limit 10   # review recorded feedback (--json for scripts)
+borz feedback path              # print the feedback file path
+```
+
+Entries append to `~/.borz/feedback.jsonl` (one JSON object per line: time, borz version, profile, session id, optional category/command, message). The file is purely local and never uploaded. If the message itself starts with `list`, `path`, or `add`, use the explicit form `borz feedback add "..."`.
+
 ## Global Flags
 
 | Flag | Description |

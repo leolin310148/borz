@@ -693,6 +693,10 @@ func main() {
 	case "logs":
 		handleLogs(cmdArgs, args, globalSince, jsonOutput)
 
+	// --- Agent feedback ---
+	case "feedback":
+		handleFeedback(cmdArgs, args, jsonOutput)
+
 	// --- Site ---
 	case "site":
 		handleSite(cmdArgs, jsonOutput, globalTabID)
@@ -2418,6 +2422,9 @@ Utility:
   status                        Daemon status
   doctor [--json]               Run diagnostic checks on the full stack
   logs path|tail|stats          Inspect local operational logs and failures
+  feedback <message>            Record usage feedback (friction, missing
+                                features, ideas) to ~/.borz/feedback.jsonl
+  feedback list|path            Review recorded feedback
   daemon [shutdown]             Start/stop the local daemon
   browser status|adopt          Inspect or repair which Chrome borz owns
   server --host H --port P --token T [shutdown]

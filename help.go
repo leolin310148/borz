@@ -675,6 +675,42 @@ var commandHelp = map[string]cmdHelp{
 		Notes: "Shows per-action/tool counts, failures, p50/p95/max latency, and the ten\n" +
 			"largest bursts with at least five identical operations in one second.",
 	},
+	"feedback": {
+		Summary: "Record usage feedback (friction, bugs, ideas) to a local file for later review.",
+		Usage:   "borz feedback <message> [--category <c>] [--command <cmd>] | list [--limit N] | path",
+		Flags: []string{
+			"  <message>             Free-form feedback text (bare words are joined)",
+			"  --category <c>        Optional tag such as bug, ux, feature, docs, perf",
+			"  --command <cmd>       The borz command the feedback is about (e.g. snapshot)",
+			"  list [--limit N]      Show recorded feedback, oldest first (default last 50)",
+			"  path                  Print the feedback file path",
+		},
+		Examples: []string{
+			"  borz feedback \"snapshot output is too verbose on long pages\" --category ux --command snapshot",
+			"  borz feedback --category feature \"want a --quiet flag on open\"",
+			"  borz feedback list --limit 10",
+		},
+		Notes: "Intended for agents: when a borz command is confusing, missing a flag, or " +
+			"produces unhelpful output, record it here so a maintainer can review and improve " +
+			"the tool later. Entries append to ~/.borz/feedback.jsonl (JSONL; one entry per " +
+			"line with time, version, profile, session, category, command, message). Purely " +
+			"local — nothing is uploaded. Use 'add' explicitly when the message itself starts " +
+			"with a subcommand word: borz feedback add \"list output is misaligned\".",
+	},
+	"feedback.add": {
+		Summary: "Append one feedback entry to ~/.borz/feedback.jsonl.",
+		Usage:   "borz feedback [add] <message> [--category <c>] [--command <cmd>]",
+		Notes:   "'add' is optional; any message not starting with list/path/add works without it.",
+	},
+	"feedback.list": {
+		Summary: "Show recorded feedback entries, oldest first.",
+		Usage:   "borz feedback list [--limit N] [--json]",
+		Flags:   []string{"  --limit <n>   Number of newest entries to show (default 50)"},
+	},
+	"feedback.path": {
+		Summary: "Print the feedback file path.",
+		Usage:   "borz feedback path [--json]",
+	},
 	"daemon": {
 		Summary: "Start or control the local daemon (loopback only).",
 		Usage:   "borz daemon [status|shutdown|stop] [--profile N] [--host H --port P --cdp-host H --cdp-port P]",
