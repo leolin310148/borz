@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,6 +63,57 @@ func TestDispatch_Click_WithRef(t *testing.T) {
 	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionClick, Ref: "1"})
 	if !resp.Success {
 		t.Fatalf("click: %+v", resp)
+	}
+}
+
+func TestDispatch_Click_PropagatesMouseError(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	f.On("Input.dispatchMouseEvent", func(params json.RawMessage) (interface{}, error) {
+		var event struct {
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal(params, &event)
+		if event.Type == "mousePressed" {
+			return nil, errors.New("synthetic input rejected")
+		}
+		return map[string]interface{}{}, nil
+	})
+	c := connectCdp(t, f)
+
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "1", &protocol.RefInfo{BackendDOMNodeID: 42, Role: "button"})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionClick, Ref: "1"})
+	if resp.Success || !strings.Contains(resp.Error, "press mouse button: synthetic input rejected") {
+		t.Fatalf("click mouse error = %+v", resp)
+	}
+}
+
+func TestDispatch_Click_ReportsCoveredElement(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	f.On("Runtime.callFunctionOn", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{
+			"result": map[string]interface{}{},
+			"exceptionDetails": map[string]interface{}{
+				"text": "Uncaught",
+				"exception": map[string]interface{}{
+					"description": "Error: Element is not clickable at its center; hit div.overlay instead of button#save",
+				},
+			},
+		}, nil
+	})
+	c := connectCdp(t, f)
+
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "1", &protocol.RefInfo{BackendDOMNodeID: 42, Role: "button"})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionClick, Ref: "1"})
+	if resp.Success || !strings.Contains(resp.Error, "div.overlay instead of button#save") {
+		t.Fatalf("covered click response = %+v", resp)
 	}
 }
 

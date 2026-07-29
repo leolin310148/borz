@@ -1237,6 +1237,38 @@ func TestEnsureDaemon_UsesExistingDaemonJSON(t *testing.T) {
 	}
 }
 
+func TestEnsureDaemon_HealthyDaemonDoesNotRequireStartupLockWrite(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Write([]byte(`{"running":true,"cdpConnected":true}`))
+	}))
+	defer ts.Close()
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	info := infoForServer(t, ts, "")
+	data, _ := json.Marshal(info)
+	if err := os.WriteFile(filepath.Join(home, "daemon.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(home, 0o755) })
+
+	if err := EnsureDaemon(); err != nil {
+		t.Fatalf("EnsureDaemon with read-only runtime dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "startup.lock")); !os.IsNotExist(err) {
+		t.Fatalf("healthy-daemon fast path created startup.lock, stat err=%v", err)
+	}
+}
+
 func TestEnsureDaemon_RecoversManagedBrowserForRunningDaemon(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)

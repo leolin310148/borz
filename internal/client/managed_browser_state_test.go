@@ -143,6 +143,11 @@ func TestProbeDaemonPortIdentifiesSquattingDaemon(t *testing.T) {
 	if got := found.stopHint(); !strings.Contains(got, "borz daemon restart") || !strings.Contains(got, "preserving managed Chrome") {
 		t.Fatalf("stopHint() = %q", got)
 	}
+	if err := unaddressableDaemonError(found, port); !strings.Contains(err.Error(), "Daemon metadata is unavailable") ||
+		!strings.Contains(err.Error(), strconv.Itoa(port)) ||
+		!strings.Contains(err.Error(), "borz daemon restart") {
+		t.Fatalf("unaddressableDaemonError() = %q", err)
+	}
 
 	// A daemon too old to report identity is still worth naming as the cause.
 	bare := daemonPortSquatter{}

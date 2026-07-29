@@ -74,6 +74,31 @@ func TestAutoWrapAwait(t *testing.T) {
 			want: "(async () => { for await (const item of stream) console.log(item) })()",
 		},
 		{
+			name: "await inside top-level for block is wrapped",
+			in:   "for (const item of items) { results.push(await load(item)) }",
+			want: "(async () => { for (const item of items) { results.push(await load(item)) } })()",
+		},
+		{
+			name: "await inside top-level while block is wrapped",
+			in:   "while (ready()) { await next() }",
+			want: "(async () => { while (ready()) { await next() } })()",
+		},
+		{
+			name: "await inside top-level if block is wrapped",
+			in:   "if (enabled) { await run() }",
+			want: "(async () => { if (enabled) { await run() } })()",
+		},
+		{
+			name: "await inside top-level try block is wrapped",
+			in:   "try { await run() } catch (error) { report(error) }",
+			want: "(async () => { try { await run() } catch (error) { report(error) } })()",
+		},
+		{
+			name: "await inside arrow function body is ignored",
+			in:   "const load = async () => { await fetch('/x') }",
+			want: "const load = async () => { await fetch('/x') }",
+		},
+		{
 			name: "already async IIFE is not double-wrapped",
 			in:   "(async () => { return await fetch('/x') })()",
 			want: "(async () => { return await fetch('/x') })()",
