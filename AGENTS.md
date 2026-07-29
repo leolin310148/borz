@@ -20,6 +20,10 @@ BORZ_E2E=1 go test -run '^TestE2ECLICommandsAgainstVerifySite$/^element_actions$
 
 Set hooks once with `git config core.hooksPath .githooks`. Hooks and CI run vet, race tests, and enforce 85% total coverage.
 
+## Git Workflow
+
+Always work directly on `main` unless the user explicitly asks to work on another branch. Do not create or switch to a feature branch by default.
+
 ## Architecture
 
 ```text

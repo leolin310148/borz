@@ -78,6 +78,7 @@ Keep these in sync; tests assert this (e.g. MCP handler tests, REST tests, OpenA
 
 ## Conventions
 
+- Always work directly on `main` unless the user explicitly asks to work on another branch. Do not create or switch to a feature branch by default.
 - Tests live next to the code (`foo.go` / `foo_test.go`) and there are dedicated `*_more_test.go` / `coverage_more_test.go` files in many packages purely to keep the 85% floor — when adding code, expect to add coverage there too.
 - Cross-platform code uses build-tag suffixes (`_unix.go`, `_windows.go`, `_darwin.go`, `_linux.go`); follow that pattern instead of runtime `GOOS` checks.
 - Help text lives in `help.go`. New CLI commands or flags must be added there or `help_test.go` will fail.
