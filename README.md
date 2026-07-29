@@ -237,7 +237,7 @@ Other notable params:
 - `browser_snapshot` accepts `textOnly: true` for a reader-mode plain-text dump (no element refs) — useful for summarization or feeding the page to an LLM as context.
 - `browser_viewport` accepts `preset: "mobile"` for responsive/mobile layout checks, custom `width`/`height`/`dpr`, and `reset: true` to clear viewport emulation.
 - `browser_eval` auto-wraps top-level `await` in an async IIFE so `await fetch(...)` works without manual boilerplate. Pass `noAutoAwait: true` to opt out.
-- `browser_doctor` runs end-to-end stack diagnostics (binary → daemon → CDP → tabs) and returns the first failing layer with a remediation hint. Pass `json: true` for structured output.
+- `browser_doctor` runs end-to-end stack diagnostics (binary PATH drift → daemon → CDP → tabs) and reports each layer with remediation hints. Pass `json: true` for structured output.
 
 ## Server Mode
 
@@ -1234,14 +1234,29 @@ emit `{"success":false,"error":"..."}` and exit non-zero.
 
 ### Diagnosing the stack
 
-When something doesn't work it's not always obvious which layer is broken: stale `daemon.json`, dead daemon process, daemon up but not attached to CDP, or no tabs. `borz doctor` walks the stack top-down and reports the first failing layer with a remediation hint.
+When something doesn't work it's not always obvious which layer is broken:
+multiple `borz` installations with different capabilities, stale `daemon.json`,
+a dead daemon process, a daemon not attached to CDP, or no tabs. `borz doctor`
+walks the stack top-down and reports each layer with a remediation hint.
 
 ```bash
 borz doctor          # human-readable report
 borz doctor --json   # structured {ok, checks[]} for scripts
 ```
 
-Exit code is `1` on any fail; warnings (e.g. daemon not started yet) do not fail. The same diagnostic is exposed to AI agents as the `browser_doctor` MCP tool and to remote integrations as `GET /v1/doctor` (returns 503 on a failing check).
+The `Binary PATH` check resolves the active executable and every distinct
+`borz` found on `PATH`, then compares canonical paths, embedded versions, and
+SHA-256 hashes without executing competing binaries. Separate copies are a
+warning even when currently identical, because they can drift after the next
+update; prefer one canonical install and symlink any compatibility paths to it.
+With `--json`, each candidate has `path`, `resolvedPath`, `version`, `sha256`,
+`current`, and `matchesCurrent`.
+
+Exit code is `1` on any fail; warnings (e.g. duplicate binaries or a daemon not
+started yet) do not fail. The same client-side diagnostic is exposed to AI
+agents as the `browser_doctor` MCP tool. Remote integrations can use
+`GET /v1/doctor` for the selected daemon's server-side CDP/tab subset (it
+returns 503 on a failing check).
 
 Two failures are specific enough to get their own remediation:
 

@@ -733,9 +733,12 @@ var commandHelp = map[string]cmdHelp{
 	"doctor": {
 		Summary: "Run end-to-end diagnostics on the CLI/daemon/browser stack.",
 		Usage:   "borz doctor [--json]",
-		Notes: "Checks: home directory, daemon.json, daemon process & HTTP, CDP connection,\n" +
+		Notes: "Checks: active executable and every distinct borz on PATH (canonical path,\n" +
+			"embedded version, SHA-256, and drift), home directory, daemon.json,\n" +
+			"daemon process & HTTP, CDP connection,\n" +
 			"open tabs, and direct CDP discovery. Exits non-zero if any check fails;\n" +
-			"warnings (e.g. daemon not started) do not fail. Use --json for machine output.",
+			"warnings (e.g. duplicate binaries or daemon not started) do not fail.\n" +
+			"PATH candidates are inspected without executing them. Use --json for machine output.",
 	},
 	"logs": {
 		Summary: "Inspect privacy-safe local operational logs and failure statistics.",

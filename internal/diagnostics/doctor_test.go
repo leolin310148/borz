@@ -44,7 +44,13 @@ func TestRenderText_WithFail(t *testing.T) {
 
 func TestRenderJSON_Shape(t *testing.T) {
 	out := RenderJSON([]Check{
-		{Name: "A", Status: "ok"},
+		{Name: "A", Status: "ok", Binaries: []BinaryCandidate{{
+			Path:           "/usr/local/bin/borz",
+			Version:        "test",
+			SHA256:         "abc",
+			Current:        true,
+			MatchesCurrent: true,
+		}}},
 		{Name: "B", Status: "fail", Detail: "broken"},
 	})
 	var decoded struct {
@@ -59,6 +65,9 @@ func TestRenderJSON_Shape(t *testing.T) {
 	}
 	if len(decoded.Checks) != 2 {
 		t.Errorf("expected 2 checks, got %d", len(decoded.Checks))
+	}
+	if len(decoded.Checks[0].Binaries) != 1 || !decoded.Checks[0].Binaries[0].Current {
+		t.Errorf("expected structured binary candidate, got %+v", decoded.Checks[0])
 	}
 }
 

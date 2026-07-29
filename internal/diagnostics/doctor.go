@@ -26,9 +26,10 @@ var (
 
 // Check is one row of doctor output.
 type Check struct {
-	Name   string      `json:"name"`
-	Status CheckStatus `json:"status"`
-	Detail string      `json:"detail,omitempty"`
+	Name     string            `json:"name"`
+	Status   CheckStatus       `json:"status"`
+	Detail   string            `json:"detail,omitempty"`
+	Binaries []BinaryCandidate `json:"binaries,omitempty"`
 }
 
 // CheckStatus is the machine-readable status for a doctor check.
@@ -46,6 +47,7 @@ const (
 func Run(version string) ([]Check, bool) {
 	checks := []Check{
 		{Name: "Binary", Status: StatusOK, Detail: fmt.Sprintf("borz %s", version)},
+		checkBinaryPath(version),
 		checkHomeDir(),
 	}
 

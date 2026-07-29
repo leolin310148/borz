@@ -128,7 +128,8 @@ Pull community adapters: `borz site update` (CLI only — triggers a git pull, i
 
 - "Chrome not connected" → the daemon is up but CDP is down. Start Chrome, or let the daemon auto-launch: check `borz status`.
 - "a daemon may already be running" or CLI/daemon version mismatch → `borz daemon status`, then `borz daemon restart` to replace only the verified daemon while preserving managed Chrome and tabs. Use `borz daemon shutdown` only when closing a borz-owned managed Chrome is intended.
-- When unsure where the stack is broken, run `borz doctor` — it walks through home dir, daemon JSON, daemon process, daemon HTTP, CDP attach, tabs, and direct CDP discovery, and reports the first failing layer.
+- When unsure where the stack is broken, run `borz doctor` — it walks through binary PATH drift, home dir, daemon JSON, daemon process, daemon HTTP, CDP attach, tabs, and direct CDP discovery, and reports each layer.
+- If a command exists in one session but is unknown in another, run `borz doctor --json` and inspect the `Binary PATH` check. It compares every distinct borz on PATH by canonical path, embedded version, and SHA-256 without executing competing binaries. Keep one canonical install and symlink compatibility paths to it.
 - "managed browser identity mismatch on port N" → the Chrome borz recorded as its own is not the one now on that port. `borz browser status` shows recorded vs live; `borz browser adopt` re-records the live one when it is borz's own (e.g. launched by an older borz). Do not delete `~/.borz/browser/browser.json` by hand.
 - "Daemon did not start in time" → the message names the daemon squatting on the port (version + pid) when `~/.borz/daemon.json` is missing; run `borz daemon restart` so borz verifies and replaces that exact daemon while preserving managed Chrome.
 - Element ref not found → page changed between snapshot and action. Re-snapshot.
