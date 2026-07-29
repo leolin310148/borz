@@ -105,7 +105,7 @@ with `--profile <name>` or `BORZ_PROFILE`. Undeclared names (including
 
 ```bash
 borz profile list                                # what each name means — run this first
-borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN" \
+borz profile add mini --remote http://100.64.0.1:13333 --token "$BORZ_TOKEN" \
     --description "Mac Mini's logged-in Chrome"
 borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 --max-tabs 30
 borz --profile mini open https://example.com     # HTTP to the Mini server

@@ -368,7 +368,7 @@ zero-config behaviour described above.
 ```bash
 borz profile list                       # name, transport, target, description (tokens never shown)
 borz profile show mini
-borz profile add mini --remote http://100.116.143.73:13333 --token "$BORZ_TOKEN" \
+borz profile add mini --remote http://100.64.0.1:13333 --token "$BORZ_TOKEN" \
     --description "Mac Mini's logged-in Chrome"
 borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 --max-tabs 30
 borz profile add clean --managed
@@ -390,7 +390,7 @@ In `profiles.json` a cdp endpoint is spelled `cdpUrl`, or alternatively
   "profiles": {
     "mini": {
       "transport": "remote",
-      "url": "http://100.116.143.73:13333",
+      "url": "http://100.64.0.1:13333",
       "token": "...",
       "description": "Mac Mini's logged-in Chrome"
     },

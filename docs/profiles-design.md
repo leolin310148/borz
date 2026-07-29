@@ -46,7 +46,7 @@ the registry *of* profiles.
     "clean":   { "transport": "managed" },
     "mini":    {
       "transport": "remote",
-      "url": "http://100.116.143.73:13333",
+      "url": "http://100.64.0.1:13333",
       "token": "<bearer>"
     },
     "mdt": {

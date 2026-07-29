@@ -64,12 +64,12 @@ func TestResolveTargetManaged(t *testing.T) {
 
 func TestResolveTargetRemote(t *testing.T) {
 	home := setHome(t)
-	writeProfiles(t, home, `{"version":1,"profiles":{"mini":{"transport":"remote","url":"100.116.143.73:13333/","token":" secret "}}}`)
+	writeProfiles(t, home, `{"version":1,"profiles":{"mini":{"transport":"remote","url":"100.64.0.1:13333/","token":" secret "}}}`)
 	target, err := ResolveTarget("mini")
 	if err != nil {
 		t.Fatalf("ResolveTarget: %v", err)
 	}
-	if target.Kind != TransportRemote || target.Remote.URL != "http://100.116.143.73:13333" || target.Remote.Token != "secret" {
+	if target.Kind != TransportRemote || target.Remote.URL != "http://100.64.0.1:13333" || target.Remote.Token != "secret" {
 		t.Fatalf("remote target = %+v", target)
 	}
 }
@@ -197,7 +197,7 @@ func TestSaveNilFile(t *testing.T) {
 
 func TestMigrateClientJSON(t *testing.T) {
 	home := setHome(t)
-	clientJSON := `{"url":"http://100.116.143.73:13333/","token":"tok","enabled":true}`
+	clientJSON := `{"url":"http://100.64.0.1:13333/","token":"tok","enabled":true}`
 	if err := os.WriteFile(filepath.Join(home, "client.json"), []byte(clientJSON), 0o600); err != nil {
 		t.Fatalf("write client.json: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestMigrateClientJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveTarget after migration: %v", err)
 	}
-	if target.Kind != TransportRemote || target.Remote.URL != "http://100.116.143.73:13333" || target.Remote.Token != "tok" {
+	if target.Kind != TransportRemote || target.Remote.URL != "http://100.64.0.1:13333" || target.Remote.Token != "tok" {
 		t.Fatalf("migrated target = %+v", target)
 	}
 

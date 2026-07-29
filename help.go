@@ -937,7 +937,7 @@ var commandHelp = map[string]cmdHelp{
 			"  --no-check               Save without probing the target",
 		},
 		Examples: []string{
-			"  borz profile add mini --remote http://100.116.143.73:13333 --token \"$BORZ_TOKEN\"",
+			"  borz profile add mini --remote http://100.64.0.1:13333 --token \"$BORZ_TOKEN\"",
 			"  borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 \\",
 			"      --description \"MDT VPN Chrome via the SSH tunnel; never reap its tabs\"",
 			"  borz profile add clean --managed --description \"throwaway logged-out Chrome\"",
