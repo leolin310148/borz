@@ -487,22 +487,39 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 		} `json:"object"`
 	}
 	json.Unmarshal(resolvedRaw, &resolved)
+	if resolved.Object.ObjectID == "" {
+		return 0, 0, fmt.Errorf("DOM.resolveNode returned no object for backend node %d", backendNodeID)
+	}
 
 	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
 		"objectId": resolved.Object.ObjectID,
 		"functionDeclaration": `function() {
 			if (!(this instanceof Element)) throw new Error('Ref does not resolve to an element');
-			this.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+			this.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
 			const rect = this.getBoundingClientRect();
 			if (!rect || rect.width <= 0 || rect.height <= 0) throw new Error('Element is not visible');
 			let x = rect.left + rect.width / 2;
 			let y = rect.top + rect.height / 2;
+			const describe = (element) => {
+				if (!(element instanceof Element)) return String(element);
+				let out = element.tagName.toLowerCase();
+				if (element.id) out += '#' + element.id;
+				else if (element.classList.length) out += '.' + Array.from(element.classList).slice(0, 2).join('.');
+				return out;
+			};
+			let expected = this;
 			let view = this.ownerDocument.defaultView;
-			while (view && view.frameElement) {
+			while (view) {
+				const hit = view.document.elementFromPoint(x, y);
+				if (!hit || (hit !== expected && !expected.contains(hit))) {
+					throw new Error('Element is not clickable at its center; hit ' + describe(hit) + ' instead of ' + describe(expected));
+				}
+				if (!view.frameElement) break;
 				const frame = view.frameElement;
 				const frameRect = frame.getBoundingClientRect();
 				x += frameRect.left + frame.clientLeft;
 				y += frameRect.top + frame.clientTop;
+				expected = frame;
 				view = frame.ownerDocument.defaultView;
 			}
 			return { x, y };
@@ -521,28 +538,44 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			} `json:"value"`
 		} `json:"result"`
 		ExceptionDetails *struct {
-			Text string `json:"text"`
+			Text      string `json:"text"`
+			Exception struct {
+				Description string `json:"description"`
+			} `json:"exception"`
 		} `json:"exceptionDetails"`
 	}
 	json.Unmarshal(callRaw, &call)
 
 	if call.ExceptionDetails != nil {
-		return 0, 0, fmt.Errorf("%s", call.ExceptionDetails.Text)
+		message := strings.TrimSpace(call.ExceptionDetails.Exception.Description)
+		if message == "" {
+			message = strings.TrimSpace(call.ExceptionDetails.Text)
+		}
+		if message == "" {
+			message = "failed to calculate an interactable point"
+		}
+		return 0, 0, fmt.Errorf("%s", message)
 	}
 	return call.Result.Value.X, call.Result.Value.Y, nil
 }
 
 func mouseClick(cdp *CdpConnection, targetID string, x, y float64) error {
-	cdp.SessionCommand(targetID, "Input.dispatchMouseEvent", map[string]interface{}{
+	if _, err := cdp.SessionCommand(targetID, "Input.dispatchMouseEvent", map[string]interface{}{
 		"type": "mouseMoved", "x": x, "y": y, "button": "none",
-	})
-	cdp.SessionCommand(targetID, "Input.dispatchMouseEvent", map[string]interface{}{
+	}); err != nil {
+		return fmt.Errorf("move pointer before click: %w", err)
+	}
+	if _, err := cdp.SessionCommand(targetID, "Input.dispatchMouseEvent", map[string]interface{}{
 		"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1,
-	})
-	_, err := cdp.SessionCommand(targetID, "Input.dispatchMouseEvent", map[string]interface{}{
+	}); err != nil {
+		return fmt.Errorf("press mouse button: %w", err)
+	}
+	if _, err := cdp.SessionCommand(targetID, "Input.dispatchMouseEvent", map[string]interface{}{
 		"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1,
-	})
-	return err
+	}); err != nil {
+		return fmt.Errorf("release mouse button: %w", err)
+	}
+	return nil
 }
 
 func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, text string, clearFirst bool) error {
@@ -1207,11 +1240,14 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		if err != nil {
 			return failResp(req.ID, err)
 		}
-		cdp.SessionCommand(target.ID, "Input.dispatchMouseEvent", map[string]interface{}{
-			"type": "mouseMoved", "x": x, "y": y, "button": "none",
-		})
 		if req.Action == protocol.ActionClick {
-			mouseClick(cdp, target.ID, x, y)
+			if err := mouseClick(cdp, target.ID, x, y); err != nil {
+				return failResp(req.ID, err)
+			}
+		} else if _, err := cdp.SessionCommand(target.ID, "Input.dispatchMouseEvent", map[string]interface{}{
+			"type": "mouseMoved", "x": x, "y": y, "button": "none",
+		}); err != nil {
+			return failResp(req.ID, fmt.Errorf("move pointer for hover: %w", err))
 		}
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 

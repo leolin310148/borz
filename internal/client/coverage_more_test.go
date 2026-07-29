@@ -143,8 +143,10 @@ func TestEnsureDaemonCacheDaemonJSONAndSpawnBranches(t *testing.T) {
 	oldDiscover := discoverCDPPort
 	oldExecutable := osExecutable
 	oldCommand := execCommand
+	oldProbe := probeStartupDaemonPort
 	discoverCDPPort = func() (*CDPEndpoint, error) { return &CDPEndpoint{Host: "127.0.0.1", Port: 9222}, nil }
 	osExecutable = func() (string, error) { return "/bin/echo", nil }
+	probeStartupDaemonPort = func(int) (daemonPortSquatter, bool) { return daemonPortSquatter{}, false }
 	execCommand = func(string, ...string) *exec.Cmd {
 		return exec.Command("/bin/sh", "-c", "exit 0")
 	}
@@ -152,6 +154,7 @@ func TestEnsureDaemonCacheDaemonJSONAndSpawnBranches(t *testing.T) {
 		discoverCDPPort = oldDiscover
 		osExecutable = oldExecutable
 		execCommand = oldCommand
+		probeStartupDaemonPort = oldProbe
 	})
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -192,6 +195,7 @@ func TestEnsureDaemonSerializesConcurrentAutostart(t *testing.T) {
 	oldDiscover := discoverCDPPort
 	oldExecutable := osExecutable
 	oldCommand := execCommand
+	oldProbe := probeStartupDaemonPort
 	discoveries := 0
 	spawns := 0
 	discoverCDPPort = func() (*CDPEndpoint, error) {
@@ -199,6 +203,7 @@ func TestEnsureDaemonSerializesConcurrentAutostart(t *testing.T) {
 		return &CDPEndpoint{Host: "127.0.0.1", Port: 9222}, nil
 	}
 	osExecutable = func() (string, error) { return "/bin/echo", nil }
+	probeStartupDaemonPort = func(int) (daemonPortSquatter, bool) { return daemonPortSquatter{}, false }
 	execCommand = func(string, ...string) *exec.Cmd {
 		spawns++
 		data, _ := json.Marshal(info)
@@ -211,6 +216,7 @@ func TestEnsureDaemonSerializesConcurrentAutostart(t *testing.T) {
 		discoverCDPPort = oldDiscover
 		osExecutable = oldExecutable
 		execCommand = oldCommand
+		probeStartupDaemonPort = oldProbe
 	})
 
 	start := make(chan struct{})

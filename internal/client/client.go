@@ -4,6 +4,7 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -50,6 +51,7 @@ var (
 	browserExecutableFinder = findBrowserExecutable
 	canConnect              = defaultCanConnect
 	readBrowserID           = readCDPBrowserID
+	probeStartupDaemonPort  = probeDaemonPort
 )
 
 // SetLocalVersion records the CLI version so daemon mismatches can be warned
@@ -89,6 +91,7 @@ func ResetForTests() {
 	cachedProfile = ""
 	resolvedTarget = nil
 	resolvedTargetProfile = ""
+	probeStartupDaemonPort = probeDaemonPort
 	_ = config.SetProfile("")
 }
 
@@ -228,7 +231,10 @@ func IsProcessAlive(pid int) bool {
 		return false
 	}
 	err = proc.Signal(syscall.Signal(0))
-	return err == nil
+	// POSIX signal(0) returns EPERM when the process exists but the caller is
+	// not allowed to inspect it. Restricted agent sandboxes commonly impose
+	// exactly that policy, so EPERM is evidence of liveness rather than death.
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // httpJSONEndpoint sends an HTTP request to a borz HTTP endpoint and
@@ -382,6 +388,40 @@ func adoptRunningDaemon(info *protocol.DaemonInfo, status protocol.DaemonStatus)
 	return recoverDisconnectedDaemon(status)
 }
 
+// tryAdoptRunningDaemon is the read-only fast path for healthy daemons. It
+// deliberately runs before EnsureRuntimeDir and the startup lock so commands
+// can connect to an existing daemon when its runtime directory is readable but
+// not writable (for example inside a restricted agent workspace).
+func tryAdoptRunningDaemon() (bool, error) {
+	if daemonReady && cachedInfo != nil {
+		raw, err := httpJSON("GET", "/status", cachedInfo, nil, 2*time.Second)
+		if err == nil {
+			var status protocol.DaemonStatus
+			json.Unmarshal(raw, &status)
+			if status.Running {
+				return true, adoptRunningDaemon(cachedInfo, status)
+			}
+		}
+		daemonReady = false
+		cachedInfo = nil
+	}
+
+	info, err := ReadDaemonJSON()
+	if err != nil || info == nil {
+		return false, nil
+	}
+	raw, err := httpJSON("GET", "/status", info, nil, 2*time.Second)
+	if err != nil {
+		return false, nil
+	}
+	var status protocol.DaemonStatus
+	json.Unmarshal(raw, &status)
+	if !status.Running {
+		return false, nil
+	}
+	return true, adoptRunningDaemon(info, status)
+}
+
 // EnsureDaemon makes sure the daemon is running and ready.
 func EnsureDaemon() error {
 	ensureDaemonMu.Lock()
@@ -394,6 +434,16 @@ func EnsureDaemon() error {
 	if target.Kind == profile.TransportRemote {
 		return fmt.Errorf("profile %q is a remote profile (%s); there is no local daemon", profile.Normalize(config.Profile()), target.Remote.URL)
 	}
+
+	if cachedProfile != config.Profile() {
+		daemonReady = false
+		cachedInfo = nil
+		cachedProfile = config.Profile()
+	}
+	if adopted, err := tryAdoptRunningDaemon(); adopted {
+		return err
+	}
+
 	if _, err := config.EnsureRuntimeDir(); err != nil {
 		return err
 	}
@@ -403,41 +453,18 @@ func EnsureDaemon() error {
 	}
 	defer startupLock.Release()
 
-	if cachedProfile != config.Profile() {
-		daemonReady = false
-		cachedInfo = nil
-		cachedProfile = config.Profile()
-	}
-	if daemonReady && cachedInfo != nil {
-		// Quick re-check
-		raw, err := httpJSON("GET", "/status", cachedInfo, nil, 2*time.Second)
-		if err == nil {
-			var status protocol.DaemonStatus
-			json.Unmarshal(raw, &status)
-			if status.Running {
-				return adoptRunningDaemon(cachedInfo, status)
-			}
-		}
-		daemonReady = false
-		cachedInfo = nil
+	// Another CLI may have started the daemon while this process waited for
+	// the cross-process lock. Re-run the read-only adoption path before doing
+	// any discovery or spawning.
+	if adopted, err := tryAdoptRunningDaemon(); adopted {
+		return err
 	}
 
-	// Try reading existing daemon.json
+	// A dead daemon file is only removed while holding the startup lock.
 	info, err := ReadDaemonJSON()
-	if err == nil && info != nil {
-		if !IsProcessAlive(info.PID) {
-			os.Remove(config.DaemonJSONPath())
-			info = nil
-		} else {
-			raw, err := httpJSON("GET", "/status", info, nil, 2*time.Second)
-			if err == nil {
-				var status protocol.DaemonStatus
-				json.Unmarshal(raw, &status)
-				if status.Running {
-					return adoptRunningDaemon(info, status)
-				}
-			}
-		}
+	if err == nil && info != nil && !IsProcessAlive(info.PID) {
+		os.Remove(config.DaemonJSONPath())
+		info = nil
 	}
 
 	// Resolve the CDP endpoint: a cdp profile pins it declaratively; the
@@ -481,6 +508,12 @@ func EnsureDaemon() error {
 	daemonPort, err := daemonPortForProfile()
 	if err != nil {
 		return err
+	}
+	// If daemon metadata is missing but a borz daemon still owns the default
+	// port, a spawn cannot possibly succeed. Diagnose it before launching a
+	// doomed child and waiting the full readiness timeout.
+	if squatter, ok := probeStartupDaemonPort(daemonPort); ok {
+		return unaddressableDaemonError(squatter, daemonPort)
 	}
 	args := []string{"daemon",
 		"--cdp-host", cdpInfo.Host,
@@ -547,14 +580,8 @@ func EnsureDaemon() error {
 	// A daemon we cannot address — its daemon.json is gone, so we have no
 	// token — still holds the port, and every spawn we just tried died on
 	// "address already in use". Say so instead of blaming the browser.
-	if squatter, ok := probeDaemonPort(daemonPort); ok {
-		return fmt.Errorf("borz: Daemon did not start in time.\n\n"+
-			"A borz daemon (%s) is already listening on 127.0.0.1:%d, but %s is\n"+
-			"missing, so borz has no token to talk to it — every start attempt loses\n"+
-			"the port to it. This usually means a daemon from an older borz is still\n"+
-			"running.\n\n"+
-			"Fix: %s, then re-run this command.",
-			squatter.describe(), daemonPort, config.DaemonJSONPath(), squatter.stopHint())
+	if squatter, ok := probeStartupDaemonPort(daemonPort); ok {
+		return unaddressableDaemonError(squatter, daemonPort)
 	}
 	return fmt.Errorf("borz: Daemon did not start in time.\n\n" +
 		"Chrome CDP is reachable, but the daemon process failed to initialize.\n" +
@@ -567,6 +594,16 @@ func EnsureDaemon() error {
 type daemonPortSquatter struct {
 	PID     int    `json:"pid"`
 	Version string `json:"version"`
+}
+
+func unaddressableDaemonError(squatter daemonPortSquatter, port int) error {
+	return fmt.Errorf("borz: Daemon metadata is unavailable.\n\n"+
+		"A borz daemon (%s) is already listening on 127.0.0.1:%d, but %s is\n"+
+		"missing, so borz has no token to talk to it and cannot start a replacement\n"+
+		"on the same port. This usually means a daemon from an older borz is still\n"+
+		"running.\n\n"+
+		"Fix: %s, then re-run this command.",
+		squatter.describe(), port, config.DaemonJSONPath(), squatter.stopHint())
 }
 
 func (d daemonPortSquatter) describe() string {

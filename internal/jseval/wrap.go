@@ -81,8 +81,8 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 	)
 	state := stCode
 	depth := 0
-	blockBraceDepth := 0
-	var braceBlocks []bool
+	functionBraceDepth := 0
+	var braceFunctions []bool
 	regexClass := false
 	var templateExprBase []int
 	i := 0
@@ -116,10 +116,10 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 				i++
 			case c == '(' || c == '{' || c == '[':
 				if c == '{' {
-					isBlock := braceStartsCodeBlock(src, i, depth)
-					braceBlocks = append(braceBlocks, isBlock)
-					if isBlock {
-						blockBraceDepth++
+					isFunction := braceStartsFunctionScope(src, i)
+					braceFunctions = append(braceFunctions, isFunction)
+					if isFunction {
+						functionBraceDepth++
 					}
 				}
 				depth++
@@ -128,12 +128,12 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 				if depth > 0 {
 					depth--
 				}
-				if c == '}' && len(braceBlocks) > 0 {
-					last := len(braceBlocks) - 1
-					if braceBlocks[last] && blockBraceDepth > 0 {
-						blockBraceDepth--
+				if c == '}' && len(braceFunctions) > 0 {
+					last := len(braceFunctions) - 1
+					if braceFunctions[last] && functionBraceDepth > 0 {
+						functionBraceDepth--
 					}
-					braceBlocks = braceBlocks[:last]
+					braceFunctions = braceFunctions[:last]
 				}
 				i++
 			case depth == 0 && c == ';':
@@ -144,7 +144,7 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 					hasTopSemi = true
 				}
 				i++
-			case blockBraceDepth == 0 && c == 'a' && matchKeyword(src, i, "await"):
+			case functionBraceDepth == 0 && c == 'a' && matchKeyword(src, i, "await"):
 				hasAwait = true
 				i += len("await")
 			default:
@@ -226,36 +226,65 @@ func slashStartsRegex(src string, i int) bool {
 	return strings.ContainsRune("([{=,:;!&|?+-*%^~<>", rune(prev))
 }
 
-func braceStartsCodeBlock(src string, i, depth int) bool {
-	if depth == 0 {
-		return true
+// braceStartsFunctionScope distinguishes braces that introduce a function,
+// method, arrow-function, or class body from ordinary control-flow blocks.
+// Await inside top-level if/for/while/try blocks still needs auto-wrapping;
+// await inside an already-async function must not cause the outer script to
+// be wrapped.
+func braceStartsFunctionScope(src string, i int) bool {
+	prevIndex := prevSignificantIndex(src, i-1)
+	if prevIndex < 0 {
+		return false
 	}
-	prev, ok := prevSignificantByte(src, i-1)
-	if !ok {
-		return true
+	prev := src[prevIndex]
+	if prev == '>' {
+		eqIndex := prevSignificantIndex(src, prevIndex-1)
+		return eqIndex >= 0 && src[eqIndex] == '='
 	}
-	if prev == ')' || prev == '>' {
-		return true
+	if prev == ')' {
+		openIndex := matchingOpenParen(src, prevIndex)
+		if openIndex < 0 {
+			return false
+		}
+		switch previousIdentifier(src, openIndex-1) {
+		case "if", "for", "while", "switch", "catch", "with":
+			return false
+		default:
+			return true
+		}
 	}
 	if !isIdentChar(prev) {
 		return false
 	}
-	switch previousIdentifier(src, i-1) {
-	case "class", "do", "else", "finally", "try":
-		return true
-	default:
-		return previousIdentifier(src, beforePreviousIdentifier(src, i-1)) == "class"
-	}
+	return previousIdentifier(src, prevIndex) == "class"
 }
 
-func beforePreviousIdentifier(src string, i int) int {
-	for i >= 0 && !isIdentChar(src[i]) {
-		i--
+func matchingOpenParen(src string, closeIndex int) int {
+	depth := 0
+	for i := closeIndex; i >= 0; i-- {
+		switch src[i] {
+		case ')':
+			depth++
+		case '(':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
 	}
-	for i >= 0 && isIdentChar(src[i]) {
-		i--
+	return -1
+}
+
+func prevSignificantIndex(src string, i int) int {
+	for i >= 0 {
+		switch src[i] {
+		case ' ', '\t', '\r', '\n':
+			i--
+		default:
+			return i
+		}
 	}
-	return i
+	return -1
 }
 
 func previousIdentifier(src string, i int) string {
