@@ -368,6 +368,94 @@ func stringListArg(r mcp.CallToolRequest, name string) ([]string, string) {
 	return out, ""
 }
 
+func handleDialog(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	command := strings.TrimSpace(r.GetString("command", "accept"))
+	if command == "" {
+		command = "accept"
+	}
+	switch command {
+	case "accept", "dismiss", "disarm", "status":
+	default:
+		return mcp.NewToolResultError(fmt.Sprintf(
+			"unknown dialog command: %s (want accept, dismiss, disarm, or status)", command)), nil
+	}
+	req := &protocol.Request{
+		ID: newID(), Action: protocol.ActionDialog,
+		DialogResponse: command, PromptText: r.GetString("promptText", ""),
+	}
+	setTab(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	info, _ := dialogInfoMap(resp)
+	if command == "status" {
+		return textResult(resp, formatDialogStatus(info)), nil
+	}
+	// The daemon already distinguishes "answered the open dialog" from
+	// "armed the next one"; surface its message so the model isn't left
+	// guessing which happened.
+	if message, _ := info["message"].(string); message != "" {
+		return textResult(resp, message), nil
+	}
+	if command == "disarm" {
+		return textResult(resp, "Dialog handler disarmed"), nil
+	}
+	return textResult(resp, fmt.Sprintf("Dialog handler armed: %s", command)), nil
+}
+
+func dialogInfoMap(resp *protocol.Response) (map[string]interface{}, bool) {
+	if resp == nil || resp.Data == nil {
+		return nil, false
+	}
+	info, ok := resp.Data.DialogInfo.(map[string]interface{})
+	return info, ok
+}
+
+// formatDialogStatus renders `dialog status` as text, since textResult only
+// carries a message — the model needs the open dialog's text to decide
+// whether to accept or dismiss it.
+func formatDialogStatus(info map[string]interface{}) string {
+	var b strings.Builder
+	if pending, ok := info["pending"].(map[string]interface{}); ok {
+		kind, _ := pending["type"].(string)
+		message, _ := pending["message"].(string)
+		fmt.Fprintf(&b, "Open dialog: %s — %q", kind, message)
+		if blocked, _ := info["blocked"].(bool); blocked {
+			b.WriteString("\nBLOCKING the page: call browser_dialog with command=accept or dismiss to release it.")
+		}
+		if def, _ := pending["defaultPrompt"].(string); def != "" {
+			fmt.Fprintf(&b, "\nDefault prompt text: %q", def)
+		}
+	} else {
+		b.WriteString("Open dialog: none")
+	}
+	if armed, _ := info["armed"].(bool); armed {
+		action, _ := info["action"].(string)
+		fmt.Fprintf(&b, "\nArmed handler: %s", action)
+	} else {
+		b.WriteString("\nArmed handler: none")
+	}
+	if history, _ := info["history"].([]interface{}); len(history) > 0 {
+		fmt.Fprintf(&b, "\nRecent dialogs (%d):", len(history))
+		for _, item := range history {
+			ev, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			kind, _ := ev["type"].(string)
+			message, _ := ev["message"].(string)
+			outcome := "resolved outside borz"
+			if auto, _ := ev["autoHandled"].(bool); auto {
+				handledAs, _ := ev["handledAs"].(string)
+				outcome = "borz " + handledAs
+			}
+			fmt.Fprintf(&b, "\n  %s %q — %s", kind, message, outcome)
+		}
+	}
+	return b.String()
+}
+
 func handleFileChooser(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	command := strings.TrimSpace(r.GetString("command", "status"))
 	if command == "" {

@@ -528,15 +528,25 @@ var commandHelp = map[string]cmdHelp{
 		},
 	},
 	"dialog": {
-		Summary: "Pre-arm a handler for the next native alert/confirm/prompt/beforeunload.",
-		Usage:   "borz dialog [accept|dismiss] [prompt-text]",
+		Summary: "Handle or pre-arm native alert/confirm/prompt/beforeunload dialogs.",
+		Usage:   "borz dialog [accept|dismiss|disarm|status] [prompt-text] [--tab <id>]",
+		Flags: []string{
+			"  accept [text]   Answer an open dialog with OK, else arm the next one",
+			"  dismiss         Answer an open dialog with Cancel, else arm the next one",
+			"  disarm          Drop a previously armed handler",
+			"  status          Show the open dialog, the armed handler, and recent history",
+		},
 		Examples: []string{
 			"  borz dialog accept",
 			"  borz dialog accept 'Leo'",
 			"  borz dialog dismiss",
+			"  borz dialog status",
 		},
-		Notes: "Run this BEFORE the click/navigation that triggers the dialog. " +
-			"Default action is 'accept'. If accepting a prompt, pass the response text as the second arg.",
+		Notes: "Arming BEFORE the click/navigation that triggers the dialog is the reliable " +
+			"pattern; arming is one-shot. If a dialog is already open, accept/dismiss answers " +
+			"that one instead of arming. An unanswered dialog blocks the page, so other commands " +
+			"on that tab fail fast with a dialog-blocked error naming the dialog text — run " +
+			"'borz dialog status' to see what it asks. Default action is 'accept'.",
 	},
 	"filechooser": {
 		Summary: "Pre-arm a handler for the next native file-picker dialog.",
@@ -1502,19 +1512,38 @@ var commandHelp = map[string]cmdHelp{
 
 	// --- Subcommand pages: dialog.* ---
 	"dialog.accept": {
-		Summary: "Pre-arm the next native dialog to be accepted (OK / Leave / prompt submitted).",
+		Summary: "Accept the open dialog (OK / Leave / prompt submitted), or arm the next one.",
 		Usage:   "borz dialog accept [prompt-text] [--tab <id>]",
 		Examples: []string{
 			"  borz dialog accept",
 			"  borz dialog accept 'Leo'       # prompt response text",
 		},
-		Notes: "Run BEFORE the click/navigation that triggers the dialog. For a prompt(), pass " +
-			"the response as the second arg; for alert()/confirm() it is ignored.",
+		Notes: "If a dialog is already open on the tab it is answered immediately; otherwise " +
+			"the next one is armed (one-shot), which is the reliable pattern — run it BEFORE the " +
+			"click/navigation that triggers the dialog. For a prompt(), pass the response as the " +
+			"second arg; for alert()/confirm() it is ignored.",
 	},
 	"dialog.dismiss": {
-		Summary: "Pre-arm the next native dialog to be dismissed (Cancel / Stay on page).",
+		Summary: "Dismiss the open dialog (Cancel / Stay on page), or arm the next one.",
 		Usage:   "borz dialog dismiss [--tab <id>]",
-		Notes:   "Run BEFORE the click/navigation that triggers the dialog.",
+		Notes: "If a dialog is already open on the tab it is answered immediately; otherwise the " +
+			"next one is armed. Run BEFORE the click/navigation that triggers the dialog.",
+	},
+	"dialog.disarm": {
+		Summary: "Drop a previously armed dialog handler without answering anything.",
+		Usage:   "borz dialog disarm [--tab <id>]",
+		Notes: "Arming is one-shot but never expires: an armed handler that is never triggered " +
+			"would be consumed by whatever unrelated dialog opens next. Disarm when you abandon " +
+			"the flow you armed it for.",
+	},
+	"dialog.status": {
+		Summary:  "Report the open dialog, the armed handler, and recent dialog history.",
+		Usage:    "borz dialog status [--tab <id>]",
+		Examples: []string{"  borz dialog status"},
+		Notes: "Read-only. Use it when a tab stops responding: a dialog nobody answered blocks " +
+			"the page, and status shows its type and message so you know whether to accept or " +
+			"dismiss. History covers the last 10 dialogs on the tab, including ones a human " +
+			"clicked away in headful Chrome.",
 	},
 
 	// --- Subcommand pages: frame.* ---

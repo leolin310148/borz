@@ -273,7 +273,7 @@ func TestCommandHelpCoversSubcommands(t *testing.T) {
 		// network (handleNetwork)
 		"network.requests", "network.clear",
 		// dialog
-		"dialog.accept", "dialog.dismiss",
+		"dialog.accept", "dialog.dismiss", "dialog.disarm", "dialog.status",
 		// frame
 		"frame.main",
 		// extension-backed APIs
@@ -371,6 +371,16 @@ func TestSuggestSubcommands(t *testing.T) {
 	got = suggestSubcommands("cookies", "al", 3)
 	if len(got) == 0 || got[0] != "all" {
 		t.Fatalf("suggestSubcommands(cookies, al): want all first, got %v", got)
+	}
+
+	// A dialog typo used to silently arm "accept"; now it must be caught and
+	// steered at the real subcommand.
+	got = suggestSubcommands("dialog", "dismis", 3)
+	if len(got) == 0 || got[0] != "dismiss" {
+		t.Fatalf("suggestSubcommands(dialog, dismis): want dismiss first, got %v", got)
+	}
+	if hint := unknownSubcommandHint("dialog", "dismis"); !strings.Contains(hint, "borz dialog dismiss") {
+		t.Fatalf("dialog hint should suggest dismiss; got:\n%s", hint)
 	}
 
 	hint := unknownSubcommandHint("client", "enabel")

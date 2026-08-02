@@ -2002,20 +2002,84 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 
 	// --- Dialog ---
 	case protocol.ActionDialog:
-		seq := tab.RecordAction()
-		accept := req.DialogResponse != "dismiss"
-		tab.SetDialogHandler(&DialogHandler{Accept: accept, PromptText: req.PromptText})
-		cdp.SessionCommand(target.ID, "Page.enable", nil)
-		resp := "accept"
-		if !accept {
-			resp = "dismiss"
+		subCmd := req.DialogResponse
+		if subCmd == "" {
+			subCmd = "accept"
 		}
-		return okResp(req.ID, &protocol.ResponseData{
-			DialogInfo: map[string]interface{}{
-				"type": "armed", "message": fmt.Sprintf("Dialog handler armed: %s", resp), "handled": false,
-			},
-			Tab: shortID, Seq: intPtr(seq),
-		})
+		switch subCmd {
+		case "accept", "dismiss":
+			accept := subCmd == "accept"
+			// If a dialog is already open, answer it now. Arming would leave
+			// the open one blocking the renderer forever.
+			if pending := tab.PeekPendingDialog(); pending != nil && !pending.AutoHandled {
+				seq := tab.RecordAction()
+				args := map[string]interface{}{"accept": accept}
+				if req.PromptText != "" {
+					args["promptText"] = req.PromptText
+				}
+				if _, err := cdp.SessionCommand(target.ID, "Page.handleJavaScriptDialog", args); err != nil {
+					return failResp(req.ID, err)
+				}
+				tab.MarkPendingDialogHandled(accept, req.PromptText)
+				return okResp(req.ID, &protocol.ResponseData{
+					DialogInfo: map[string]interface{}{
+						"type":    "handled",
+						"message": fmt.Sprintf("Open %s dialog %sed: %s", pending.Type, subCmd, pending.Message),
+						"handled": true,
+						"armed":   false,
+						"action":  subCmd,
+						"dialog":  pending,
+					},
+					Tab: shortID, Seq: intPtr(seq),
+				})
+			}
+			seq := tab.RecordAction()
+			tab.SetDialogHandler(&DialogHandler{Accept: accept, PromptText: req.PromptText})
+			cdp.SessionCommand(target.ID, "Page.enable", nil)
+			return okResp(req.ID, &protocol.ResponseData{
+				DialogInfo: map[string]interface{}{
+					"type": "armed", "message": fmt.Sprintf("Dialog handler armed: %s", subCmd),
+					"handled": false, "armed": true, "action": subCmd,
+				},
+				Tab: shortID, Seq: intPtr(seq),
+			})
+
+		case "disarm":
+			seq := tab.RecordAction()
+			tab.ConsumeDialogHandler()
+			return okResp(req.ID, &protocol.ResponseData{
+				DialogInfo: map[string]interface{}{
+					"type": "disarmed", "message": "Dialog handler disarmed", "handled": false, "armed": false,
+				},
+				Tab: shortID, Seq: intPtr(seq),
+			})
+
+		case "status":
+			info := map[string]interface{}{"type": "status", "armed": false, "handled": false}
+			if handler := tab.PeekDialogHandler(); handler != nil {
+				info["armed"] = true
+				info["action"] = dialogHandledAs(handler.Accept)
+				if handler.PromptText != "" {
+					info["promptText"] = handler.PromptText
+				}
+			}
+			if pending := tab.PeekPendingDialog(); pending != nil {
+				info["pending"] = pending
+				info["blocked"] = !pending.AutoHandled
+				info["message"] = fmt.Sprintf("Open %s dialog: %s", pending.Type, pending.Message)
+			} else {
+				info["blocked"] = false
+				info["message"] = "No dialog open"
+			}
+			if history := tab.DialogHistory(dialogHistoryLimit); len(history) > 0 {
+				info["history"] = history
+			}
+			return okResp(req.ID, &protocol.ResponseData{DialogInfo: info, Tab: shortID})
+
+		default:
+			return failResp(req.ID, fmt.Sprintf(
+				"unknown dialog subcommand: %s (want accept, dismiss, disarm, or status)", subCmd))
+		}
 
 	// --- Network ---
 	case protocol.ActionNetwork:

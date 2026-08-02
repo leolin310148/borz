@@ -97,6 +97,20 @@ func TestOpenAPIRoutes(t *testing.T) {
 		}
 	})
 
+	t.Run("spec documents dialog handling", func(t *testing.T) {
+		body := string(openAPISpec)
+		for _, want := range []string{
+			"/v1/dialog:",
+			"enum: [accept, dismiss, disarm, status]",
+			"promptText:",
+			"already open",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("dialog OpenAPI missing %q", want)
+			}
+		}
+	})
+
 	t.Run("non-GET rejected", func(t *testing.T) {
 		for _, path := range []string{"/openapi.yaml", "/docs"} {
 			rec := httptest.NewRecorder()

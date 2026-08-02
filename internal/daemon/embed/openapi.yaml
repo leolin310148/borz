@@ -271,6 +271,44 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
+  /v1/dialog:
+    post:
+      tags: [interaction]
+      summary: Handle or pre-arm native alert/confirm/prompt/beforeunload dialogs
+      description: |
+        Wraps CDP `Page.javascriptDialogOpening` + `Page.handleJavaScriptDialog`.
+
+        `command=accept` / `dismiss` resolves the dialog that is already open on
+        the tab; when no dialog is open it arms the next one instead (one-shot).
+        Arming BEFORE the click that triggers the dialog is still the reliable
+        pattern — a dialog left open blocks the renderer, so every other command
+        against that tab fails fast with a dialog-blocked error until it is
+        resolved.
+
+        `command=status` never changes state: it reports the armed handler, the
+        currently open dialog (`pending`, with `blocked: true` when nothing has
+        answered it), and recent dialog history under `dialogInfo`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TabTarget"
+                - type: object
+                  properties:
+                    command:
+                      type: string
+                      enum: [accept, dismiss, disarm, status]
+                      default: accept
+                    promptText:
+                      type: string
+                      description: >
+                        Response submitted for a prompt() dialog; ignored for
+                        alert/confirm. `text` is accepted as an alias.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
   /v1/filechooser:
     post:
       tags: [interaction]

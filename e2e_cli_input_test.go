@@ -179,6 +179,141 @@ func TestE2ECLIDialogHandling(t *testing.T) {
 	runE2EJSON(t, env, "dialog", "accept", "--json")
 	runE2EJSON(t, env, "click", promptRef, "--json")
 	requireEvalString(t, env, `document.querySelector("#prompt-result").textContent`, "prompt: ")
+
+	// Handled dialogs are recorded, so status can explain what happened.
+	status := dialogStatus(t, env)
+	if status["blocked"] != false {
+		t.Fatalf("no dialog is open, status = %+v", status)
+	}
+	if status["armed"] != false {
+		t.Fatalf("every armed handler was consumed, status = %+v", status)
+	}
+	history, _ := status["history"].([]interface{})
+	if len(history) != 4 {
+		t.Fatalf("expected 4 recorded dialogs, status = %+v", status)
+	}
+	first, _ := history[0].(map[string]interface{})
+	if first["type"] != "alert" || first["message"] != "E2E alert" || first["autoHandled"] != true {
+		t.Fatalf("first history entry = %+v", first)
+	}
+
+	// disarm drops an armed handler instead of leaving it to swallow whatever
+	// dialog happens to open next.
+	runE2EJSON(t, env, "dialog", "accept", "--json")
+	if status := dialogStatus(t, env); status["armed"] != true {
+		t.Fatalf("handler should be armed, status = %+v", status)
+	}
+	runE2EJSON(t, env, "dialog", "disarm", "--json")
+	if status := dialogStatus(t, env); status["armed"] != false {
+		t.Fatalf("handler should be disarmed, status = %+v", status)
+	}
+
+	// A typo must not silently arm the opposite action.
+	_, out := runE2ECLIError(t, env, "dialog", "dismis")
+	requireContains(t, out, "Unknown dialog subcommand: dismis", "dialog typo output")
+	if status := dialogStatus(t, env); status["armed"] != false {
+		t.Fatalf("a rejected subcommand must not arm anything, status = %+v", status)
+	}
+}
+
+// dialogStatus runs `borz dialog status` and returns the dialogInfo payload.
+func dialogStatus(t *testing.T, env e2eDaemonEnv) map[string]interface{} {
+	t.Helper()
+	resp := runE2EJSON(t, env, "dialog", "status", "--json")
+	if resp.Data == nil {
+		t.Fatalf("dialog status returned no data: %+v", resp)
+	}
+	info, ok := resp.Data.DialogInfo.(map[string]interface{})
+	if !ok {
+		t.Fatalf("dialog status dialogInfo = %#v", resp.Data.DialogInfo)
+	}
+	return info
+}
+
+// An unhandled dialog blocks the renderer. borz must notice it, say so
+// instead of hanging on the command timeout, and be able to release it.
+func TestE2ECLIUnhandledDialogIsDetectedAndReleased(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/dialogs", "--new", "--wait-for", "#dialogs-ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	if tab == "" {
+		t.Fatalf("dialogs open response did not include short tab id: %+v", openResp.Data)
+	}
+	t.Cleanup(func() {
+		// Never leave a blocked tab behind for the next test.
+		runE2ECLI(t, env, "dialog", "dismiss", "--tab", tab, "--json")
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	// The dialog opens 50ms after the click handler returns, so the eval that
+	// triggers it is not itself blocked.
+	runE2EJSON(t, env, "eval", `document.getElementById("deferred-button").click()`, "--json")
+	waitForOpenDialog(t, env)
+
+	status := dialogStatus(t, env)
+	if status["blocked"] != true {
+		t.Fatalf("an unarmed dialog must be reported as blocking, status = %+v", status)
+	}
+	pending, _ := status["pending"].(map[string]interface{})
+	if pending["type"] != "confirm" || pending["message"] != "E2E deferred confirm" {
+		t.Fatalf("pending dialog = %+v", pending)
+	}
+	if pending["autoHandled"] != false {
+		t.Fatalf("nothing answered this dialog, pending = %+v", pending)
+	}
+
+	// Commands that need the renderer fail fast and name the dialog rather
+	// than burning the full 30s command timeout.
+	start := time.Now()
+	_, out := runE2ECLIError(t, env, "eval", "1 + 1")
+	elapsed := time.Since(start)
+	requireContains(t, out, "E2E deferred confirm", "blocked eval error")
+	requireContains(t, out, "borz dialog accept", "blocked eval error")
+	if elapsed > 15*time.Second {
+		t.Fatalf("blocked eval took %v — it waited on the command timeout instead of failing fast", elapsed)
+	}
+
+	// accept/dismiss answers the dialog that is already open.
+	dismissOut := runE2ECLI(t, env, "dialog", "dismiss")
+	requireContains(t, dismissOut, "Open confirm dialog dismissed", "dialog dismiss output")
+
+	// The page runs again, and the dialog resolved as dismissed.
+	requireEvalString(t, env, `document.querySelector("#deferred-result").textContent`, "deferred: false")
+	if status := dialogStatus(t, env); status["blocked"] != false {
+		t.Fatalf("dialog should be released, status = %+v", status)
+	}
+}
+
+// waitForOpenDialog polls `dialog status` until a dialog is reported open.
+// Uses status because it is the one command that still works while the
+// renderer is blocked.
+func waitForOpenDialog(t *testing.T, env e2eDaemonEnv) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := dialogStatus(t, env)["pending"]; ok {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("no dialog was reported open within 10s")
 }
 
 func TestE2ECLIKeyboardInteraction(t *testing.T) {

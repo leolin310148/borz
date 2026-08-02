@@ -400,6 +400,8 @@ func TestHandlerServesDialogsPage(t *testing.T) {
 		`alert('E2E alert')`,
 		`confirm('E2E confirm')`,
 		`prompt('E2E prompt', 'default prompt')`,
+		`aria-label="Open deferred confirm dialog"`,
+		`confirm('E2E deferred confirm')`,
 	} {
 		if !strings.Contains(rec.Body.String(), marker) {
 			t.Errorf("dialogs page missing %q", marker)

@@ -133,15 +133,46 @@ func writeJSON(t *testing.T, w http.ResponseWriter, v any) {
 	}
 }
 
+// dialogInfoFor mirrors the dialogInfo shapes the daemon returns for each
+// `dialog` subcommand, so the CLI printers are exercised against realistic
+// (JSON round-tripped) payloads.
+func dialogInfoFor(req protocol.Request) interface{} {
+	switch req.DialogResponse {
+	case "status":
+		return map[string]interface{}{
+			"type": "status", "armed": true, "action": "accept", "promptText": "Leo", "blocked": true,
+			"pending": map[string]interface{}{
+				"type": "confirm", "message": "Delete this record?", "defaultPrompt": "keep",
+			},
+			"history": []interface{}{
+				map[string]interface{}{"type": "alert", "message": "saved", "autoHandled": true, "handledAs": "accept"},
+				map[string]interface{}{"type": "prompt", "message": "name?", "autoHandled": false},
+			},
+		}
+	case "disarm":
+		return map[string]interface{}{"type": "disarmed", "message": "Dialog handler disarmed", "armed": false}
+	default:
+		return map[string]interface{}{
+			"type": "armed", "message": "Dialog handler armed: " + req.DialogResponse,
+			"armed": true, "action": req.DialogResponse,
+		}
+	}
+}
+
 func responseDataFor(req protocol.Request) *protocol.ResponseData {
 	status := 200
 	cursor := 99
 	active := 0
+	var dialogInfo interface{}
+	if req.Action == protocol.ActionDialog {
+		dialogInfo = dialogInfoFor(req)
+	}
 	return &protocol.ResponseData{
-		Title: "Example title",
-		URL:   "https://example.test",
-		Tab:   "tab-1",
-		TabID: "target-1",
+		DialogInfo: dialogInfo,
+		Title:      "Example title",
+		URL:        "https://example.test",
+		Tab:        "tab-1",
+		TabID:      "target-1",
 		SnapshotData: &protocol.SnapshotData{
 			Snapshot: "Page snapshot",
 			Refs:     map[string]*protocol.RefInfo{"e1": {Role: "button", Name: "Save"}},
@@ -424,6 +455,40 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			}
 			if !strings.Contains(out, "Dialog handler armed: accept") {
 				t.Fatalf("dialog output = %q", out)
+			}
+		}},
+		{name: "dialog dismiss", args: []string{"dialog", "dismiss"}, action: protocol.ActionDialog, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.DialogResponse != "dismiss" || req.PromptText != "" {
+				t.Fatalf("dialog request = %+v", req)
+			}
+			if !strings.Contains(out, "Dialog handler armed: dismiss") {
+				t.Fatalf("dialog output = %q", out)
+			}
+		}},
+		{name: "dialog disarm", args: []string{"dialog", "disarm"}, action: protocol.ActionDialog, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.DialogResponse != "disarm" {
+				t.Fatalf("dialog disarm request = %+v", req)
+			}
+			if !strings.Contains(out, "Dialog handler disarmed") {
+				t.Fatalf("dialog disarm output = %q", out)
+			}
+		}},
+		{name: "dialog status", args: []string{"dialog", "status"}, action: protocol.ActionDialog, check: func(t *testing.T, req protocol.Request, out string) {
+			if req.DialogResponse != "status" {
+				t.Fatalf("dialog status request = %+v", req)
+			}
+			for _, want := range []string{
+				`Open dialog: confirm — "Delete this record?"`,
+				"BLOCKING the page",
+				`Default prompt text: "keep"`,
+				`Armed handler: accept (prompt text "Leo")`,
+				"Recent dialogs (2):",
+				`alert "saved" — borz accept`,
+				`prompt "name?" — resolved outside borz`,
+			} {
+				if !strings.Contains(out, want) {
+					t.Fatalf("dialog status output %q missing %q", out, want)
+				}
 			}
 		}},
 		{name: "network requests", args: []string{"network", "requests", "--filter", "api", "--method", "GET", "--status", "200", "--with-body", "--since", "last_action", "--limit", "5"}, action: protocol.ActionNetwork, check: func(t *testing.T, req protocol.Request, out string) {

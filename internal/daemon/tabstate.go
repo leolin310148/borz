@@ -15,6 +15,9 @@ const (
 	networkCapacity = 500
 	consoleCapacity = 200
 	errorsCapacity  = 100
+	dialogCapacity  = 50
+	// dialogHistoryLimit caps how many past dialogs `dialog status` returns.
+	dialogHistoryLimit = 10
 )
 
 // TabState holds per-tab event state.
@@ -53,6 +56,17 @@ type TabState struct {
 	// Dialog auto-handler config.
 	DialogHandler *DialogHandler
 
+	// PendingDialog is the native JS dialog currently open on this tab, nil
+	// when none. Set on Page.javascriptDialogOpening, cleared on
+	// Page.javascriptDialogClosed. A pending dialog with AutoHandled=false
+	// is blocking the renderer: every command that needs the page will hang
+	// until it is resolved, so the CDP layer fails those fast instead.
+	PendingDialog *protocol.DialogEventInfo
+
+	// DialogEvents is the history of dialogs seen on this tab (handled or
+	// not), newest last. Surfaced by `dialog status`.
+	DialogEvents *RingBuffer[protocol.DialogEventInfo]
+
 	// FileChooser auto-handler config (armed by ActionFileChooser, consumed
 	// on Page.fileChooserOpened).
 	FileChooserHandler *FileChooserHandler
@@ -85,6 +99,79 @@ func (ts *TabState) ConsumeDialogHandler() *DialogHandler {
 	handler := ts.DialogHandler
 	ts.DialogHandler = nil
 	return handler
+}
+
+// PeekDialogHandler reports the armed handler without consuming it.
+func (ts *TabState) PeekDialogHandler() *DialogHandler {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.DialogHandler
+}
+
+// SetPendingDialog records the dialog that just opened on this tab.
+func (ts *TabState) SetPendingDialog(ev *protocol.DialogEventInfo) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.PendingDialog = ev
+}
+
+// PeekPendingDialog returns a copy of the currently open dialog, nil when the
+// tab has none. A copy so callers can't mutate state through the pointer.
+func (ts *TabState) PeekPendingDialog() *protocol.DialogEventInfo {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	if ts.PendingDialog == nil {
+		return nil
+	}
+	ev := *ts.PendingDialog
+	return &ev
+}
+
+// MarkPendingDialogHandled records that borz answered the open dialog. Used
+// by the `dialog accept|dismiss` path when it resolves an already-open dialog,
+// so the fail-fast guard stops firing before the closing event lands.
+func (ts *TabState) MarkPendingDialogHandled(accept bool, promptText string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.PendingDialog == nil {
+		return
+	}
+	ts.PendingDialog.AutoHandled = true
+	ts.PendingDialog.HandledAs = dialogHandledAs(accept)
+	ts.PendingDialog.PromptText = promptText
+}
+
+// ResolvePendingDialog closes out the open dialog with the outcome reported by
+// Page.javascriptDialogClosed and moves it into the history ring.
+func (ts *TabState) ResolvePendingDialog(result bool, userInput string, closedAt time.Time) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ev := ts.PendingDialog
+	ts.PendingDialog = nil
+	if ev == nil {
+		return
+	}
+	ev.ClosedAt = closedAt.UnixMilli()
+	ev.Result = &result
+	ev.UserInput = userInput
+	ts.DialogEvents.Push(*ev)
+}
+
+// DialogHistory returns the recorded dialogs, oldest first, capped to the
+// newest limit entries (limit <= 0 means all).
+func (ts *TabState) DialogHistory(limit int) []protocol.DialogEventInfo {
+	all := ts.DialogEvents.ToSlice()
+	if limit > 0 && len(all) > limit {
+		all = all[len(all)-limit:]
+	}
+	return all
+}
+
+func dialogHandledAs(accept bool) string {
+	if accept {
+		return "accept"
+	}
+	return "dismiss"
 }
 
 // FileChooserHandler configures automatic file-picker dialog handling.
@@ -140,6 +227,7 @@ func newTabState(targetID, shortID string, nextSeq func() int) *TabState {
 		NetworkRequests: NewRingBuffer[protocol.NetworkRequestInfo](networkCapacity),
 		ConsoleMessages: NewRingBuffer[protocol.ConsoleMessageInfo](consoleCapacity),
 		JSErrors:        NewRingBuffer[protocol.JSErrorInfo](errorsCapacity),
+		DialogEvents:    NewRingBuffer[protocol.DialogEventInfo](dialogCapacity),
 		Refs:            make(map[string]*protocol.RefInfo),
 		nextSeq:         nextSeq,
 		CreatedAt:       time.Now(),

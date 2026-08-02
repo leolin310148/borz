@@ -123,9 +123,17 @@ type Request struct {
 	// pages that throttle backgrounded tabs.
 	Activate bool `json:"activate,omitempty"`
 
-	// Dialog
+	// DialogResponse (ActionDialog) is one of:
+	//   "accept"  — resolve an already-open dialog with OK, otherwise arm the
+	//               next one to be accepted. One-shot when arming.
+	//   "dismiss" — same, but Cancel / Stay on page.
+	//   "disarm"  — drop a previously armed handler.
+	//   "status"  — report the armed handler, the currently open dialog (if
+	//               any), and recent dialog history. Never changes state.
+	// Empty defaults to "accept". Unknown values are rejected.
 	DialogResponse string `json:"dialogResponse,omitempty"`
-	PromptText     string `json:"promptText,omitempty"`
+	// PromptText is the response submitted for a prompt() dialog.
+	PromptText string `json:"promptText,omitempty"`
 
 	// Network/Console/Errors/Trace
 	NetworkCommand string `json:"networkCommand,omitempty"`
@@ -417,6 +425,35 @@ type JSErrorInfo struct {
 	StackTrace   string `json:"stackTrace,omitempty"`
 	Timestamp    int64  `json:"timestamp"`
 	Seq          int    `json:"seq,omitempty"`
+}
+
+// DialogEventInfo describes a native JavaScript dialog (alert / confirm /
+// prompt / beforeunload) observed on a tab via Page.javascriptDialogOpening.
+// Every dialog is recorded whether or not a handler was armed, so callers can
+// tell that a dialog is blocking the page instead of only seeing a timeout.
+type DialogEventInfo struct {
+	Type    string `json:"type"`    // alert | confirm | prompt | beforeunload
+	Message string `json:"message"` // text the page passed to the dialog
+	URL     string `json:"url,omitempty"`
+	// DefaultPrompt is the prefilled value of a prompt() dialog.
+	DefaultPrompt string `json:"defaultPrompt,omitempty"`
+	// HasBrowserHandler is true when the browser itself can still show and
+	// resolve the dialog (headful Chrome), i.e. a human could click it.
+	HasBrowserHandler bool `json:"hasBrowserHandler,omitempty"`
+	// OpenedAt / ClosedAt are unix millis. ClosedAt is 0 while open.
+	OpenedAt int64 `json:"openedAt"`
+	ClosedAt int64 `json:"closedAt,omitempty"`
+	// AutoHandled is true when an armed borz handler resolved the dialog.
+	// A dialog that is open with AutoHandled=false is blocking the renderer.
+	AutoHandled bool `json:"autoHandled"`
+	// HandledAs is "accept" or "dismiss" when borz resolved the dialog.
+	HandledAs string `json:"handledAs,omitempty"`
+	// PromptText is the text borz submitted for a prompt() dialog.
+	PromptText string `json:"promptText,omitempty"`
+	// Result / UserInput come from Page.javascriptDialogClosed and describe
+	// how the dialog actually resolved — including a human clicking it.
+	Result    *bool  `json:"result,omitempty"`
+	UserInput string `json:"userInput,omitempty"`
 }
 
 // TraceEvent represents a recorded user action.

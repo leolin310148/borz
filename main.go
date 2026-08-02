@@ -601,19 +601,7 @@ func main() {
 
 	// --- Dialog ---
 	case "dialog":
-		subCmd := "accept"
-		if len(cmdArgs) > 0 {
-			subCmd = cmdArgs[0]
-		}
-		var promptText string
-		if len(cmdArgs) > 1 {
-			promptText = cmdArgs[1]
-		}
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionDialog, DialogResponse: subCmd, PromptText: promptText}
-		setTab(req, globalTabID)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
-			fmt.Printf("Dialog handler armed: %s\n", subCmd)
-		})
+		handleDialog(cmdArgs, jsonOutput, globalTabID)
 
 	// --- Network ---
 	case "network":
@@ -899,6 +887,90 @@ func handlePage(cmdArgs []string, jsonOutput bool, globalTabID string) {
 		})
 	default:
 		fatal(unknownSubcommandHint("page", cmdArgs[0]))
+	}
+}
+
+// --- Dialog handling (native alert/confirm/prompt/beforeunload) ---
+
+func handleDialog(cmdArgs []string, jsonOutput bool, globalTabID string) {
+	subCmd := "accept"
+	if len(cmdArgs) > 0 {
+		subCmd = cmdArgs[0]
+	}
+	var promptText string
+	switch subCmd {
+	case "accept", "dismiss":
+		if len(cmdArgs) > 1 {
+			promptText = cmdArgs[1]
+		}
+	case "disarm", "status":
+	default:
+		fatal(unknownSubcommandHint("dialog", subCmd))
+	}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionDialog, DialogResponse: subCmd, PromptText: promptText}
+	setTab(req, globalTabID)
+	sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		if resp.Data == nil {
+			fmt.Printf("Dialog handler armed: %s\n", subCmd)
+			return
+		}
+		info, _ := resp.Data.DialogInfo.(map[string]interface{})
+		message, _ := info["message"].(string)
+		switch infoType, _ := info["type"].(string); infoType {
+		case "handled":
+			fmt.Println(message)
+		case "disarmed":
+			fmt.Println("Dialog handler disarmed")
+		case "status":
+			printDialogStatus(info)
+		default:
+			fmt.Printf("Dialog handler armed: %s\n", subCmd)
+		}
+	})
+}
+
+func printDialogStatus(info map[string]interface{}) {
+	if pending, ok := info["pending"].(map[string]interface{}); ok {
+		kind, _ := pending["type"].(string)
+		message, _ := pending["message"].(string)
+		fmt.Printf("Open dialog: %s — %q\n", kind, message)
+		if blocked, _ := info["blocked"].(bool); blocked {
+			fmt.Println("  BLOCKING the page. Run 'borz dialog accept' or 'borz dialog dismiss' to release it.")
+		}
+		if def, _ := pending["defaultPrompt"].(string); def != "" {
+			fmt.Printf("  Default prompt text: %q\n", def)
+		}
+	} else {
+		fmt.Println("Open dialog: none")
+	}
+	if armed, _ := info["armed"].(bool); armed {
+		action, _ := info["action"].(string)
+		line := fmt.Sprintf("Armed handler: %s", action)
+		if text, _ := info["promptText"].(string); text != "" {
+			line += fmt.Sprintf(" (prompt text %q)", text)
+		}
+		fmt.Println(line)
+	} else {
+		fmt.Println("Armed handler: none")
+	}
+	history, _ := info["history"].([]interface{})
+	if len(history) == 0 {
+		return
+	}
+	fmt.Printf("Recent dialogs (%d):\n", len(history))
+	for _, item := range history {
+		ev, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		kind, _ := ev["type"].(string)
+		message, _ := ev["message"].(string)
+		outcome := "resolved outside borz"
+		if auto, _ := ev["autoHandled"].(bool); auto {
+			handledAs, _ := ev["handledAs"].(string)
+			outcome = "borz " + handledAs
+		}
+		fmt.Printf("  %s %q — %s\n", kind, message, outcome)
 	}
 }
 

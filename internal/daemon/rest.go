@@ -88,6 +88,27 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			TabID:     body.tabID(),
 		})
 	}))
+	mux.HandleFunc("/v1/dialog", s.restJSONE(func(body restBody) (*protocol.Request, error) {
+		cmd := body.Command
+		if cmd == "" {
+			cmd = "accept"
+		}
+		switch cmd {
+		case "accept", "dismiss", "disarm", "status":
+		default:
+			return nil, fmt.Errorf("unknown dialog command: %s (want accept, dismiss, disarm, or status)", cmd)
+		}
+		promptText := body.PromptText
+		if promptText == "" {
+			promptText = body.Text
+		}
+		return body.withActivate(&protocol.Request{
+			Action:         protocol.ActionDialog,
+			DialogResponse: cmd,
+			PromptText:     promptText,
+			TabID:          body.tabID(),
+		}), nil
+	}))
 	mux.HandleFunc("/v1/filechooser", s.restJSONE(func(body restBody) (*protocol.Request, error) {
 		cmd := body.Command
 		if cmd == "" {
@@ -350,6 +371,7 @@ type restBody struct {
 	Path        string                    `json:"path,omitempty"`
 	Method      string                    `json:"method,omitempty"`
 	Command     string                    `json:"command,omitempty"`
+	PromptText  string                    `json:"promptText,omitempty"`
 	Filter      string                    `json:"filter,omitempty"`
 	Status      string                    `json:"status,omitempty"`
 	WithBody    bool                      `json:"withBody,omitempty"`

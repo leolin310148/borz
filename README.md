@@ -214,7 +214,7 @@ The MCP server exposes 44 tools:
 | Category | Tools |
 |----------|-------|
 | **Navigation** | `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close` |
-| **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_filechooser`, `browser_press`, `browser_page_visibility`, `browser_clipboard_write`, `browser_scroll` |
+| **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_filechooser`, `browser_dialog`, `browser_press`, `browser_page_visibility`, `browser_clipboard_write`, `browser_scroll` |
 | **Browser testing** | `browser_webauthn` |
 | **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_term_text`, `browser_wait` |
 | **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_front`, `browser_tab_close` |
@@ -491,6 +491,7 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/fill` \| `/type` | `{ref, text, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/select` | `{ref, value, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/upload` | `{ref, files: [path,...] \| file, tab?, waitFor?, timeoutMs?}` — attach files to `<input type=file>` (paths resolved on daemon host) |
+| POST | `/v1/dialog` | `{command?: accept\|dismiss\|disarm\|status, promptText?, tab?}` — answer the dialog already open on the tab, else pre-arm the next alert/confirm/prompt/beforeunload; `status` reports the open dialog, the armed handler and recent history |
 | POST | `/v1/filechooser` | `{command?: accept\|cancel\|disarm\|status, files?: [path,...] \| file, tab?}` — pre-arm the next native file-picker dialog (arm BEFORE the click that opens it) |
 | POST | `/v1/page/visibility` | `{visibility?: visible\|hidden\|reset, tab?}` — override what the page believes about `document.visibilityState`; omit `visibility` for status |
 | POST | `/v1/webauthn` | `{command, authenticatorId?, protocol?, transport?, hasResidentKey?, hasUserVerification?, isUserVerified?, automaticPresence?, tab?}` — typed tab-scoped virtual-authenticator lifecycle |
@@ -1096,16 +1097,52 @@ borz frame main
 
 ### Dialog Handling
 
+Covers native `alert()`, `confirm()`, `prompt()` and `beforeunload`.
+
 ```bash
-# Auto-accept future dialogs (alert, confirm, prompt)
+# Arm the NEXT dialog to be accepted (one-shot) — run this before the click
 borz dialog accept
 
-# Auto-dismiss future dialogs
+# ...or dismissed (Cancel / Stay on page)
 borz dialog dismiss
 
 # Accept with prompt text
 borz dialog accept "my input"
+
+# Drop an armed handler you no longer want
+borz dialog disarm
+
+# What is open right now, what is armed, what happened recently
+borz dialog status
 ```
+
+Arming is **one-shot**: each `dialog accept`/`dismiss` answers exactly one
+dialog. Arm it *before* the click or navigation that triggers the dialog.
+
+If a dialog is already open, `accept`/`dismiss` answers **that** one instead of
+arming — so a page that got stuck behind an unexpected `confirm()` can still be
+released.
+
+An unanswered dialog blocks the renderer, so borz fails other commands on that
+tab fast instead of hanging for the full command timeout:
+
+```
+$ borz snapshot
+Runtime.evaluate blocked: a native confirm dialog is open on this tab and is
+blocking the page: "Delete this record?". Resolve it with `borz dialog accept`
+(or `borz dialog dismiss`), then retry. ...
+
+$ borz dialog status
+Open dialog: confirm — "Delete this record?"
+  BLOCKING the page. Run 'borz dialog accept' or 'borz dialog dismiss' to release it.
+Armed handler: none
+
+$ borz dialog dismiss
+Open confirm dialog dismissed: Delete this record?
+```
+
+Every dialog is recorded whether or not a handler was armed, including ones a
+human clicked away in headful Chrome; `dialog status` shows the last 10.
 
 ### Authenticated Fetch
 

@@ -626,15 +626,63 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 
 	switch method {
 	case "Page.javascriptDialogOpening":
-		if handler := tab.ConsumeDialogHandler(); handler != nil {
-			params := map[string]interface{}{
+		// Record every dialog, armed handler or not. An unhandled dialog
+		// blocks the renderer, so without this the only symptom would be
+		// unrelated commands timing out 30s at a time.
+		var params struct {
+			Type              string `json:"type"`
+			Message           string `json:"message"`
+			URL               string `json:"url"`
+			DefaultPrompt     string `json:"defaultPrompt"`
+			HasBrowserHandler bool   `json:"hasBrowserHandler"`
+		}
+		json.Unmarshal(paramsRaw, &params)
+		// borz can hold more than one CDP session on the same target, so the
+		// same opening event is delivered once per session. Only the first
+		// delivery may consume the armed handler or record the pending dialog —
+		// a redelivery must not overwrite an AutoHandled record with an
+		// unhandled one. A page cannot open an identical second dialog until
+		// the first closes, by which point PendingDialog is nil again.
+		if prev := tab.PeekPendingDialog(); prev != nil &&
+			prev.Type == params.Type && prev.Message == params.Message {
+			return
+		}
+		ev := &protocol.DialogEventInfo{
+			Type:              params.Type,
+			Message:           params.Message,
+			URL:               params.URL,
+			DefaultPrompt:     params.DefaultPrompt,
+			HasBrowserHandler: params.HasBrowserHandler,
+			OpenedAt:          time.Now().UnixMilli(),
+		}
+		handler := tab.ConsumeDialogHandler()
+		if handler != nil {
+			ev.AutoHandled = true
+			ev.HandledAs = dialogHandledAs(handler.Accept)
+			ev.PromptText = handler.PromptText
+		}
+		tab.SetPendingDialog(ev)
+		if handler != nil {
+			args := map[string]interface{}{
 				"accept": handler.Accept,
 			}
 			if handler.PromptText != "" {
-				params["promptText"] = handler.PromptText
+				args["promptText"] = handler.PromptText
 			}
-			go c.SessionCommand(targetID, "Page.handleJavaScriptDialog", params)
+			go c.SessionCommand(targetID, "Page.handleJavaScriptDialog", args)
 		}
+
+	case "Page.javascriptDialogClosed":
+		// Fires however the dialog was resolved — by our armed handler, by
+		// `dialog accept`, or by a human clicking it in headful Chrome.
+		var params struct {
+			Result    bool   `json:"result"`
+			UserInput string `json:"userInput"`
+		}
+		json.Unmarshal(paramsRaw, &params)
+		// Also delivered once per attached session; ResolvePendingDialog is a
+		// no-op when there is no pending dialog left, so the copy is ignored.
+		tab.ResolvePendingDialog(params.Result, params.UserInput, time.Now())
 
 	case "Page.fileChooserOpened":
 		// Only fires while Page.setInterceptFileChooserDialog is enabled,
@@ -1072,6 +1120,15 @@ func (c *CdpConnection) SessionCommandWithTimeout(targetID, method string, param
 		timeout = 30 * time.Second
 	}
 
+	// A native JS dialog left open with no handler blocks the renderer, so
+	// anything that needs the page would sit here until the timeout. Fail
+	// immediately with an actionable error instead.
+	if blockedByDialog(method) {
+		if ev := c.unhandledDialog(targetID); ev != nil {
+			return nil, dialogBlockedError(method, ev)
+		}
+	}
+
 	sessionIDVal, ok := c.sessions.Load(targetID)
 	if !ok {
 		if err := c.AttachAndEnable(targetID); err != nil {
@@ -1125,8 +1182,67 @@ func (c *CdpConnection) SessionCommandWithTimeout(targetID, method string, param
 		c.sessionMu.Lock()
 		delete(c.sessionListeners, id)
 		c.sessionMu.Unlock()
+		// A dialog may have opened after the pre-flight check above; say so
+		// rather than reporting a bare timeout the caller can't act on.
+		if ev := c.unhandledDialog(targetID); ev != nil {
+			return nil, dialogBlockedError(method, ev)
+		}
 		return nil, fmt.Errorf("timeout waiting for %s on session %s", method, sessionID)
 	}
+}
+
+// dialogBlockingMethods are the CDP domains dispatched to the renderer main
+// thread, which a modal JS dialog parks in a nested message loop. Page.* is
+// deliberately absent: Page.handleJavaScriptDialog is how a dialog gets
+// resolved, so it must never be blocked.
+var dialogBlockingMethods = []string{"Runtime.", "DOM.", "Accessibility.", "Page.captureScreenshot"}
+
+func blockedByDialog(method string) bool {
+	for _, prefix := range dialogBlockingMethods {
+		if strings.HasPrefix(method, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// unhandledDialog returns the dialog currently blocking the tab, or nil. A
+// dialog borz already answered is not blocking — the closing event is only
+// microseconds behind — so those are ignored to avoid a spurious failure
+// racing a correctly armed handler.
+func (c *CdpConnection) unhandledDialog(targetID string) *protocol.DialogEventInfo {
+	if c.TabManager == nil {
+		return nil
+	}
+	tab := c.TabManager.GetTab(targetID)
+	if tab == nil {
+		return nil
+	}
+	ev := tab.PeekPendingDialog()
+	if ev == nil || ev.AutoHandled {
+		return nil
+	}
+	return ev
+}
+
+func dialogBlockedError(method string, ev *protocol.DialogEventInfo) error {
+	kind := ev.Type
+	if kind == "" {
+		kind = "javascript"
+	}
+	return fmt.Errorf(
+		"%s blocked: a native %s dialog is open on this tab and is blocking the page: %q. "+
+			"Resolve it with `borz dialog accept` (or `borz dialog dismiss`), then retry. "+
+			"To avoid the block next time, arm the handler BEFORE the action that triggers the dialog",
+		method, kind, truncateDialogMessage(ev.Message))
+}
+
+func truncateDialogMessage(msg string) string {
+	const limit = 200
+	if len(msg) <= limit {
+		return msg
+	}
+	return msg[:limit] + "…"
 }
 
 // PageCommand sends a command scoped to the active frame of a tab.

@@ -187,6 +187,13 @@ var pressTool = mcp.NewTool("browser_press",
 	postDelayParam(),
 )
 
+var dialogTool = mcp.NewTool("browser_dialog",
+	mcp.WithDescription("Handle native JavaScript dialogs (alert, confirm, prompt, beforeunload). command=accept/dismiss resolves the dialog that is ALREADY open on the tab; when none is open it arms the next one instead (one-shot), which is the reliable pattern — call it BEFORE the click or navigation that triggers the dialog. An unanswered dialog blocks the page: every other tool call against that tab then fails fast with a dialog-blocked error naming the dialog text. command=status changes nothing and reports the armed handler, the dialog currently open (with its message), and recent dialog history — use it to find out what a stuck page is asking."),
+	mcp.WithString("command", mcp.Description("accept (OK / Leave / submit prompt), dismiss (Cancel / Stay), disarm, or status. Default accept."), mcp.Enum("accept", "dismiss", "disarm", "status")),
+	mcp.WithString("promptText", mcp.Description("Response text submitted for a prompt() dialog; ignored for alert/confirm.")),
+	tabParam(),
+)
+
 var fileChooserTool = mcp.NewTool("browser_filechooser",
 	mcp.WithDescription("Pre-arm a handler for the next native file-picker dialog. Call with command=accept BEFORE clicking the element that opens the picker: the OS dialog is suppressed and the chooser is fulfilled with the given files (CDP Page.setInterceptFileChooserDialog + DOM.setFileInputFiles). Use for sites that create the file input dynamically or open the OS dialog directly; when a stable <input type=file> exists in the DOM, prefer browser_upload. Arming is one-shot. Paths are resolved on the daemon's filesystem (where Chrome runs)."),
 	mcp.WithString("command", mcp.Description("accept (arm with files), cancel (arm to suppress), disarm, or status (default)"), mcp.Enum("accept", "cancel", "disarm", "status")),

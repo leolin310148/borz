@@ -502,6 +502,37 @@ func TestRestFileChooser_AcceptRequiresFiles(t *testing.T) {
 	assertRESTErrorEnvelope(t, rec, "files (or file) is required")
 }
 
+func TestRestDialog_RejectsUnknownCommand(t *testing.T) {
+	s := newTestServer(t, "")
+	mux := http.NewServeMux()
+	s.registerRESTRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/dialog", strings.NewReader(`{"command":"cancel"}`))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("unknown dialog command: got %d want 400", rec.Code)
+	}
+	assertRESTErrorEnvelope(t, rec, "unknown dialog command")
+}
+
+func TestRestBody_DialogPromptTextAliasesText(t *testing.T) {
+	for _, body := range []string{`{"promptText":"Leo"}`, `{"text":"Leo"}`} {
+		req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(body))
+		parsed, err := readBody(req)
+		if err != nil {
+			t.Fatalf("readBody(%s): %v", body, err)
+		}
+		got := parsed.PromptText
+		if got == "" {
+			got = parsed.Text
+		}
+		if got != "Leo" {
+			t.Errorf("%s -> prompt text %q", body, got)
+		}
+	}
+}
+
 // The new routes must be registered (a GET yields 405, not 404) — a missing
 // mux entry would otherwise surface as a confusing "404 page not found".
 func TestRestRoutes_NewEndpointsRegistered(t *testing.T) {
@@ -509,7 +540,7 @@ func TestRestRoutes_NewEndpointsRegistered(t *testing.T) {
 	mux := http.NewServeMux()
 	s.registerRESTRoutes(mux)
 
-	for _, path := range []string{"/v1/tabs/front", "/v1/page/visibility", "/v1/filechooser", "/v1/webauthn"} {
+	for _, path := range []string{"/v1/tabs/front", "/v1/page/visibility", "/v1/filechooser", "/v1/dialog", "/v1/webauthn"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusMethodNotAllowed {

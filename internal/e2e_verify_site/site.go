@@ -422,6 +422,9 @@ func dialogs(w http.ResponseWriter, r *http.Request) {
   <button id="prompt-button" type="button" aria-label="Open prompt dialog">Open prompt</button>
   <output id="prompt-result">prompt pending</output>
 
+  <button id="deferred-button" type="button" aria-label="Open deferred confirm dialog">Open deferred confirm</button>
+  <output id="deferred-result">deferred pending</output>
+
   <script>
     document.getElementById('alert-button').addEventListener('click', () => {
       alert('E2E alert');
@@ -436,6 +439,16 @@ func dialogs(w http.ResponseWriter, r *http.Request) {
     document.getElementById('prompt-button').addEventListener('click', () => {
       const result = prompt('E2E prompt', 'default prompt');
       document.getElementById('prompt-result').textContent = 'prompt: ' + result;
+    });
+
+    // Opens the dialog AFTER the click handler returns, so the automation
+    // command that triggers it is not itself blocked by the dialog. Lets a
+    // test observe an unhandled dialog sitting on the page.
+    document.getElementById('deferred-button').addEventListener('click', () => {
+      setTimeout(() => {
+        const result = confirm('E2E deferred confirm');
+        document.getElementById('deferred-result').textContent = 'deferred: ' + result;
+      }, 50);
     });
   </script>
 </body>

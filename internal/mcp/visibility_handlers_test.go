@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/leolin310148/borz/internal/protocol"
@@ -64,6 +65,81 @@ func TestHandlePageVisibility(t *testing.T) {
 	_, _ = handlePageVisibility(context.Background(), mkReq(nil))
 	if cap.req.Visibility != "" {
 		t.Errorf("status read should send no visibility, got %q", cap.req.Visibility)
+	}
+}
+
+func TestHandleDialog(t *testing.T) {
+	// A typo must not silently arm "accept" on a destructive confirm().
+	res, _ := handleDialog(context.Background(), mkReq(map[string]any{"command": "dismis"}))
+	if !res.IsError {
+		t.Error("unknown dialog command should error")
+	}
+
+	cap := capturingSend(t, ok())
+	_, _ = handleDialog(context.Background(), mkReq(map[string]any{
+		"command": "dismiss", "promptText": "Leo", "tab": "T1",
+	}))
+	if cap.req.Action != protocol.ActionDialog || cap.req.DialogResponse != "dismiss" {
+		t.Errorf("request = %+v", cap.req)
+	}
+	if cap.req.PromptText != "Leo" || cap.req.TabID != "T1" {
+		t.Errorf("request = %+v", cap.req)
+	}
+
+	// No command keeps the CLI's historical default.
+	cap = capturingSend(t, ok())
+	_, _ = handleDialog(context.Background(), mkReq(nil))
+	if cap.req.DialogResponse != "accept" {
+		t.Errorf("default command = %q", cap.req.DialogResponse)
+	}
+
+	// The daemon's own message wins, so the model can tell "answered the open
+	// dialog" from "armed the next one".
+	capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{
+		DialogInfo: map[string]interface{}{"type": "handled", "message": "Open confirm dialog dismissed: Delete?"},
+	}})
+	res, _ = handleDialog(context.Background(), mkReq(map[string]any{"command": "dismiss"}))
+	if got := firstText(t, res); got != "Open confirm dialog dismissed: Delete?" {
+		t.Errorf("handled text = %q", got)
+	}
+}
+
+func TestHandleDialog_StatusRendersOpenDialog(t *testing.T) {
+	capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{
+		DialogInfo: map[string]interface{}{
+			"type":    "status",
+			"armed":   true,
+			"action":  "accept",
+			"blocked": true,
+			"pending": map[string]interface{}{
+				"type": "confirm", "message": "Delete this record?", "defaultPrompt": "",
+			},
+			"history": []interface{}{
+				map[string]interface{}{"type": "alert", "message": "saved", "autoHandled": true, "handledAs": "accept"},
+				map[string]interface{}{"type": "prompt", "message": "name?", "autoHandled": false},
+			},
+		},
+	}})
+	res, _ := handleDialog(context.Background(), mkReq(map[string]any{"command": "status"}))
+	text := firstText(t, res)
+	for _, want := range []string{
+		"Open dialog: confirm", "Delete this record?", "BLOCKING the page",
+		"Armed handler: accept", "Recent dialogs (2)", "borz accept", "resolved outside borz",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("status text %q missing %q", text, want)
+		}
+	}
+}
+
+func TestHandleDialog_StatusWithNothingOpen(t *testing.T) {
+	capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{
+		DialogInfo: map[string]interface{}{"type": "status", "armed": false, "blocked": false},
+	}})
+	res, _ := handleDialog(context.Background(), mkReq(map[string]any{"command": "status"}))
+	text := firstText(t, res)
+	if !strings.Contains(text, "Open dialog: none") || !strings.Contains(text, "Armed handler: none") {
+		t.Errorf("status text = %q", text)
 	}
 }
 

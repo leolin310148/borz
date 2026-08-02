@@ -63,7 +63,7 @@ borz tab                                     # list; "tab new", "tab 2", "tab cl
 borz tab front                               # bring the tab to the real OS foreground (unminimize + focus)
 borz page visibility visible|hidden|reset    # override document.visibilityState without moving a window
 borz frame <selector> | main                 # iframe switching
-borz dialog accept|dismiss [text]
+borz dialog accept|dismiss [text]|disarm|status   # answers an open dialog, else arms the next one; status shows what is blocking
 borz trace start|stop|status
 borz extension status                      # optional Chrome extension capabilities
 borz cookies all [domain]                  # all-domain cookie store (extension)
@@ -157,7 +157,7 @@ MCP client config (e.g. Claude Code `.claude/settings.json`):
 Tools (44 total):
 
 - **Navigation:** `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close`
-- **Interaction:** `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_filechooser`, `browser_press`, `browser_page_visibility`, `browser_clipboard_write`, `browser_scroll`
+- **Interaction:** `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_filechooser`, `browser_dialog`, `browser_press`, `browser_page_visibility`, `browser_clipboard_write`, `browser_scroll`
 - **Browser testing:** `browser_webauthn` (typed tab-scoped WebAuthn virtual-authenticator lifecycle)
 - **Observation:** `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_term_text`, `browser_wait`
 - **Tabs:** `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_front`, `browser_tab_close`
@@ -199,6 +199,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 | POST | `/v1/fill` \| `/type` | `{ref, text, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/select` | `{ref, value, tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/upload` | `{ref, files: [path,...] \| file, tab?, waitFor?, timeoutMs?}` (paths resolved on daemon host) |
+| POST | `/v1/dialog` | `{command?: accept\|dismiss\|disarm\|status, promptText?, tab?}` — answers an already-open dialog, else arms the next one; `status` reports open dialog + armed handler + history |
 | POST | `/v1/filechooser` | `{command?: accept\|cancel\|disarm\|status, files?: [path,...] \| file, tab?}` — arm BEFORE the click that opens the picker |
 | POST | `/v1/page/visibility` | `{visibility?: visible\|hidden\|reset, tab?}` — override `document.visibilityState` (omit for status) |
 | POST | `/v1/webauthn` | `{command, authenticatorId?, protocol?, transport?, hasResidentKey?, hasUserVerification?, isUserVerified?, automaticPresence?, tab?}` — typed virtual-authenticator lifecycle |
