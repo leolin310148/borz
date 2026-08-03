@@ -267,12 +267,17 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"screenshot": {
 		Summary: "Capture a PNG of the current page.",
-		Usage:   "borz screenshot [path] [--tab <id>]",
+		Usage:   "borz screenshot [path] [--annotate <ref>=<text>]... [--tab <id>]",
+		Flags: []string{
+			"  --annotate <ref>=<text>  Frame a snapshot ref and add a text callout (repeatable)",
+		},
 		Examples: []string{
 			"  borz screenshot",
 			"  borz screenshot ./out.png",
+			"  borz snapshot -i -c",
+			"  borz screenshot ./guide.png --annotate '@12=Click here to save'",
 		},
-		Notes: "Snapshot ref highlights are automatically hidden while the image is captured. With [path], the CLI writes the PNG on the machine running the CLI, including when --remote is used. Without [path] the image is returned as a base64 data URL in the JSON payload.",
+		Notes: "Snapshot ref highlights are automatically hidden while the image is captured. --annotate uses refs from the latest snapshot and renders temporary red frames and plain-text callouts only for the capture; call snapshot again after navigation or DOM changes. Annotated elements must be visible in the current viewport. With [path], the CLI writes the PNG on the machine running the CLI, including when --remote is used. Without [path] the image is returned as a base64 data URL in the JSON payload.",
 	},
 	"viewport": {
 		Summary: "Inspect or emulate a tab viewport for responsive testing.",

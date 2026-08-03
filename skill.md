@@ -59,7 +59,8 @@ borz eval --file ./extract.js              # read script from file
 borz eval --file ./greet.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSON args as top-level consts
 borz eval "await fetch('/api/me').then(r=>r.json())"  # top-level await auto-wraps
 borz get <url|title|text|href|value> [ref]
-borz screenshot                            # base64 PNG
+borz screenshot [out.png]                  # PNG; path saves on the CLI host
+borz screenshot out.png --annotate '@12=Click here'  # frame a current snapshot ref + callout
 borz network requests --since last_action
 borz network requests --tail --filter /api/    # live stream until Ctrl+C
 borz console --filter error

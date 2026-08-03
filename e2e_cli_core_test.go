@@ -384,7 +384,9 @@ func TestE2ECLIScreenshotOutput(t *testing.T) {
 	})
 
 	outputPath := filepath.Join(t.TempDir(), "nested", "screenshot.png")
-	pathResp := runE2EJSON(t, env, "screenshot", outputPath, "--tab", tab, "--json")
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json")
+	clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
+	pathResp := runE2EJSON(t, env, "screenshot", outputPath, "--annotate", "@"+clickRef+"=Click here to continue", "--tab", tab, "--json")
 	if pathResp.Data.ScreenshotPath != outputPath {
 		t.Fatalf("screenshot path = %q, want %q", pathResp.Data.ScreenshotPath, outputPath)
 	}
@@ -403,6 +405,23 @@ func TestE2ECLIScreenshotOutput(t *testing.T) {
 	if config.Width <= 0 || config.Height <= 0 {
 		t.Fatalf("screenshot output dimensions = %dx%d, want non-empty dimensions", config.Width, config.Height)
 	}
+	image, err := png.Decode(bytes.NewReader(pngData))
+	if err != nil {
+		t.Fatalf("decode annotated screenshot PNG: %v", err)
+	}
+	redPixels := 0
+	for y := image.Bounds().Min.Y; y < image.Bounds().Max.Y; y++ {
+		for x := image.Bounds().Min.X; x < image.Bounds().Max.X; x++ {
+			r, g, b, _ := image.At(x, y).RGBA()
+			if r > 50000 && g > 3000 && g < 12000 && b > 9000 && b < 26000 {
+				redPixels++
+			}
+		}
+	}
+	if redPixels < 100 {
+		t.Fatalf("annotated screenshot has only %d callout-red pixels, want at least 100", redPixels)
+	}
+	requireEvalBool(t, env, `document.querySelectorAll("[data-borz-screenshot-annotation]").length === 0`, true)
 
 	inlineResp := runE2EJSON(t, env, "screenshot", "--tab", tab, "--json")
 	if !strings.HasPrefix(inlineResp.Data.DataURL, "data:image/png;base64,") {

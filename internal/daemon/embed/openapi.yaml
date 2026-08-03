@@ -746,7 +746,10 @@ paths:
     post:
       tags: [observation]
       summary: Capture a PNG screenshot
-      description: Snapshot ref highlights are temporarily hidden while the image is captured.
+      description: |
+        Snapshot ref highlights are temporarily hidden while the image is captured.
+        Optional annotations frame refs from the latest snapshot and render
+        plain-text callouts; annotated elements must be visible in the viewport.
       requestBody:
         content:
           application/json:
@@ -760,6 +763,21 @@ paths:
                       description: |
                         If set, writes the PNG to this filesystem path on the
                         daemon host. Omit to get a `data:` URL back.
+                    annotations:
+                      type: array
+                      maxItems: 20
+                      description: Temporary element frames and callouts rendered only for this capture.
+                      items:
+                        type: object
+                        required: [ref, text]
+                        properties:
+                          ref:
+                            type: string
+                            description: Current element ref from /v1/snapshot, with optional @ prefix.
+                          text:
+                            type: string
+                            minLength: 1
+                            description: Plain-text callout shown beside the framed element.
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 

@@ -265,6 +265,22 @@ func TestNormalizeRef(t *testing.T) {
 	}
 }
 
+func TestParseScreenshotAnnotations(t *testing.T) {
+	got, err := parseScreenshotAnnotations([]string{"@12=Click here to save", " 18 =Choose=a format"})
+	if err != nil {
+		t.Fatalf("parseScreenshotAnnotations: %v", err)
+	}
+	if len(got) != 2 || got[0].Ref != "12" || got[0].Text != "Click here to save" || got[1].Ref != "18" || got[1].Text != "Choose=a format" {
+		t.Fatalf("annotations = %+v", got)
+	}
+
+	for _, value := range []string{"12", "=Missing ref", "12=   "} {
+		if _, err := parseScreenshotAnnotations([]string{value}); err == nil {
+			t.Errorf("parseScreenshotAnnotations(%q) should fail", value)
+		}
+	}
+}
+
 func TestNewID(t *testing.T) {
 	id := newID()
 	if len(id) != 16 {

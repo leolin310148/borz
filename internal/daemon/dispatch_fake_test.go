@@ -924,6 +924,109 @@ func TestDispatch_Screenshot_RestoresHighlightsAfterCaptureFailure(t *testing.T)
 	}
 }
 
+func TestDispatch_Screenshot_Annotations(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	f.On("DOM.resolveNode", func(params json.RawMessage) (interface{}, error) {
+		if !strings.Contains(string(params), `"backendNodeId":42`) {
+			t.Fatalf("resolve params = %s", params)
+		}
+		return map[string]interface{}{"object": map[string]interface{}{"objectId": "node-12"}}, nil
+	})
+	f.On("Runtime.callFunctionOn", func(params json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"result": map[string]interface{}{"value": true}}, nil
+	})
+	f.On("Page.captureScreenshot", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"data": "AAAA"}, nil
+	})
+	c := connectCdp(t, f)
+	tab := c.TabManager.AddTab("T1")
+	tab.Refs["12"] = &protocol.RefInfo{BackendDOMNodeID: 42, Role: "button", Name: "Save"}
+
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionScreenshot,
+		Annotations: []protocol.ScreenshotAnnotation{{Ref: "@12", Text: "Click here to save"}},
+	})
+	if !resp.Success {
+		t.Fatalf("annotated screenshot: %+v", resp)
+	}
+
+	var render, cleanup, capture bool
+	for _, call := range f.Calls() {
+		switch call.Method {
+		case "Runtime.callFunctionOn":
+			if strings.Contains(string(call.Params), "createElement") && strings.Contains(string(call.Params), "Click here to save") {
+				render = true
+			}
+			if strings.Contains(string(call.Params), "querySelectorAll") && strings.Contains(string(call.Params), "node-12") {
+				cleanup = true
+			}
+		case "Page.captureScreenshot":
+			capture = true
+		}
+	}
+	if !render || !cleanup || !capture {
+		t.Fatalf("annotation lifecycle render=%v capture=%v cleanup=%v; calls=%+v", render, capture, cleanup, f.Calls())
+	}
+}
+
+func TestDispatch_Screenshot_AnnotationValidation(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	f.On("Page.captureScreenshot", func(json.RawMessage) (interface{}, error) {
+		t.Fatal("invalid annotation must not capture a screenshot")
+		return nil, nil
+	})
+	c := connectCdp(t, f)
+	c.TabManager.AddTab("T1")
+
+	for _, annotation := range []protocol.ScreenshotAnnotation{
+		{Ref: "99", Text: "Unknown"},
+		{Ref: "", Text: "Missing ref"},
+		{Ref: "12", Text: "   "},
+	} {
+		resp := DispatchRequest(c, &protocol.Request{
+			ID: "x", Action: protocol.ActionScreenshot,
+			Annotations: []protocol.ScreenshotAnnotation{annotation},
+		})
+		if resp.Success || !strings.Contains(resp.Error, "screenshot annotation") {
+			t.Errorf("annotation %+v response = %+v", annotation, resp)
+		}
+	}
+}
+
+func TestDispatch_Screenshot_CleansAnnotationsAfterCaptureFailure(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	f.On("DOM.resolveNode", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"object": map[string]interface{}{"objectId": "node-12"}}, nil
+	})
+	f.On("Runtime.callFunctionOn", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"result": map[string]interface{}{"value": true}}, nil
+	})
+	f.On("Page.captureScreenshot", func(json.RawMessage) (interface{}, error) {
+		return nil, os.ErrInvalid
+	})
+	c := connectCdp(t, f)
+	tab := c.TabManager.AddTab("T1")
+	tab.Refs["12"] = &protocol.RefInfo{BackendDOMNodeID: 42, Role: "button"}
+
+	resp := DispatchRequest(c, &protocol.Request{
+		ID: "x", Action: protocol.ActionScreenshot,
+		Annotations: []protocol.ScreenshotAnnotation{{Ref: "12", Text: "Save"}},
+	})
+	if resp.Success {
+		t.Fatalf("screenshot should fail: %+v", resp)
+	}
+
+	for _, call := range f.Calls() {
+		if call.Method == "Runtime.callFunctionOn" && strings.Contains(string(call.Params), "querySelectorAll") {
+			return
+		}
+	}
+	t.Fatal("annotation cleanup was not called after capture failure")
+}
+
 func TestDispatch_Viewport_Mobile(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")

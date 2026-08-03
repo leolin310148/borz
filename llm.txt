@@ -52,7 +52,8 @@ borz eval --unwrap <script>                  # print result raw (strings unquote
 borz eval --file <path>                      # read script from disk
 borz eval --file ./x.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSON args as top-level consts
 borz eval "await fetch('/x').then(...)"      # top-level await auto-wraps in async IIFE
-borz screenshot                              # base64 PNG in JSON; snapshot ref highlights excluded
+borz screenshot [out.png]                    # PNG; snapshot ref highlights excluded
+borz screenshot out.png --annotate '@12=Click here to save'  # frame current ref + callout; repeatable
 borz get <url|title|text|href|value|class> [ref]
 borz network [requests|clear] [--filter] [--method] [--status code|class] [--with-body] [--limit n]
 borz network requests --tail [--interval duration|ms]   # live stream of new requests (Ctrl+C to stop)
@@ -208,7 +209,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 | POST | `/v1/back` \| `/forward` \| `/refresh` | `{tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/close` | `{tab?}` |
 | POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, role?, diff?, tab?}` |
-| POST | `/v1/screenshot` | `{path?, tab?}` |
+| POST | `/v1/screenshot` | `{path?, annotations?: [{ref,text}], tab?}` |
 | POST | `/v1/viewport` | `{preset?, width?, height?, dpr?, mobile?, touch?, reset?, tab?}` |
 | POST | `/v1/get` | `{attribute, ref?, tab?}` |
 | POST | `/v1/click` \| `/hover` \| `/check` \| `/uncheck` | `{ref, tab?, waitFor?, timeoutMs?}` |

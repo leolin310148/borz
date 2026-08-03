@@ -487,10 +487,23 @@ func TestHandleSnapshot_ZeroDepthOmitted(t *testing.T) {
 }
 
 func TestHandleScreenshot(t *testing.T) {
-	capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{DataURL: "data:image/png;base64,AAA"}})
-	res, _ := handleScreenshot(context.Background(), mkReq(nil))
+	cap := capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{DataURL: "data:image/png;base64,AAA"}})
+	res, _ := handleScreenshot(context.Background(), mkReq(map[string]any{
+		"tab": "t1",
+		"annotations": []any{
+			map[string]any{"ref": "@12", "text": "Save here"},
+		},
+	}))
 	if res.IsError {
 		t.Errorf("unexpected err: %v", res)
+	}
+	if cap.req.TabID != "t1" || len(cap.req.Annotations) != 1 || cap.req.Annotations[0].Ref != "12" || cap.req.Annotations[0].Text != "Save here" {
+		t.Fatalf("screenshot request = %+v", cap.req)
+	}
+
+	res, _ = handleScreenshot(context.Background(), mkReq(map[string]any{"annotations": "bad"}))
+	if !res.IsError {
+		t.Fatal("malformed annotations should return a tool error")
 	}
 }
 

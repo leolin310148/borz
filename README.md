@@ -228,7 +228,7 @@ through the selected profile. `server` resolves adapters and trust on the
 selected daemon instead. This lets a local adapter drive a browser behind a
 local CDP daemon or a remote borz server without installing the adapter there.
 
-The workflow mirrors the CLI: call `browser_snapshot` to see the page structure with element refs, then use those refs with interaction tools like `browser_click` or `browser_fill`. Screenshots are returned as inline base64 PNG images and automatically exclude snapshot ref highlights.
+The workflow mirrors the CLI: call `browser_snapshot` to see the page structure with element refs, then use those refs with interaction tools like `browser_click` or `browser_fill`. Screenshots are returned as inline base64 PNG images and automatically exclude ordinary snapshot ref highlights. Pass `annotations: [{"ref":"12","text":"Click here to save"}]` to `browser_screenshot` to frame current refs with document-ready callouts.
 
 Most action tools accept optional `waitFor` (CSS selector) and `timeout` (ms, default 10000) params — after the action runs, the daemon polls `document.querySelector(waitFor)` until it returns a non-null node or the timeout elapses. Use this for SPA loads or modals instead of fixed `browser_wait` calls.
 
@@ -537,7 +537,7 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/back` \| `/forward` \| `/refresh` | `{tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/close` | `{tab?}` |
 | POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, role?, mode?, tab?}` — `mode: "text"` returns a reader-mode plain-text dump (no element refs) |
-| POST | `/v1/screenshot` | `{path?, tab?}` |
+| POST | `/v1/screenshot` | `{path?, annotations?: [{ref,text}], tab?}` |
 | POST | `/v1/viewport` | `{preset?, width?, height?, dpr?, mobile?, touch?, reset?, tab?}` — read or emulate the tab viewport |
 | POST | `/v1/get` | `{attribute, ref?, tab?}` |
 | POST | `/v1/click` \| `/hover` \| `/check` \| `/uncheck` | `{ref, tab?, waitFor?, timeoutMs?}` |
@@ -729,14 +729,17 @@ The `[ref=N]` numbers are what you use with interaction commands like `click`, `
 
 #### `screenshot`
 
-Snapshot ref highlights are temporarily hidden during capture, so they do not appear in the PNG.
+Snapshot ref highlights are temporarily hidden during capture, so they do not appear in the PNG. Use repeatable `--annotate REF=TEXT` options to deliberately frame current refs and add document-ready callouts; annotated elements must be visible in the current viewport.
 
 ```bash
 # Capture screenshot (returned as base64 data URL in JSON)
 borz screenshot
 
-# Save to file (use with --json and jq)
-borz screenshot --json --jq ".data.dataUrl"
+# Save to a local file
+borz screenshot ./out.png
+
+# Frame one or more refs from the latest snapshot and add callouts
+borz screenshot ./guide.png --annotate '@12=Click here to save' --annotate '@18=Choose a format'
 ```
 
 #### `viewport`

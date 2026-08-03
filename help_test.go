@@ -76,6 +76,19 @@ func TestPrintCommandHelpKnown(t *testing.T) {
 	}
 }
 
+func TestScreenshotHelpMentionsAnnotations(t *testing.T) {
+	out := captureStdout(t, func() {
+		if !printCommandHelp("screenshot") {
+			t.Fatal("printCommandHelp should return true for screenshot")
+		}
+	})
+	for _, want := range []string{"--annotate <ref>=<text>", "repeatable", "latest snapshot", "visible in the current viewport"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("screenshot help missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestActionCommandUsageMentionsWaitFor(t *testing.T) {
 	for _, name := range []string{
 		"back", "forward", "refresh", "click", "hover", "fill", "type",

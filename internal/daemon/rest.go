@@ -206,7 +206,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		})
 	}))
 	mux.HandleFunc("/v1/screenshot", s.restJSON(func(body restBody) *protocol.Request {
-		return body.withActivate(&protocol.Request{Action: protocol.ActionScreenshot, Path: body.Path, TabID: body.tabID()})
+		return body.withActivate(&protocol.Request{Action: protocol.ActionScreenshot, Path: body.Path, Annotations: body.Annotations, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/get", s.restJSON(func(body restBody) *protocol.Request {
 		return body.withActivate(&protocol.Request{Action: protocol.ActionGet, Attribute: body.Attribute, Ref: body.Ref, TabID: body.tabID()})
@@ -348,6 +348,8 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 
 // restBody is the union of fields accepted by /v1/* POST bodies. Fields not
 // relevant to a given route are simply ignored.
+type shotAnnotation = protocol.ScreenshotAnnotation
+
 type restBody struct {
 	URL         string                    `json:"url,omitempty"`
 	New         bool                      `json:"new,omitempty"`
@@ -369,6 +371,7 @@ type restBody struct {
 	Script      string                    `json:"script,omitempty"`
 	Ms          *int                      `json:"ms,omitempty"`
 	Path        string                    `json:"path,omitempty"`
+	Annotations []shotAnnotation          `json:"annotations,omitempty"`
 	Method      string                    `json:"method,omitempty"`
 	Command     string                    `json:"command,omitempty"`
 	PromptText  string                    `json:"promptText,omitempty"`

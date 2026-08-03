@@ -268,7 +268,15 @@ var snapshotTool = mcp.NewTool("browser_snapshot",
 )
 
 var screenshotTool = mcp.NewTool("browser_screenshot",
-	mcp.WithDescription("Screenshot the user's real Chrome tab as they see it (logged in, JS-rendered, styled), automatically excluding ref highlights added by browser_snapshot. Returns base64-encoded PNG. Use when visual state matters — layout, rendered charts, canvas, media, or verifying a UI change — since fetched HTML can't show any of that."),
+	mcp.WithDescription("Screenshot the user's real Chrome tab as they see it (logged in, JS-rendered, styled), automatically excluding ref highlights added by browser_snapshot. Optionally frame snapshot refs with document-ready text callouts. Returns base64-encoded PNG. Use when visual state matters — layout, rendered charts, canvas, media, or verifying a UI change — since fetched HTML can't show any of that."),
+	mcp.WithArray("annotations", mcp.Description("Optional callouts to draw for this screenshot. Each item requires a current snapshot ref and plain-text label."), mcp.Items(map[string]any{
+		"type":     "object",
+		"required": []string{"ref", "text"},
+		"properties": map[string]any{
+			"ref":  map[string]any{"type": "string", "description": "Element ref from browser_snapshot, e.g. 12 or @12"},
+			"text": map[string]any{"type": "string", "description": "Callout text rendered beside the framed element"},
+		},
+	})),
 	tabParam(),
 )
 

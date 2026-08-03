@@ -175,6 +175,9 @@ type Request struct {
 
 	// Path for screenshot
 	Path string `json:"path,omitempty"`
+	// Annotations are temporary callouts rendered around snapshot refs while
+	// taking a screenshot. They are removed immediately after capture.
+	Annotations []ScreenshotAnnotation `json:"annotations,omitempty"`
 
 	// Modifiers for press
 	Modifiers []string `json:"modifiers,omitempty"`
@@ -253,6 +256,14 @@ type Request struct {
 	// AutomaticPresence is required by WebAuthnCommand
 	// "set-automatic-presence".
 	AutomaticPresence *bool `json:"automaticPresence,omitempty"`
+}
+
+// ScreenshotAnnotation identifies one snapshot ref to frame and label in a
+// screenshot. Ref follows the same syntax as interaction commands; Text is
+// rendered as plain text and never interpreted as HTML.
+type ScreenshotAnnotation struct {
+	Ref  string `json:"ref"`
+	Text string `json:"text"`
 }
 
 // VirtualAuthenticatorOptions is the safe, typed subset of CDP

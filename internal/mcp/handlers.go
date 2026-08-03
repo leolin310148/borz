@@ -668,6 +668,18 @@ func handleSnapshot(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 
 func handleScreenshot(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionScreenshot}
+	if raw, ok := r.GetArguments()["annotations"]; ok {
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			return mcp.NewToolResultError("annotations must be an array of {ref,text} objects"), nil
+		}
+		if err := json.Unmarshal(encoded, &req.Annotations); err != nil {
+			return mcp.NewToolResultError("annotations must be an array of {ref,text} objects"), nil
+		}
+		for i := range req.Annotations {
+			req.Annotations[i].Ref = normalizeRef(req.Annotations[i].Ref)
+		}
+	}
 	setTab(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {

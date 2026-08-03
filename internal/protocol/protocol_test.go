@@ -44,6 +44,7 @@ func TestRequest_RoundTrip(t *testing.T) {
 		ClickCount: &px,
 		Viewport:   &ViewportOptions{Width: 390, Height: 844, DPR: 3, Mobile: true, Touch: &touch},
 	}
+	in.Annotations = []ScreenshotAnnotation{{Ref: "12", Text: "Save here"}}
 	b, err := json.Marshal(in)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -66,6 +67,9 @@ func TestRequest_RoundTrip(t *testing.T) {
 	}
 	if out.Viewport == nil || out.Viewport.Width != 390 || out.Viewport.Touch == nil || !*out.Viewport.Touch {
 		t.Errorf("Viewport not preserved: %+v", out.Viewport)
+	}
+	if len(out.Annotations) != 1 || out.Annotations[0].Ref != "12" || out.Annotations[0].Text != "Save here" {
+		t.Errorf("Annotations not preserved: %+v", out.Annotations)
 	}
 }
 

@@ -59,6 +59,7 @@ var cliValueFlags = []string{
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
 	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--role",
 	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect", "--ref", "--scope",
+	"--annotate",
 	"--protocol", "--transport", "--has-resident-key", "--has-user-verification",
 	"--is-user-verified", "--automatic-presence",
 }
@@ -422,7 +423,11 @@ func main() {
 		if len(cmdArgs) > 0 {
 			path = cmdArgs[0]
 		}
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionScreenshot}
+		annotations, err := parseScreenshotAnnotations(getAllArgValues(args, "--annotate"))
+		if err != nil {
+			fatal(err.Error())
+		}
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionScreenshot, Annotations: annotations}
 		setTab(req, globalTabID)
 		sendPrepareAndPrint(req, jsonOutput, func(resp *protocol.Response) error {
 			if path == "" {
@@ -2254,6 +2259,25 @@ func normalizeRef(ref string) string {
 	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ref), "@"))
 }
 
+func parseScreenshotAnnotations(values []string) ([]protocol.ScreenshotAnnotation, error) {
+	annotations := make([]protocol.ScreenshotAnnotation, 0, len(values))
+	for _, value := range values {
+		parts := strings.SplitN(value, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("--annotate must use REF=TEXT (got %q)", value)
+		}
+		ref := normalizeRef(parts[0])
+		if ref == "" {
+			return nil, fmt.Errorf("--annotate requires a ref before '='")
+		}
+		if strings.TrimSpace(parts[1]) == "" {
+			return nil, fmt.Errorf("--annotate requires text after '=' for ref %s", ref)
+		}
+		annotations = append(annotations, protocol.ScreenshotAnnotation{Ref: ref, Text: parts[1]})
+	}
+	return annotations, nil
+}
+
 func newID() string {
 	id, err := randomHex(8)
 	if err != nil {
@@ -2485,7 +2509,7 @@ Observation:
                                 Get accessibility tree (or reader-mode
                                 plain text with --text-only; --diff shows
                                 changes since the previous snapshot)
-  screenshot [path]             Take screenshot (path saves on the CLI host)
+  screenshot [path]             Take screenshot; --annotate ref=text adds callouts
   viewport [status|current|mobile|tablet|desktop|WxH|reset]
                                 Inspect or emulate viewport for responsive UI
   get <attribute> [ref]         Get element attribute

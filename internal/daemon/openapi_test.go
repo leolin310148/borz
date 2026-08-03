@@ -26,6 +26,9 @@ func TestOpenAPIRoutes(t *testing.T) {
 		if !strings.Contains(body, "openapi:") || !strings.Contains(body, "/v1/open") {
 			t.Fatalf("spec body looks wrong: %q", body[:min(200, len(body))])
 		}
+		if !strings.Contains(body, "/v1/screenshot:") || !strings.Contains(body, "annotations:") || !strings.Contains(body, "required: [ref, text]") {
+			t.Fatal("spec is missing screenshot annotation fields")
+		}
 	})
 
 	t.Run("docs page references spec", func(t *testing.T) {

@@ -369,7 +369,7 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 // capture so concurrent screenshots of the same tab cannot unmask each other.
 // Masking is best-effort: a page without an execution context should still be
 // screenshot-able through CDP.
-func captureScreenshot(cdp *CdpConnection, targetID string) (json.RawMessage, error) {
+func captureScreenshot(cdp *CdpConnection, targetID string, tab *TabState, annotations []protocol.ScreenshotAnnotation) (json.RawMessage, error) {
 	token := strconv.FormatUint(screenshotMaskSequence.Add(1), 10)
 	tokenJSON, _ := json.Marshal(token)
 	hideScript := fmt.Sprintf(`((token) => {
@@ -389,9 +389,141 @@ func captureScreenshot(cdp *CdpConnection, targetID string) (json.RawMessage, er
 		}()
 	}
 
+	var annotationObjectIDs []string
+	defer func() {
+		cleanupScript := `function(token) {
+			const doc = this.ownerDocument;
+			for (const node of doc.querySelectorAll('[data-borz-screenshot-annotation]')) {
+				if (node.getAttribute('data-borz-screenshot-annotation') === token) node.remove();
+			}
+		}`
+		for _, objectID := range annotationObjectIDs {
+			_, _ = cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+				"objectId":            objectID,
+				"functionDeclaration": cleanupScript,
+				"arguments":           []interface{}{map[string]interface{}{"value": token}},
+			})
+		}
+	}()
+
+	if len(annotations) > 20 {
+		return nil, fmt.Errorf("screenshot supports at most 20 annotations")
+	}
+	for _, annotation := range annotations {
+		ref := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(annotation.Ref), "@"))
+		if ref == "" {
+			return nil, fmt.Errorf("screenshot annotation ref is required")
+		}
+		if strings.TrimSpace(annotation.Text) == "" {
+			return nil, fmt.Errorf("screenshot annotation text is required for ref %s", ref)
+		}
+		backendNodeID, err := parseRef(cdp, targetID, tab, ref)
+		if err != nil {
+			return nil, fmt.Errorf("screenshot annotation %s: %w", ref, err)
+		}
+		objectID, err := addScreenshotAnnotation(cdp, targetID, backendNodeID, token, annotation.Text)
+		if err != nil {
+			return nil, fmt.Errorf("screenshot annotation %s: %w", ref, err)
+		}
+		annotationObjectIDs = append(annotationObjectIDs, objectID)
+	}
+
 	return cdp.SessionCommand(targetID, "Page.captureScreenshot", map[string]interface{}{
 		"format": "png", "fromSurface": true,
 	})
+}
+
+func addScreenshotAnnotation(cdp *CdpConnection, targetID string, backendNodeID int, token, text string) (string, error) {
+	resolvedRaw, err := cdp.SessionCommand(targetID, "DOM.resolveNode", map[string]interface{}{
+		"backendNodeId": backendNodeID,
+	})
+	if err != nil {
+		return "", err
+	}
+	var resolved struct {
+		Object struct {
+			ObjectID string `json:"objectId"`
+		} `json:"object"`
+	}
+	if err := json.Unmarshal(resolvedRaw, &resolved); err != nil {
+		return "", fmt.Errorf("decode resolved element: %w", err)
+	}
+	if resolved.Object.ObjectID == "" {
+		return "", fmt.Errorf("DOM.resolveNode returned no object for backend node %d", backendNodeID)
+	}
+
+	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+		"objectId": resolved.Object.ObjectID,
+		"functionDeclaration": `function(token, text) {
+			if (!(this instanceof Element)) throw new Error('Ref does not resolve to an element');
+			const rect = this.getBoundingClientRect();
+			const doc = this.ownerDocument;
+			const view = doc.defaultView;
+			if (!rect || rect.width <= 0 || rect.height <= 0) throw new Error('Element is not visible');
+			if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= view.innerHeight || rect.left >= view.innerWidth) {
+				throw new Error('Element is outside the visible viewport');
+			}
+			const root = doc.body || doc.documentElement;
+			const box = doc.createElement('div');
+			box.setAttribute('data-borz-screenshot-annotation', token);
+			Object.assign(box.style, {
+				position: 'fixed', pointerEvents: 'none', boxSizing: 'border-box',
+				left: (rect.left - 4) + 'px', top: (rect.top - 4) + 'px',
+				width: (rect.width + 8) + 'px', height: (rect.height + 8) + 'px',
+				border: '3px solid #e11d48', borderRadius: '6px',
+				background: 'rgba(225, 29, 72, 0.08)', zIndex: '2147483646'
+			});
+			const label = doc.createElement('div');
+			label.setAttribute('data-borz-screenshot-annotation', token);
+			label.textContent = text;
+			Object.assign(label.style, {
+				position: 'fixed', pointerEvents: 'none', boxSizing: 'border-box',
+				maxWidth: Math.max(1, Math.min(360, view.innerWidth - 16)) + 'px',
+				padding: '7px 10px', color: '#ffffff', background: '#e11d48',
+				borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,.28)',
+				font: '600 14px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+				whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', zIndex: '2147483647'
+			});
+			root.append(box, label);
+			const labelRect = label.getBoundingClientRect();
+			const left = Math.max(8, Math.min(rect.left, view.innerWidth - labelRect.width - 8));
+			const above = rect.top - labelRect.height - 10;
+			const top = above >= 8 ? above : Math.min(view.innerHeight - labelRect.height - 8, rect.bottom + 10);
+			label.style.left = left + 'px';
+			label.style.top = Math.max(8, top) + 'px';
+			return true;
+		}`,
+		"arguments": []interface{}{
+			map[string]interface{}{"value": token},
+			map[string]interface{}{"value": text},
+		},
+		"returnByValue": true,
+	})
+	if err != nil {
+		return "", err
+	}
+	var call struct {
+		ExceptionDetails *struct {
+			Text      string `json:"text"`
+			Exception struct {
+				Description string `json:"description"`
+			} `json:"exception"`
+		} `json:"exceptionDetails"`
+	}
+	if err := json.Unmarshal(callRaw, &call); err != nil {
+		return "", fmt.Errorf("decode annotation result: %w", err)
+	}
+	if call.ExceptionDetails != nil {
+		message := strings.TrimSpace(call.ExceptionDetails.Exception.Description)
+		if message == "" {
+			message = strings.TrimSpace(call.ExceptionDetails.Text)
+		}
+		if message == "" {
+			message = "failed to render annotation"
+		}
+		return "", fmt.Errorf("%s", message)
+	}
+	return resolved.Object.ObjectID, nil
 }
 
 // --- Ref resolution ---
@@ -1184,7 +1316,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		})
 
 	case protocol.ActionScreenshot:
-		result, err := captureScreenshot(cdp, target.ID)
+		result, err := captureScreenshot(cdp, target.ID, tab, req.Annotations)
 		if err != nil {
 			return failResp(req.ID, err)
 		}
