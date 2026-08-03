@@ -28,6 +28,14 @@ type cdpVersionInfo struct {
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
+// ReadCDPBrowserID returns the browser-level CDP identity answering on a port,
+// i.e. the id embedded in its webSocketDebuggerUrl. Two Chromes never share
+// one, so it is what distinguishes borz's own managed browser from any other
+// Chrome that happens to be listening on a remembered port.
+func ReadCDPBrowserID(host string, port int, timeout time.Duration) (string, error) {
+	return readCDPBrowserID(host, port, timeout)
+}
+
 func readCDPBrowserID(host string, port int, timeout time.Duration) (string, error) {
 	endpoint := fmt.Sprintf("http://%s:%d/json/version", host, port)
 	client := &http.Client{Timeout: timeout}

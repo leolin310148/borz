@@ -377,6 +377,10 @@ borz profile set mdt --description "MDT VPN Chrome (SSH tunnel); work sites only
 borz profile set mdt --description ""             # drop the description
 borz profile set mdt --idle-tab-timeout default   # clear the field again
 borz profile rm mdt
+
+borz profile list --all                 # + undeclared profiles, live status, disk, last used
+borz profile purge train004             # preview what reclaiming that profile would do
+borz profile purge train004 --force --logs
 ```
 
 `profile add` probes the target first (`/status` for remote, `/json/version`
@@ -440,6 +444,55 @@ Behaviour worth knowing:
   `browser/browser.json` CDP identity and use per-profile lifecycle locks so
   concurrent CLI processes cannot publish different browser/daemon instances.
   Do not hand-edit these files into `profiles.json`.
+
+### Undeclared profiles, and reclaiming them
+
+Because an undeclared name resolves to `managed`, any `--profile <name>` you
+type creates a real profile: its own daemon, its own Chrome, and a
+`profiles/<name>/browser/user-data` directory that grows to hundreds of
+megabytes. That is deliberate — it is how you get a throwaway browser without
+ceremony — but plain `profile list` only reads `profiles.json`, so those names
+are invisible there and nothing ever cleans them up.
+
+```bash
+borz profile list --all
+```
+
+```
+NAME       TRANSPORT  DECLARED  STATUS        SIZE  LAST USED
+default    managed    yes       live          2.0G  just now
+clean      managed    yes       live          1.1G  1h ago
+train004   managed    no        idle          412M  9d ago
+mini       remote     yes       -                0  never
+```
+
+`STATUS` is what is running right now, not what is declared:
+
+| Status | Meaning |
+| --- | --- |
+| `live` | daemon and its managed browser both answering |
+| `daemon only` | daemon up, no managed browser (normal for `cdp`) |
+| `browser only` | a managed Chrome is running that borz has no daemon record for. Normal for a moment after a daemon exits — the next command for that profile re-attaches. A leak once `LAST USED` says the profile is out of use. |
+| `idle` | runtime directory on disk, nothing running |
+| `logs only` | only logs left |
+| `-` | no local state at all (every `remote` profile) |
+
+`profile purge <name>` reclaims one profile end to end: stops its daemon,
+closes the Chrome that daemon owns, and deletes its runtime directory. It
+**previews by default** and only acts with `--force`, because the browser data
+directory holds real logins and cookies. Logs are kept unless you add `--logs`.
+
+```bash
+borz profile purge train004            # prints what it would remove, deletes nothing
+borz profile purge train004 --force
+```
+
+Safety rules: it refuses `default` (whose runtime directory *is* `~/.borz`,
+holding `profiles.json` and every other profile), refuses the profile the
+command is itself running as, and verifies the browser's recorded CDP identity
+before closing it, so a stale port cannot take down an unrelated Chrome. Purge
+touches runtime state only — a declared profile stays in `profiles.json` until
+`profile rm` removes it.
 
 ### CLI help and typo hints
 

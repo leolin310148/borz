@@ -80,7 +80,7 @@ borz browser status|adopt [--port N]         # which Chrome borz owns; adopt fix
 borz logs path|tail|stats [--since 7d]       # inspect privacy-safe local operational logs
 borz feedback <msg> [--category c] [--command cmd]  # record borz-improvement feedback to ~/.borz/feedback.jsonl (list|path to review)
 borz server --host 0.0.0.0 --token ... [shutdown]
-borz profile list|show|add|set|rm            # named browser targets (profiles.json)
+borz profile list|show|add|set|rm|purge      # named browser targets (profiles.json)
 borz help [command [sub]]                    # per-command help
 borz <command> --help                        # same, inline form
 ```
@@ -110,6 +110,8 @@ borz profile add mini --remote http://100.64.0.1:13333 --token "$BORZ_TOKEN" \
 borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 --max-tabs 30
 borz --profile mini open https://example.com     # HTTP to the Mini server
 BORZ_PROFILE=mdt borz snapshot                   # tunnel-attached Chrome
+borz profile list --all                          # + undeclared profiles, status, disk, last used
+borz profile purge train004 [--force] [--logs]   # reclaim one profile's runtime state
 ```
 
 Optional `description` is one line of free text on any transport, set with
@@ -136,6 +138,20 @@ Deprecated but still working: `--remote` = `--profile remote`; `borz client
 setup` writes the `remote` profile; a legacy `~/.borz/client.json` is migrated
 into profiles.json automatically (and left on disk). `--remote` combined with
 an explicit `--profile` is an error.
+
+Any `--profile <name>` you use creates runtime state even when the name is not
+in profiles.json, because undeclared names mean `managed`: its own daemon, its
+own Chrome, and a `user-data` dir that reaches hundreds of MB. Plain `profile
+list` cannot see those names. `profile list --all` shows every profile borz has
+runtime state for with a live `status` (`live`, `daemon only`, `browser only`,
+`idle`, `logs only`, `-`), disk usage and last-used time; `browser only` means a
+managed Chrome with no daemon record — normal right after a daemon exits, a leak
+once the profile is out of use. `profile purge <name>` reclaims one: stop daemon
+-> close its browser (only after verifying the recorded CDP identity) -> delete
+the runtime dir. It previews and deletes nothing without `--force`; `--logs`
+also removes logs. It refuses `default` (whose runtime dir is `~/.borz` itself)
+and the profile the command is running as, and it never edits profiles.json —
+use `profile rm` for the declaration.
 
 `BORZ_CDP_URL` is a legacy override for the default profile only. Named
 managed profiles reject it; use a declared `cdp` profile for an external CDP

@@ -295,6 +295,49 @@ func TestProfileRuntimePaths(t *testing.T) {
 
 }
 
+// The ...For helpers let one process inspect or purge a profile it is not
+// running as, so they must never consult (or disturb) the active profile.
+func TestProfileScopedPathsIgnoreActiveProfile(t *testing.T) {
+	t.Cleanup(func() { _ = SetProfile("") })
+	t.Setenv("BORZ_HOME", "/tmp/borz")
+	t.Setenv("BB_BROWSER_HOME", "")
+	if err := SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"ProfilesDir", ProfilesDir(), "/tmp/borz/profiles"},
+		{"RuntimeDirFor(other)", RuntimeDirFor("other"), "/tmp/borz/profiles/other"},
+		{"ManagedBrowserDirFor(other)", ManagedBrowserDirFor("other"), "/tmp/borz/profiles/other/browser"},
+		{"ManagedStateFileFor(other)", ManagedStateFileFor("other"), "/tmp/borz/profiles/other/browser/browser.json"},
+		{"DaemonJSONPathFor(other)", DaemonJSONPathFor("other"), "/tmp/borz/profiles/other/daemon.json"},
+		{"LogsDirFor(other)", LogsDirFor("other"), "/tmp/borz/logs/other"},
+
+		// The default profile keeps the historical top-level layout: its
+		// runtime directory is the borz home itself, but its logs are not.
+		{"RuntimeDirFor(default)", RuntimeDirFor("default"), "/tmp/borz"},
+		{"RuntimeDirFor(empty)", RuntimeDirFor(""), "/tmp/borz"},
+		{"RuntimeDirFor(DEFAULT)", RuntimeDirFor("  DEFAULT  "), "/tmp/borz"},
+		{"DaemonJSONPathFor(default)", DaemonJSONPathFor("default"), "/tmp/borz/daemon.json"},
+		{"ManagedStateFileFor(default)", ManagedStateFileFor("default"), "/tmp/borz/browser/browser.json"},
+		{"LogsDirFor(default)", LogsDirFor("default"), "/tmp/borz/logs/default"},
+		{"LogsDirFor(empty)", LogsDirFor(""), "/tmp/borz/logs/default"},
+	}
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Fatalf("%s = %q, want %q", c.name, c.got, c.want)
+		}
+	}
+
+	if Profile() != "work" {
+		t.Fatalf("active profile changed to %q", Profile())
+	}
+}
+
 func TestSetProfileTrimsNameAndDefault(t *testing.T) {
 	t.Cleanup(func() { _ = SetProfile("") })
 

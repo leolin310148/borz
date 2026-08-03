@@ -330,3 +330,94 @@ func TestLaunchManagedBrowserReportsProfileSetupErrors(t *testing.T) {
 		t.Fatalf("profile setup error = %v", err)
 	}
 }
+
+// --- profile-scoped daemon helpers (used by `borz profile purge`) ---
+
+func TestReadDaemonJSONForNamedProfile(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	t.Cleanup(func() { _ = config.SetProfile("") })
+	// Reading another profile's daemon.json must not depend on, or change,
+	// which profile this process is running as.
+	if err := config.SetProfile("active"); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Join(home, "profiles", "other")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(content string) {
+		if err := os.WriteFile(filepath.Join(dir, "daemon.json"), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if got := ReadDaemonJSONFor("other"); got != nil {
+		t.Fatalf("absent daemon.json = %+v, want nil", got)
+	}
+	write(`{"pid":4242,"host":"127.0.0.1","port":19902}`)
+	got := ReadDaemonJSONFor("other")
+	if got == nil || got.PID != 4242 || got.Host != "127.0.0.1" || got.Port != 19902 {
+		t.Fatalf("ReadDaemonJSONFor = %+v", got)
+	}
+	if config.Profile() != "active" {
+		t.Fatalf("active profile changed to %q", config.Profile())
+	}
+
+	// Anything unusable reads as "no daemon" rather than an error, so a
+	// half-written file cannot break a listing or a purge.
+	for _, bad := range []string{
+		`{`,
+		`{"pid":0,"host":"127.0.0.1","port":19902}`,
+		`{"pid":1,"host":"","port":19902}`,
+		`{"pid":1,"host":"127.0.0.1","port":0}`,
+		`{"pid":1,"host":"127.0.0.1","port":70000}`,
+	} {
+		write(bad)
+		if got := ReadDaemonJSONFor("other"); got != nil {
+			t.Fatalf("ReadDaemonJSONFor(%s) = %+v, want nil", bad, got)
+		}
+	}
+}
+
+func TestStopDaemonAtLeavesPackageStateAlone(t *testing.T) {
+	resetState()
+	t.Cleanup(resetState)
+
+	hit := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/shutdown" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		hit = true
+		w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+
+	if err := StopDaemonAt(nil); err == nil {
+		t.Fatal("StopDaemonAt(nil) succeeded")
+	}
+	if err := StopDaemonAt(infoForServer(t, ts, "")); err != nil {
+		t.Fatalf("StopDaemonAt: %v", err)
+	}
+	if !hit {
+		t.Fatal("shutdown endpoint was not called")
+	}
+}
+
+func TestReadCDPBrowserIDExported(t *testing.T) {
+	_, port := fakeCDPServer(t, "browser-id-42")
+	got, err := ReadCDPBrowserID("127.0.0.1", port, 2*time.Second)
+	if err != nil {
+		t.Fatalf("ReadCDPBrowserID: %v", err)
+	}
+	if got != "browser-id-42" {
+		t.Fatalf("ReadCDPBrowserID = %q", got)
+	}
+	if _, err := ReadCDPBrowserID("127.0.0.1", 1, 200*time.Millisecond); err == nil {
+		t.Fatal("ReadCDPBrowserID against a dead port succeeded")
+	}
+}

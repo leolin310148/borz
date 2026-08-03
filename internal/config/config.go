@@ -175,11 +175,59 @@ func dirExists(path string) bool {
 }
 
 func runtimeDir() string {
-	profile := Profile()
+	return RuntimeDirFor(Profile())
+}
+
+// RuntimeDirFor returns the runtime directory of an arbitrary profile without
+// changing the active one. The default profile ("" or "default") keeps the
+// historical top-level paths, so its runtime directory *is* the borz home —
+// callers that delete must account for that and never remove it wholesale.
+func RuntimeDirFor(profile string) string {
+	profile = normalizeProfileName(profile)
 	if profile == "" {
 		return HomeDir()
 	}
 	return filepath.Join(HomeDir(), "profiles", profile)
+}
+
+// ProfilesDir returns the parent directory holding every named profile's
+// runtime state. The default profile is deliberately not in here.
+func ProfilesDir() string {
+	return filepath.Join(HomeDir(), "profiles")
+}
+
+// ManagedBrowserDirFor returns a named profile's managed browser directory.
+func ManagedBrowserDirFor(profile string) string {
+	return filepath.Join(RuntimeDirFor(profile), "browser")
+}
+
+// ManagedStateFileFor returns a named profile's managed browser identity file.
+func ManagedStateFileFor(profile string) string {
+	return filepath.Join(ManagedBrowserDirFor(profile), "browser.json")
+}
+
+// DaemonJSONPathFor returns a named profile's daemon.json.
+func DaemonJSONPathFor(profile string) string {
+	return filepath.Join(RuntimeDirFor(profile), "daemon.json")
+}
+
+// LogsDirFor returns a named profile's log directory. Unlike runtime state,
+// the default profile's logs live under an explicit "default" directory.
+func LogsDirFor(profile string) string {
+	if profile = normalizeProfileName(profile); profile == "" {
+		profile = "default"
+	}
+	return filepath.Join(HomeDir(), "logs", profile)
+}
+
+// normalizeProfileName maps the two spellings of the default profile onto the
+// empty string that the runtime paths key off.
+func normalizeProfileName(profile string) string {
+	profile = strings.TrimSpace(profile)
+	if strings.EqualFold(profile, "default") {
+		return ""
+	}
+	return profile
 }
 
 // EnsureRuntimeDir creates the directory used for daemon/browser runtime files.
@@ -203,11 +251,7 @@ func DaemonJSONPath() string {
 // logs. Logs live outside the runtime directory so their location stays
 // predictable while keeping named profiles isolated.
 func LogsDir() string {
-	profile := Profile()
-	if profile == "" {
-		profile = "default"
-	}
-	return filepath.Join(HomeDir(), "logs", profile)
+	return LogsDirFor(Profile())
 }
 
 // ClientJSONPath returns the path to the legacy remote client configuration.
@@ -248,7 +292,7 @@ func SitesUsagePath() string {
 
 // ManagedBrowserDir returns the managed browser directory.
 func ManagedBrowserDir() string {
-	return filepath.Join(runtimeDir(), "browser")
+	return ManagedBrowserDirFor(Profile())
 }
 
 // ManagedPortFile returns the path to the managed browser CDP port file.
@@ -265,7 +309,7 @@ func ManagedUserDataDir() string {
 // Unlike cdp-port, this records the browser-level CDP identity so a stale port
 // cannot make an unrelated Chrome look borz-owned.
 func ManagedStateFile() string {
-	return filepath.Join(ManagedBrowserDir(), "browser.json")
+	return ManagedStateFileFor(Profile())
 }
 
 // StartupLockPath serializes client-side daemon discovery and auto-start for

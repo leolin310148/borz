@@ -22,6 +22,10 @@ func handleProfile(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 
 	switch sub {
 	case "list":
+		if hasFlag(rawArgs, "--all") {
+			handleProfileListAll(jsonOutput)
+			return
+		}
 		handleProfileList(jsonOutput)
 	case "show":
 		if len(cmdArgs) < 2 {
@@ -43,6 +47,11 @@ func handleProfile(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			fatal("Usage: borz profile rm <name>")
 		}
 		handleProfileRemove(cmdArgs[1], jsonOutput)
+	case "purge":
+		if len(cmdArgs) < 2 {
+			fatal("Usage: borz profile purge <name> [--logs] [--force]")
+		}
+		handleProfilePurge(cmdArgs[1], rawArgs, jsonOutput)
 	default:
 		fatal(unknownSubcommandHint("profile", sub))
 	}

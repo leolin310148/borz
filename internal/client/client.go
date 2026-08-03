@@ -722,6 +722,35 @@ func StopDaemon() error {
 	return err
 }
 
+// ReadDaemonJSONFor reads another profile's daemon.json without disturbing the
+// active profile. Returns nil (no error) when the file is absent or unusable,
+// which is the ordinary "that profile has no daemon" case.
+func ReadDaemonJSONFor(profileName string) *protocol.DaemonInfo {
+	data, err := os.ReadFile(config.DaemonJSONPathFor(profileName))
+	if err != nil {
+		return nil
+	}
+	var info protocol.DaemonInfo
+	if json.Unmarshal(data, &info) != nil {
+		return nil
+	}
+	if info.PID <= 0 || info.Host == "" || info.Port <= 0 || info.Port > 65535 {
+		return nil
+	}
+	return &info
+}
+
+// StopDaemonAt shuts down the daemon described by info. Unlike StopDaemon it
+// takes the target explicitly and touches no package-level state, so it can
+// stop a daemon belonging to a profile other than the active one.
+func StopDaemonAt(info *protocol.DaemonInfo) error {
+	if info == nil {
+		return fmt.Errorf("daemon is not running")
+	}
+	_, err := httpJSON("POST", "/shutdown", info, nil, 5*time.Second)
+	return err
+}
+
 // WaitForProcessExit polls IsProcessAlive at 50ms intervals until the process
 // exits or the timeout elapses. Returns true if the process is gone.
 func WaitForProcessExit(pid int, timeout time.Duration) bool {

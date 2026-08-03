@@ -927,13 +927,18 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"profile": {
 		Summary: "Manage named browser targets in ~/.borz/profiles.json (managed, cdp, or remote transport).",
-		Usage:   "borz profile [list|show|add|set|rm] [<name>] [flags]",
+		Usage:   "borz profile [list|show|add|set|rm|purge] [<name>] [flags]",
 		Flags: []string{
 			"  list                     Declared profiles: name, transport, target, description",
+			"  list --all               Every profile with local state, declared or not:",
+			"                           status, disk usage, last used",
 			"  show <name>              One profile's details (token redacted)",
 			"  add <name>               Declare a profile (pick exactly one transport)",
 			"  set <name>               Edit a declared profile in place",
 			"  rm <name>                Delete a profile from the registry",
+			"  purge <name>             Reclaim a profile's daemon, browser, and files",
+			"  --logs                   Purge the profile's logs too (purge only)",
+			"  --force                  Actually purge; without it, purge only previews",
 			"  --managed                Transport: borz launches and owns a local Chrome",
 			"  --cdp <url|host:port>    Transport: attach to an existing CDP endpoint",
 			"  --remote <url>           Transport: talk HTTP to a remote borz server",
@@ -969,9 +974,48 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"profile.list": {
 		Summary: "List declared profiles with their transport, target, and description.",
-		Usage:   "borz profile list [--json]",
+		Usage:   "borz profile list [--all] [--json]",
+		Flags: []string{
+			"  --all                    Include undeclared profiles and show runtime state",
+		},
+		Examples: []string{
+			"  borz profile list",
+			"  borz profile list --all",
+		},
 		Notes: "Run this before choosing a profile: the description column says what each\n" +
-			"one is for, which the name alone rarely does.",
+			"one is for, which the name alone rarely does.\n" +
+			"Plain list reads profiles.json only, so it cannot show a profile that was\n" +
+			"never declared — and any '--profile <name>' creates runtime state whether or\n" +
+			"not the name is declared. --all scans disk instead: it adds every profile\n" +
+			"with a runtime directory or logs, plus a STATUS column (live, daemon only,\n" +
+			"browser only, idle, logs only), how much disk it holds, and when it was last\n" +
+			"used. 'browser only' means a managed Chrome is running that borz has no daemon\n" +
+			"record for: normal right after a daemon exits, a leak once LAST USED says the\n" +
+			"profile is out of use. Reclaim it with 'borz profile purge <name>'.",
+	},
+	"profile.purge": {
+		Summary: "Stop a profile's daemon and browser, then delete its runtime state.",
+		Usage:   "borz profile purge <name> [--logs] [--force] [--json]",
+		Flags: []string{
+			"  --logs                   Delete the profile's logs as well",
+			"  --force                  Perform the purge; without it nothing is deleted",
+		},
+		Examples: []string{
+			"  borz profile purge tmact-run-42",
+			"  borz profile purge tmact-run-42 --force",
+			"  borz profile purge old-experiment --logs --force",
+		},
+		Notes: "Previews by default and deletes nothing until --force: a managed profile's\n" +
+			"browser directory holds real cookies and logins. Order is daemon first (a\n" +
+			"daemon started with --close-owned-browser closes its Chrome on the way out),\n" +
+			"then any browser that outlived it, then the files. A browser is only closed\n" +
+			"after its CDP identity matches the one borz recorded for that profile, so a\n" +
+			"stale port cannot take down someone else's Chrome.\n" +
+			"Unlike 'profile rm' this works on undeclared names — that is the point, since\n" +
+			"undeclared profiles are exactly the ones nothing else can clean up. It leaves\n" +
+			"profiles.json alone; use 'profile rm' to drop a declaration.\n" +
+			"The default profile cannot be purged: its runtime directory is the borz home\n" +
+			"itself, which holds every other profile's state.",
 	},
 	"profile.show": {
 		Summary: "Show one profile's transport, target, and purpose; tokens are redacted.",
