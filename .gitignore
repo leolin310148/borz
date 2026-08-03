@@ -8,6 +8,7 @@ dist/
 # IDE
 .idea/
 .vscode/
+.codex/skills/local-*/
 *.swp
 *.swo
 *~
