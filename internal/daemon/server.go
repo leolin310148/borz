@@ -280,7 +280,7 @@ func (s *Server) shutdown() error {
 		// Keep daemon.json present until the owned browser has closed and CDP is
 		// disconnected, preventing a concurrent CLI call from launching a
 		// replacement against the same user-data directory mid-shutdown.
-		os.Remove(config.DaemonJSONPath())
+		removeOwnDaemonJSON()
 		if s.httpSrv == nil {
 			return
 		}
@@ -289,6 +289,27 @@ func (s *Server) shutdown() error {
 		s.shutdownErr = s.httpSrv.Shutdown(ctx)
 	})
 	return s.shutdownErr
+}
+
+// removeOwnDaemonJSON deletes daemon.json only while it still describes this
+// process. A daemon whose record has already been replaced — it was killed and
+// reaped, a successor started and republished the file, and only then does this
+// one reach its shutdown path — must not delete the successor's record. That
+// would strand a live daemon holding the port and the daemon lock with no
+// token or address for any CLI to reach it, and nothing recovers until that
+// daemon dies. A record left behind by a crash is harmless by comparison: the
+// next daemon overwrites it.
+func removeOwnDaemonJSON() {
+	path := config.DaemonJSONPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var info protocol.DaemonInfo
+	if json.Unmarshal(data, &info) != nil || info.PID != os.Getpid() {
+		return
+	}
+	os.Remove(path)
 }
 
 func (s *Server) uptime() int {

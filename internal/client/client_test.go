@@ -1808,7 +1808,12 @@ func TestEnsureDaemon_ClearsCachedStoppedDaemon(t *testing.T) {
 	}
 }
 
-func TestEnsureDaemon_RemovesStaleDaemonJSON(t *testing.T) {
+// EnsureDaemon must never delete daemon.json. The startup lock serializes CLI
+// processes but not daemons, so a daemon can publish a fresh record between the
+// read and the delete — and deleting that strands it: alive, holding the port
+// and the daemon lock, addressable by nobody. A record left by a crashed daemon
+// is harmless; the next daemon to start overwrites it.
+func TestEnsureDaemon_LeavesStaleDaemonJSONForTheNextDaemon(t *testing.T) {
 	resetState()
 	t.Cleanup(resetState)
 	failingDiscover(t)
@@ -1822,8 +1827,12 @@ func TestEnsureDaemon_RemovesStaleDaemonJSON(t *testing.T) {
 	if err := EnsureDaemon(); err == nil || !strings.Contains(err.Error(), "Cannot find") {
 		t.Fatalf("expected discovery failure, got %v", err)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("stale daemon.json was not removed, stat err=%v", err)
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("daemon.json was removed: %v", err)
+	}
+	if string(got) != string(data) {
+		t.Fatalf("daemon.json = %s, want it untouched", got)
 	}
 }
 
@@ -1982,8 +1991,10 @@ func TestEnsureDaemon_StaleDaemonJSON_DeadPID(t *testing.T) {
 	os.WriteFile(daemonPath, b, 0o644)
 
 	_ = EnsureDaemon()
-	if _, err := os.Stat(daemonPath); err == nil {
-		t.Error("stale daemon.json should have been removed")
+	// A dead PID is not a licence to delete: see
+	// TestEnsureDaemon_LeavesStaleDaemonJSONForTheNextDaemon.
+	if _, err := os.Stat(daemonPath); err != nil {
+		t.Errorf("daemon.json was removed: %v", err)
 	}
 }
 

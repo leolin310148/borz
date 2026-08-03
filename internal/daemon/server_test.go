@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -470,7 +471,8 @@ func TestServerRunRejectsSecondDaemonForProfile(t *testing.T) {
 func TestServerShutdownCleansState(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("BORZ_HOME", home)
-	if err := os.WriteFile(filepath.Join(home, "daemon.json"), []byte(`{}`), 0o600); err != nil {
+	own := fmt.Sprintf(`{"pid":%d,"host":"127.0.0.1","port":19824}`, os.Getpid())
+	if err := os.WriteFile(filepath.Join(home, "daemon.json"), []byte(own), 0o600); err != nil {
 		t.Fatalf("write daemon.json: %v", err)
 	}
 
@@ -490,6 +492,51 @@ func TestServerShutdownCleansState(t *testing.T) {
 	default:
 		t.Fatal("reaper context was not cancelled")
 	}
+}
+
+// A daemon that is shutting down after a successor already republished
+// daemon.json must leave that record alone. Deleting it would strand the
+// successor: alive, holding the port and the daemon lock, addressable by
+// nobody, with no CLI able to recover until it dies.
+func TestServerShutdownKeepsSuccessorDaemonJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	path := filepath.Join(home, "daemon.json")
+	successor := fmt.Sprintf(`{"pid":%d,"host":"127.0.0.1","port":19824}`, os.Getpid()+1)
+	if err := os.WriteFile(path, []byte(successor), 0o600); err != nil {
+		t.Fatalf("write daemon.json: %v", err)
+	}
+
+	s := newTestServer(t, "")
+	s.httpSrv = &http.Server{}
+	_, cancel := context.WithCancel(context.Background())
+	s.cancelReaper = cancel
+
+	if err := s.shutdown(); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("successor daemon.json was deleted: %v", err)
+	}
+	if string(got) != successor {
+		t.Fatalf("daemon.json = %s, want it untouched", got)
+	}
+
+	// An unparsable record is also left alone: we cannot prove it is ours, and
+	// the next daemon overwrites it anyway.
+	if err := os.WriteFile(path, []byte("{oops"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removeOwnDaemonJSON()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("corrupt daemon.json was deleted: %v", err)
+	}
+	// Absent file: must not panic or error.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	removeOwnDaemonJSON()
 }
 
 func TestServerShutdownClosesOnlyOwnedManagedBrowser(t *testing.T) {

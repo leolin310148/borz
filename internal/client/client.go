@@ -460,12 +460,14 @@ func EnsureDaemon() error {
 		return err
 	}
 
-	// A dead daemon file is only removed while holding the startup lock.
-	info, err := ReadDaemonJSON()
-	if err == nil && info != nil && !IsProcessAlive(info.PID) {
-		os.Remove(config.DaemonJSONPath())
-		info = nil
-	}
+	// A stale daemon.json is deliberately left alone. The startup lock only
+	// serializes CLI processes, not daemons, so between reading the file and
+	// deleting it a daemon can publish a fresh record — and deleting that
+	// leaves a live daemon holding the port with no way for anyone to address
+	// it, which is unrecoverable until the daemon dies. daemon.json has exactly
+	// one writer, the daemon that holds the daemon lock, and a starting daemon
+	// overwrites whatever a crashed predecessor left behind. Everything below
+	// re-reads it; a dead record just fails /status and is replaced.
 
 	// Resolve the CDP endpoint: a cdp profile pins it declaratively; the
 	// managed transport keeps today's discovery (env var, port file,
@@ -513,6 +515,13 @@ func EnsureDaemon() error {
 	// port, a spawn cannot possibly succeed. Diagnose it before launching a
 	// doomed child and waiting the full readiness timeout.
 	if squatter, ok := probeStartupDaemonPort(daemonPort); ok {
+		// Logged, not just returned: this is the one autostart outcome that
+		// used to leave no trace at all, so the state that causes it — a live
+		// daemon whose daemon.json went missing — was invisible after the fact.
+		logClientEvent("warn", "daemon_autostart_failed", observability.Fields{
+			DurationMS: time.Since(autostartStarted).Milliseconds(),
+			Success:    clientBoolPtr(false), ErrorCode: "daemon_unaddressable",
+		})
 		return unaddressableDaemonError(squatter, daemonPort)
 	}
 	args := []string{"daemon",
@@ -551,7 +560,7 @@ func EnsureDaemon() error {
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(200 * time.Millisecond)
-		info, err = ReadDaemonJSON()
+		info, err := ReadDaemonJSON()
 		if err != nil || info == nil {
 			continue
 		}
@@ -779,7 +788,12 @@ func KillDaemon(pid int) error {
 		return err
 	}
 	WaitForProcessExit(pid, 2*time.Second)
-	os.Remove(config.DaemonJSONPath())
+	// Only clear the record if it still names the daemon we just killed. A
+	// successor may already have published its own, and deleting that would
+	// strand it: alive, holding the port, addressable by nobody.
+	if info, err := ReadDaemonJSON(); err == nil && info != nil && info.PID == pid {
+		os.Remove(config.DaemonJSONPath())
+	}
 	daemonReady = false
 	cachedInfo = nil
 	return nil

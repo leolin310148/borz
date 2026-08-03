@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -136,8 +137,10 @@ func TestEnsureDaemonCacheDaemonJSONAndSpawnBranches(t *testing.T) {
 	if err := EnsureDaemon(); err == nil || !strings.Contains(err.Error(), "Cannot find") {
 		t.Fatalf("dead daemon json EnsureDaemon error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(home, "daemon.json")); !os.IsNotExist(err) {
-		t.Fatalf("dead daemon json should be removed, stat err=%v", err)
+	// The record survives a dead PID on purpose; deleting it can strand a
+	// daemon that republished it in the meantime.
+	if _, err := os.Stat(filepath.Join(home, "daemon.json")); err != nil {
+		t.Fatalf("dead daemon json was removed, stat err=%v", err)
 	}
 
 	oldDiscover := discoverCDPPort
@@ -419,5 +422,59 @@ func TestReadCDPBrowserIDExported(t *testing.T) {
 	}
 	if _, err := ReadCDPBrowserID("127.0.0.1", 1, 200*time.Millisecond); err == nil {
 		t.Fatal("ReadCDPBrowserID against a dead port succeeded")
+	}
+}
+
+// KillDaemon clears daemon.json only when the record still names the process it
+// killed. If a successor already republished it, deleting that record would
+// strand a live daemon that owns the port and the daemon lock.
+func TestKillDaemonKeepsSuccessorDaemonJSON(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relies on POSIX sleep(1)")
+	}
+	resetState()
+	t.Cleanup(resetState)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("spawn sleep: %v", err)
+	}
+	pid := cmd.Process.Pid
+	reaped := make(chan struct{})
+	go func() {
+		_, _ = cmd.Process.Wait()
+		close(reaped)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		select {
+		case <-reaped:
+		case <-time.After(2 * time.Second):
+		}
+	})
+
+	// The record on disk belongs to a different (successor) daemon.
+	path := filepath.Join(home, "daemon.json")
+	raw, _ := json.Marshal(protocol.DaemonInfo{PID: pid + 100000, Host: "127.0.0.1", Port: 19824})
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := KillDaemon(pid); err != nil {
+		t.Fatalf("KillDaemon: %v", err)
+	}
+	select {
+	case <-reaped:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("pid %d not reaped", pid)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("successor daemon.json was deleted: %v", err)
+	}
+	if string(got) != string(raw) {
+		t.Fatalf("daemon.json = %s, want it untouched", got)
 	}
 }
