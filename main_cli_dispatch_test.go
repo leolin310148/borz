@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/daemon"
 	"github.com/leolin310148/borz/internal/protocol"
 )
@@ -1107,6 +1108,30 @@ func TestStartDaemonForegroundBuildsServerOptions(t *testing.T) {
 		t.Fatalf("unexpected stderr = %q", out)
 	}
 	if got.Host != "127.0.0.1" || got.Port != 21111 || got.CDPHost != "chrome.test" || got.CDPPort != 9223 || !got.CloseOwnedBrowser || got.IdleTabCloseMinutes != 4 || got.MaxTabs != 14 || got.Token == "" {
+		t.Fatalf("server options = %+v", got)
+	}
+}
+
+func TestStartDaemonForegroundUsesProfileDaemonEndpoint(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "profiles.json"), []byte(`{"version":1,"profiles":{"clean":{"transport":"managed","daemonPort":19827,"daemonToken":"stable-secret"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetProfile("clean"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = config.SetProfile("") })
+
+	old := newDaemonServer
+	defer func() { newDaemonServer = old }()
+	var got daemon.ServerOptions
+	newDaemonServer = func(opts daemon.ServerOptions) daemonRunner {
+		got = opts
+		return stubDaemonRunner{}
+	}
+	startDaemonForeground([]string{"--cdp-host", "127.0.0.1", "--cdp-port", "9222"})
+	if got.Port != 19827 || got.Token != "stable-secret" || got.Profile != "clean" {
 		t.Fatalf("server options = %+v", got)
 	}
 }

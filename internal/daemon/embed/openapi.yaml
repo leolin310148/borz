@@ -1150,7 +1150,14 @@ paths:
       responses:
         "200":
           description: Extension status and supported RPC methods
-          content: { application/json: { schema: { type: object, additionalProperties: true } } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile]
+                properties:
+                  profile: { type: string, description: Daemon profile this extension bridge belongs to }
+                additionalProperties: true
         "503": { $ref: "#/components/responses/Error" }
 
   /v1/ext/call:

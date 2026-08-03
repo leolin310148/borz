@@ -49,7 +49,8 @@ func waitConnected(t *testing.T, s *Server, want int) {
 }
 
 func TestExt_StatusEndpoint(t *testing.T) {
-	_, srv := startRouted(t)
+	s, srv := startRouted(t)
+	s.opts.Profile = "clean"
 	resp, err := http.Get(srv.URL + "/v1/ext/status")
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -62,6 +63,37 @@ func TestExt_StatusEndpoint(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&body)
 	if body["connected"].(float64) != 0 {
 		t.Fatalf("connected=%v want 0", body["connected"])
+	}
+	if body["profile"] != "clean" {
+		t.Fatalf("profile=%v want clean", body["profile"])
+	}
+}
+
+func TestExt_ProfileMismatchRejectedBeforeStatusOrUpgrade(t *testing.T) {
+	s, srv := startRouted(t)
+	s.opts.Profile = "clean"
+
+	resp, err := http.Get(srv.URL + "/v1/ext/status?profile=default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status mismatch = %d, want 409", resp.StatusCode)
+	}
+	var body map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if body["expectedProfile"] != "clean" || body["receivedProfile"] != "default" {
+		t.Fatalf("mismatch body = %+v", body)
+	}
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/v1/ext/ws?profile=default"
+	conn, wsResp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if err == nil || wsResp == nil || wsResp.StatusCode != http.StatusConflict {
+		t.Fatalf("WS mismatch err=%v status=%v", err, wsResp)
 	}
 }
 

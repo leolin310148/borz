@@ -12,7 +12,7 @@ import (
 	borzprofile "github.com/leolin310148/borz/internal/profile"
 )
 
-const profileAddUsage = "Usage: borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--description <text>] [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]"
+const profileAddUsage = "Usage: borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--daemon-port <p>] [--daemon-token <token|generate>] [--description <text>] [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]"
 
 func handleProfile(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 	sub := "list"
@@ -39,7 +39,7 @@ func handleProfile(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 		handleProfileAdd(cmdArgs[1], rawArgs, jsonOutput)
 	case "set":
 		if len(cmdArgs) < 2 {
-			fatal("Usage: borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--description <text>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]")
+			fatal("Usage: borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--daemon-port <p|dynamic>] [--daemon-token <token|generate|dynamic>] [--description <text>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]")
 		}
 		handleProfileSet(cmdArgs[1], rawArgs, jsonOutput)
 	case "rm", "remove":
@@ -103,6 +103,12 @@ func handleProfileList(jsonOutput bool) {
 		}
 		if entry.MaxTabs != nil {
 			target += fmt.Sprintf(" [maxTabs=%d]", *entry.MaxTabs)
+		}
+		if entry.DaemonPort != 0 {
+			target += fmt.Sprintf(" [daemonPort=%d]", entry.DaemonPort)
+		}
+		if strings.TrimSpace(entry.DaemonToken) != "" {
+			target += " [stable daemon token]"
 		}
 		targets[name] = target
 		if len(target) > targetWidth {
@@ -177,6 +183,16 @@ func handleProfileShow(name string, jsonOutput bool) {
 	} else {
 		fmt.Printf("Idle tab timeout: %s\n", idleTabTimeoutDescription(entry.IdleTabTimeout))
 		fmt.Printf("Max tabs:         %s\n", maxTabsDescription(entry.MaxTabs))
+		if entry.DaemonPort != 0 {
+			fmt.Printf("Daemon port:      %d (fixed)\n", entry.DaemonPort)
+		} else {
+			fmt.Println("Daemon port:      dynamic")
+		}
+		if strings.TrimSpace(entry.DaemonToken) != "" {
+			fmt.Println("Daemon token:     configured (stable)")
+		} else {
+			fmt.Println("Daemon token:     dynamic (rotates on start)")
+		}
 	}
 	fmt.Printf("Config path: %s\n", config.ProfilesJSONPath())
 }
@@ -217,7 +233,7 @@ func handleProfileSet(name string, rawArgs []string, jsonOutput bool) {
 		fatal(err.Error())
 	}
 	if !changed {
-		fatal("nothing to change; pass --managed, --cdp <endpoint>, --remote <url>, --token <t>, --description <text>, --idle-tab-timeout <m|default>, or --max-tabs <n|default>")
+		fatal("nothing to change; pass --managed, --cdp <endpoint>, --remote <url>, --token <t>, --daemon-port <p|dynamic>, --daemon-token <token|generate|dynamic>, --description <text>, --idle-tab-timeout <m|default>, or --max-tabs <n|default>")
 	}
 	if profileTargetUnchanged(stored, entry) {
 		// Editing only the description or tab-lifecycle fields must not fail
@@ -258,6 +274,8 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 	descValue, descSet := getArgValueOK(rawArgs, "--description")
 	idleValue, idleSet := getArgValueOK(rawArgs, "--idle-tab-timeout")
 	maxTabsValue, maxTabsSet := getArgValueOK(rawArgs, "--max-tabs")
+	daemonPortValue, daemonPortSet := getArgValueOK(rawArgs, "--daemon-port")
+	daemonTokenValue, daemonTokenSet := getArgValueOK(rawArgs, "--daemon-token")
 
 	transports := 0
 	for _, set := range []bool{managedSet, cdpSet, remoteSet} {
@@ -272,12 +290,12 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 	entry := base
 	switch {
 	case managedSet:
-		entry = borzprofile.Entry{Transport: string(borzprofile.TransportManaged), Description: base.Description, IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
+		entry = borzprofile.Entry{Transport: string(borzprofile.TransportManaged), Description: base.Description, DaemonPort: base.DaemonPort, DaemonToken: base.DaemonToken, IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
 	case cdpSet:
 		if strings.TrimSpace(cdpValue) == "" {
 			return borzprofile.Entry{}, false, fmt.Errorf("--cdp requires a value (http://host:port or host:port)")
 		}
-		entry = borzprofile.Entry{Transport: string(borzprofile.TransportCDP), Description: base.Description, CDPURL: strings.TrimSpace(cdpValue), IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
+		entry = borzprofile.Entry{Transport: string(borzprofile.TransportCDP), Description: base.Description, CDPURL: strings.TrimSpace(cdpValue), DaemonPort: base.DaemonPort, DaemonToken: base.DaemonToken, IdleTabTimeout: base.IdleTabTimeout, MaxTabs: base.MaxTabs}
 	case remoteSet:
 		if strings.TrimSpace(remoteValue) == "" {
 			return borzprofile.Entry{}, false, fmt.Errorf("--remote requires a server URL")
@@ -316,6 +334,35 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 			entry.MaxTabs = &n
 		}
 	}
+	if daemonPortSet {
+		raw := strings.TrimSpace(daemonPortValue)
+		if strings.EqualFold(raw, "dynamic") || strings.EqualFold(raw, "default") {
+			entry.DaemonPort = 0
+		} else {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 1 || n > 65535 {
+				return borzprofile.Entry{}, false, fmt.Errorf("--daemon-port must be a TCP port between 1 and 65535, or 'dynamic'")
+			}
+			entry.DaemonPort = n
+		}
+	}
+	if daemonTokenSet {
+		raw := strings.TrimSpace(daemonTokenValue)
+		switch {
+		case strings.EqualFold(raw, "dynamic"), strings.EqualFold(raw, "default"):
+			entry.DaemonToken = ""
+		case strings.EqualFold(raw, "generate"):
+			generated, err := randomHex(16)
+			if err != nil {
+				return borzprofile.Entry{}, false, fmt.Errorf("generate daemon token: %w", err)
+			}
+			entry.DaemonToken = generated
+		case raw == "":
+			return borzprofile.Entry{}, false, fmt.Errorf("--daemon-token requires a token, 'generate', or 'dynamic'")
+		default:
+			entry.DaemonToken = raw
+		}
+	}
 	if !tokenSet && remoteSet {
 		// Match 'client setup': whenever a remote target is (re)configured
 		// without an explicit --token, the env token wins — even over a
@@ -330,7 +377,7 @@ func profileEntryFromFlags(base borzprofile.Entry, rawArgs []string) (borzprofil
 		}
 		entry.Token = strings.TrimSpace(tokenValue)
 	}
-	return entry, transports == 1 || tokenSet || descSet || idleSet || maxTabsSet, nil
+	return entry, transports == 1 || tokenSet || descSet || idleSet || maxTabsSet || daemonPortSet || daemonTokenSet, nil
 }
 
 // profileTargetUnchanged reports whether two entries reach the same browser
@@ -368,12 +415,22 @@ func saveProfileEntry(registry *borzprofile.File, name string, entry borzprofile
 	if err := borzprofile.Save(registry); err != nil {
 		fatal(err.Error())
 	}
+	_, daemonPortChanged := getArgValueOK(rawArgs, "--daemon-port")
+	_, daemonTokenChanged := getArgValueOK(rawArgs, "--daemon-token")
+	restartRequired := verb == "updated" && (daemonPortChanged || daemonTokenChanged)
 	if jsonOutput {
-		printJSON(profilePayload(name, entry))
+		payload := profilePayload(name, entry)
+		if restartRequired {
+			payload["daemonRestartRequired"] = true
+		}
+		printJSON(payload)
 		return
 	}
 	fmt.Printf("Profile %q %s (%s -> %s)\n", name, verb, entry.Transport, profileTargetDescription(name, entry))
 	fmt.Printf("Select it with 'borz --profile %s <command>' or BORZ_PROFILE=%s\n", name, name)
+	if restartRequired {
+		fmt.Printf("Apply the new daemon endpoint with 'borz --profile %s daemon restart' (Chrome and tabs are preserved).\n", name)
+	}
 }
 
 func probeProfileTarget(target borzprofile.Target) error {
@@ -423,6 +480,12 @@ func profilePayload(name string, entry borzprofile.Entry) map[string]interface{}
 	}
 	if entry.MaxTabs != nil {
 		payload["maxTabs"] = *entry.MaxTabs
+	}
+	if entry.DaemonPort != 0 {
+		payload["daemonPort"] = entry.DaemonPort
+	}
+	if borzprofile.TransportKind(entry.Transport) != borzprofile.TransportRemote {
+		payload["daemonTokenConfigured"] = strings.TrimSpace(entry.DaemonToken) != ""
 	}
 	return payload
 }

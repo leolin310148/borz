@@ -195,6 +195,40 @@ func TestSaveNilFile(t *testing.T) {
 	}
 }
 
+func TestResolveEntryLocalDaemonEndpoint(t *testing.T) {
+	entry := Entry{
+		Transport:   string(TransportManaged),
+		DaemonPort:  19827,
+		DaemonToken: " stable-secret ",
+	}
+	target, err := ResolveEntry("clean", entry)
+	if err != nil {
+		t.Fatalf("ResolveEntry: %v", err)
+	}
+	if target.DaemonPort != 19827 || target.DaemonToken != "stable-secret" {
+		t.Fatalf("daemon endpoint = %d/%q", target.DaemonPort, target.DaemonToken)
+	}
+
+	entry.Transport = string(TransportCDP)
+	entry.CDPURL = "127.0.0.1:9222"
+	target, err = ResolveEntry("mdt", entry)
+	if err != nil || target.DaemonPort != 19827 || target.DaemonToken != "stable-secret" {
+		t.Fatalf("cdp daemon endpoint = %+v, %v", target, err)
+	}
+
+	entry.Transport = string(TransportRemote)
+	entry.URL = "http://127.0.0.1:19824"
+	entry.CDPURL = ""
+	if _, err := ResolveEntry("remote", entry); err == nil || !strings.Contains(err.Error(), "do not apply to the remote transport") {
+		t.Fatalf("remote daemon endpoint err = %v", err)
+	}
+
+	entry = Entry{Transport: string(TransportManaged), DaemonPort: 70000}
+	if _, err := ResolveEntry("bad", entry); err == nil || !strings.Contains(err.Error(), "daemonPort") {
+		t.Fatalf("invalid daemon port err = %v", err)
+	}
+}
+
 func TestMigrateClientJSON(t *testing.T) {
 	home := setHome(t)
 	clientJSON := `{"url":"http://100.64.0.1:13333/","token":"tok","enabled":true}`

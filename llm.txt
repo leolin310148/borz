@@ -67,6 +67,8 @@ borz frame <selector> | main                 # iframe switching
 borz dialog accept|dismiss [text]|disarm|status   # answers an open dialog, else arms the next one; status shows what is blocking
 borz trace start|stop|status
 borz extension status                      # optional Chrome extension capabilities
+borz extension ping                        # verify extension RPC round-trip
+borz extension status --all-profiles       # audit every profile; does not start browsers
 borz cookies all [domain]                  # all-domain cookie store (extension)
 borz bookmarks tree|search|create|update|remove
 borz browser-history search [query] [--limit N]
@@ -75,7 +77,7 @@ borz window list|new|focus|close           # browser windows (extension)
 borz site list|search|info|run [--scope client|server]  # client catalog by default; server = selected daemon
 borz site update|new|lint|trust             # manage client-side adapters
 borz <platform>/<adapter> [args]            # shorthand for "site run"
-borz status | daemon [status|restart|shutdown] # restart replaces only daemon and preserves Chrome; status is read-only
+borz status | daemon [status|token|restart|shutdown] # token [--copy] reports the live bridge secret
 borz doctor [--json]                         # diagnose CLI/daemon/CDP/tabs end-to-end
 borz browser status|adopt [--port N]         # which Chrome borz owns; adopt fixes an identity mismatch
 borz logs path|tail|stats [--since 7d]       # inspect privacy-safe local operational logs
@@ -86,7 +88,7 @@ borz help [command [sub]]                    # per-command help
 borz <command> --help                        # same, inline form
 ```
 
-Use `borz daemon restart [--json]` for a version refresh or stale default-profile daemon: it verifies the exact local PID through loopback `/healthz`, forcibly replaces only the daemon, and preserves the managed Chrome process, tab IDs, and session. A named profile with missing daemon state is refused because its dynamic port cannot be safely guessed. The command also refuses remote/non-loopback/unverified targets and interrupts in-flight daemon work. Shutting down an auto-started daemon is different: `borz daemon shutdown` performs graceful cleanup and also closes its borz-owned managed Chrome instance. Browsers attached through a `cdp` profile remain externally owned and are never closed by daemon shutdown. `server --ensure-browser` closes Chrome only when its ensure hook actually launched that instance.
+Use `borz daemon restart [--json]` for a version refresh or stale daemon: it verifies the exact local PID through loopback `/healthz`, forcibly replaces only the daemon, and preserves the managed Chrome process, tab IDs, and session. The default profile and named profiles configured with `daemonPort` can recover missing daemon state; a named profile still using a dynamic port is refused because its daemon cannot be safely guessed. The command also refuses remote/non-loopback/unverified targets and interrupts in-flight daemon work. Shutting down an auto-started daemon is different: `borz daemon shutdown` performs graceful cleanup and also closes its borz-owned managed Chrome instance. Browsers attached through a `cdp` profile remain externally owned and are never closed by daemon shutdown. `server --ensure-browser` closes Chrome only when its ensure hook actually launched that instance, and relaunches on either CDP discovery or WebSocket-handshake failure.
 
 `borz doctor --json` includes a `Binary PATH` check before browser diagnostics. It safely inspects (never executes) every distinct `borz` on PATH and returns canonical path, embedded version, SHA-256, `current`, and `matchesCurrent`. Treat multiple separate copies as drift risk even if their hashes currently match; keep one canonical install and symlink compatibility paths to it.
 
@@ -108,7 +110,7 @@ with `--profile <name>` or `BORZ_PROFILE`. Undeclared names (including
 borz profile list                                # what each name means — run this first
 borz profile add mini --remote http://100.64.0.1:13333 --token "$BORZ_TOKEN" \
     --description "Mac Mini's logged-in Chrome"
-borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 --max-tabs 30
+borz profile add mdt --cdp 127.0.0.1:19845 --daemon-port 19826 --daemon-token generate --idle-tab-timeout 0 --max-tabs 30
 borz --profile mini open https://example.com     # HTTP to the Mini server
 BORZ_PROFILE=mdt borz snapshot                   # tunnel-attached Chrome
 borz profile list --all                          # + undeclared profiles, status, disk, last used
@@ -134,6 +136,15 @@ oldest non-current tabs. Precedence is `--max-tabs` > `BORZ_MAX_TABS` > profile
 > 30. It is rejected on remote profiles; verify via `maxTabs` in daemon status.
 For tabs already open before daemon startup, oldest means daemon-observed
 registration order because CDP exposes no original creation timestamp.
+
+Optional `daemonPort` and `daemonToken` pin a local managed/cdp profile's
+extension bridge across restarts. Configure them with `--daemon-port <p>` and
+`--daemon-token <token|generate>`; use `dynamic` with `profile set` to clear.
+After changing either field, run `borz --profile <name> daemon restart`. The
+extension popup must use the same Profile name and the output of
+`borz --profile <name> daemon token --copy`. Profile mismatch is rejected with
+HTTP 409; authentication failure is HTTP 401. `extension ping` verifies one
+profile; `extension status --all-profiles` audits all without auto-starting.
 
 Deprecated but still working: `--remote` = `--profile remote`; `borz client
 setup` writes the `remote` profile; a legacy `~/.borz/client.json` is migrated

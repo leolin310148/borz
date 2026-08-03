@@ -142,13 +142,41 @@ func TestExtensionHelpMentionsAliases(t *testing.T) {
 		}
 	})
 	for _, want := range []string{
-		"download|update|install|path|status|capabilities|call",
+		"download|update|install|path|status|capabilities|ping|call",
 		"install               Alias for 'download'",
 		"capabilities          Alias for 'status'",
+		"status --all-profiles",
+		"ping                  Verify extension RPC end-to-end",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("extension help missing %q; got:\n%s", want, out)
 		}
+	}
+}
+
+func TestDaemonAndProfileHelpExplainStableExtensionEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		want    []string
+	}{
+		{"daemon", []string{"token [--copy]", "fixed daemon port"}},
+		{"daemon.token", []string{"borz daemon token [--copy] [--json]", "accepted by the selected profile"}},
+		{"profile", []string{"--daemon-port <p>", "--daemon-token <t>", "daemon token --copy"}},
+		{"extension.status", []string{"--all-profiles", "without auto-starting"}},
+		{"extension.ping", []string{"extension RPC bridge end-to-end"}},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			out := captureStdout(t, func() {
+				if !printCommandHelp(tc.command) {
+					t.Fatalf("printCommandHelp(%q) returned false", tc.command)
+				}
+			})
+			for _, want := range tc.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("%s help missing %q; got:\n%s", tc.command, want, out)
+				}
+			}
+		})
 	}
 }
 

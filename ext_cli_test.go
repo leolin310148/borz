@@ -408,6 +408,43 @@ func TestHandleExtension_PathStatusAndCall(t *testing.T) {
 	if !strings.Contains(out, `"result"`) {
 		t.Fatalf("call JSON output = %q", out)
 	}
+	out = withCapturedStdout(t, func() { handleExtension([]string{"ping"}, true) })
+	if callBody["method"] != "ping" || !strings.Contains(out, `"result"`) {
+		t.Fatalf("ping body=%+v output=%q", callBody, out)
+	}
+}
+
+func TestHandleExtensionStatusAllProfiles(t *testing.T) {
+	extDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			w.Write([]byte(`{"running":true}`))
+			return
+		}
+		if r.URL.Path == "/v1/ext/capabilities" {
+			w.Write([]byte(`{"name":"borz bridge","version":"1.2.3"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	profiles := `{"version":1,"profiles":{"clean":{"transport":"managed"}}}`
+	if err := os.WriteFile(filepath.Join(os.Getenv("BORZ_HOME"), "profiles.json"), []byte(profiles), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := withCapturedStdout(t, func() {
+		handleExtension([]string{"status"}, false, []string{"extension", "status", "--all-profiles"})
+	})
+	for _, want := range []string{"default", "connected", "1.2.3", "clean", "offline"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("all-profile output missing %q: %s", want, out)
+		}
+	}
+	out = withCapturedStdout(t, func() {
+		handleExtension([]string{"status"}, true, []string{"extension", "status", "--all-profiles"})
+	})
+	if !strings.Contains(out, `"profiles"`) || !strings.Contains(out, `"state": "connected"`) {
+		t.Fatalf("all-profile JSON = %s", out)
+	}
 }
 
 func TestHandleExtension_StatusInvalidJSONAndCallRawFallback(t *testing.T) {

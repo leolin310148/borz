@@ -49,6 +49,13 @@ type Target struct {
 	Kind   TransportKind
 	Remote RemoteTarget // set when Kind == TransportRemote
 	CDP    CDPTarget    // set when Kind == TransportCDP
+	// DaemonPort pins the local daemon listen port when non-zero. Named
+	// profiles otherwise keep the historical dynamic-port behavior.
+	DaemonPort int
+	// DaemonToken pins the local daemon bearer token when non-empty. It is
+	// stored only in the 0600 profiles registry and never rendered by list or
+	// show. Empty preserves the historical rotate-on-start behavior.
+	DaemonToken string
 	// IdleTabTimeout is the profile's idle-tab auto-close threshold in
 	// minutes (0 disables it). nil means the profile does not declare one,
 	// so the flag/env/default chain decides. Never set for remote targets.
@@ -72,6 +79,11 @@ type Entry struct {
 	CDPURL      string `json:"cdpUrl,omitempty"`
 	CDPHost     string `json:"cdpHost,omitempty"`
 	CDPPort     int    `json:"cdpPort,omitempty"`
+	// DaemonPort and DaemonToken apply only to local managed/CDP profiles.
+	// Together they let the Chrome extension keep a durable endpoint across
+	// daemon restarts without a hand-written service wrapper.
+	DaemonPort  int    `json:"daemonPort,omitempty"`
+	DaemonToken string `json:"daemonToken,omitempty"`
 	// IdleTabTimeout, in minutes, overrides the daemon's idle-tab reaper for
 	// managed and cdp transports (0 disables auto-close). It is invalid on
 	// remote profiles: the server on the other side owns tab lifecycle.
@@ -238,15 +250,22 @@ func ResolveEntry(name string, entry Entry) (Target, error) {
 	if entry.MaxTabs != nil && *entry.MaxTabs < 0 {
 		return Target{}, fmt.Errorf("profile %q: maxTabs must be >= 0 (0 disables the tab cap)", name)
 	}
+	if entry.DaemonPort != 0 && (entry.DaemonPort < 1 || entry.DaemonPort > 65535) {
+		return Target{}, fmt.Errorf("profile %q: daemonPort must be a TCP port between 1 and 65535", name)
+	}
+	daemonToken := strings.TrimSpace(entry.DaemonToken)
 	switch TransportKind(strings.TrimSpace(entry.Transport)) {
 	case TransportManaged:
-		return Target{Kind: TransportManaged, IdleTabTimeout: entry.IdleTabTimeout, MaxTabs: entry.MaxTabs}, nil
+		return Target{Kind: TransportManaged, DaemonPort: entry.DaemonPort, DaemonToken: daemonToken, IdleTabTimeout: entry.IdleTabTimeout, MaxTabs: entry.MaxTabs}, nil
 	case TransportRemote:
 		if entry.IdleTabTimeout != nil {
 			return Target{}, fmt.Errorf("profile %q: idleTabTimeout does not apply to the remote transport (the server owns tab lifecycle) — remove it", name)
 		}
 		if entry.MaxTabs != nil {
 			return Target{}, fmt.Errorf("profile %q: maxTabs does not apply to the remote transport (the server owns tab lifecycle) — remove it", name)
+		}
+		if entry.DaemonPort != 0 || daemonToken != "" {
+			return Target{}, fmt.Errorf("profile %q: daemonPort/daemonToken do not apply to the remote transport (there is no local daemon) — remove them", name)
 		}
 		normalized, err := NormalizeServerURL(entry.URL)
 		if err != nil {
@@ -258,7 +277,7 @@ func ResolveEntry(name string, entry Entry) (Target, error) {
 		if err != nil {
 			return Target{}, fmt.Errorf("profile %q: %w", name, err)
 		}
-		return Target{Kind: TransportCDP, CDP: cdp, IdleTabTimeout: entry.IdleTabTimeout, MaxTabs: entry.MaxTabs}, nil
+		return Target{Kind: TransportCDP, CDP: cdp, DaemonPort: entry.DaemonPort, DaemonToken: daemonToken, IdleTabTimeout: entry.IdleTabTimeout, MaxTabs: entry.MaxTabs}, nil
 	case "":
 		return Target{}, fmt.Errorf("profile %q: missing transport (expected managed, cdp, or remote)", name)
 	default:

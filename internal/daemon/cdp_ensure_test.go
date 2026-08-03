@@ -3,6 +3,10 @@ package daemon
 import (
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -18,6 +22,38 @@ func reserveDeadPort(t *testing.T) int {
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
 	return port
+}
+
+func TestConnectEnsureBrowserRecoversWebSocketDialFailure(t *testing.T) {
+	var mu sync.RWMutex
+	wsURL := "ws://127.0.0.1:1/ws"
+	versionProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.RLock()
+		current := wsURL
+		mu.RUnlock()
+		fmt.Fprintf(w, `{"webSocketDebuggerUrl":%q}`, current)
+	}))
+	t.Cleanup(versionProxy.Close)
+	host, port, _ := splitHostPort(strings.TrimPrefix(versionProxy.URL, "http://"))
+	c := NewCdpConnection(host, port, NewTabStateManager())
+
+	launches := 0
+	c.SetEnsureBrowser(func() error {
+		launches++
+		f := newFakeCDP(t)
+		mu.Lock()
+		wsURL = "ws" + strings.TrimPrefix(f.server.URL, "http") + "/ws"
+		mu.Unlock()
+		return nil
+	})
+
+	if err := c.Connect(); err != nil {
+		t.Fatalf("Connect after stale WebSocket recovery: %v", err)
+	}
+	t.Cleanup(c.Disconnect)
+	if launches != 1 || !c.Connected() {
+		t.Fatalf("launches=%d connected=%v", launches, c.Connected())
+	}
 }
 
 func TestConnectEnsureBrowserLaunchesManagedBrowser(t *testing.T) {

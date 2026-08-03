@@ -817,10 +817,11 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"daemon": {
 		Summary: "Start or control the local daemon (loopback only).",
-		Usage:   "borz daemon [status|restart|shutdown|stop] [--profile N] [--host H --port P --cdp-host H --cdp-port P]",
+		Usage:   "borz daemon [status|token|restart|shutdown|stop] [--profile N] [--host H --port P --cdp-host H --cdp-port P]",
 		Flags: []string{
 			"  (no subcommand)        Start the daemon in the foreground",
 			"  status                 Show JSON status (or 'not running')",
+			"  token [--copy]         Print the token accepted by the running daemon",
 			"  restart                Replace only the daemon; preserve managed Chrome",
 			"  shutdown|stop          Ask the running daemon to exit",
 			"  --profile <n>          Use a named local browser profile",
@@ -833,7 +834,7 @@ var commandHelp = map[string]cmdHelp{
 			"  --max-tabs <n>          Keep at most <n> page tabs; close oldest non-current tabs",
 			"                         (flag > env BORZ_MAX_TABS > profile maxTabs > 30; 0=unlimited)",
 		},
-		Notes: "Restart verifies the local daemon PID through its loopback health endpoint, then replaces only that process so the managed Chrome, tabs, and browser session survive. For the default profile, whose daemon port is stable, it also recovers a stale daemon whose daemon.json is missing. Shutdown is graceful and closes an auto-started Chrome instance owned by borz. External CDP-profile browsers are never closed. For a remote-accessible server with auth, use 'borz server' instead.",
+		Notes: "Restart verifies the local daemon PID through its loopback health endpoint, then replaces only that process so the managed Chrome, tabs, and browser session survive. It can recover a stale daemon whose daemon.json is missing when the selected profile has a fixed daemon port (the undeclared default uses 19824). Shutdown is graceful and closes an auto-started Chrome instance owned by borz. External CDP-profile browsers are never closed. For a remote-accessible server with auth, use 'borz server' instead.",
 	},
 	"server": {
 		Summary: "Start the REST server (exposes /v1/* routes; requires a token when non-loopback).",
@@ -948,6 +949,10 @@ var commandHelp = map[string]cmdHelp{
 			"  --cdp <url|host:port>    Transport: attach to an existing CDP endpoint",
 			"  --remote <url>           Transport: talk HTTP to a remote borz server",
 			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
+			"  --daemon-port <p>        Stable local extension bridge port for managed/cdp",
+			"                           ('dynamic' clears it; named profiles default dynamic)",
+			"  --daemon-token <t>       Stable local extension bridge token for managed/cdp",
+			"                           ('generate' creates one; 'dynamic' clears it)",
 			"  --description <text>     One line saying what this profile is for",
 			"                           (\"\" clears it); shown by list/show",
 			"  --idle-tab-timeout <m>   Idle-tab auto-close in minutes for managed/cdp",
@@ -960,7 +965,8 @@ var commandHelp = map[string]cmdHelp{
 			"  borz profile add mini --remote http://100.64.0.1:13333 --token \"$BORZ_TOKEN\"",
 			"  borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 \\",
 			"      --description \"MDT VPN Chrome via the SSH tunnel; never reap its tabs\"",
-			"  borz profile add clean --managed --description \"throwaway logged-out Chrome\"",
+			"  borz profile add clean --managed --daemon-port 19827 --daemon-token generate \\",
+			"      --description \"throwaway logged-out Chrome\"",
 			"  borz --profile mini open https://example.com",
 			"  BORZ_PROFILE=mdt borz snapshot",
 		},
@@ -974,6 +980,9 @@ var commandHelp = map[string]cmdHelp{
 			"description is free text (one line) that only exists so 'profile list' can\n" +
 			"say which browser a name means — run it before picking a profile instead of\n" +
 			"guessing from the name.\n" +
+			"daemonPort/daemonToken pin the local extension bridge across daemon restarts;\n" +
+			"restart a running daemon after changing either field. 'daemon token --copy'\n" +
+			"returns the token accepted right now without exposing it in profile show/list.\n" +
 			"profiles.json is stored with 0600 permissions\n" +
 			"because it can hold bearer tokens; show/list never print them.",
 	},
@@ -1028,12 +1037,14 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"profile.add": {
 		Summary: "Declare a new profile with exactly one transport.",
-		Usage:   "borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--description <text>] [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]",
+		Usage:   "borz profile add <name> (--managed | --cdp <url|host:port> | --remote <url> [--token <t>]) [--daemon-port <p>] [--daemon-token <token|generate>] [--description <text>] [--idle-tab-timeout <m>] [--max-tabs <n>] [--no-check]",
 		Flags: []string{
 			"  --managed                borz launches and owns a local Chrome (default behaviour)",
 			"  --cdp <url|host:port>    Attach to an existing CDP endpoint; never launches a browser",
 			"  --remote <url>           Route commands to a remote borz server; no local daemon",
 			"  --token <t>              Bearer token for --remote (env BORZ_TOKEN)",
+			"  --daemon-port <p>        Fixed local daemon/extension bridge port; managed/cdp only",
+			"  --daemon-token <t>       Fixed bridge token, or 'generate'; managed/cdp only",
 			"  --description <text>     One line saying what this profile is for; any transport",
 			"  --idle-tab-timeout <m>   Idle-tab auto-close in minutes (0=disable); managed/cdp only",
 			"  --max-tabs <n>            Maximum page tabs (0=unlimited); managed/cdp only",
@@ -1041,13 +1052,13 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Examples: []string{
 			"  borz profile add mini --remote http://server:13333 --token \"$BORZ_TOKEN\"",
-			"  borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0",
+			"  borz profile add mdt --cdp 127.0.0.1:19845 --daemon-port 19826 --daemon-token generate",
 			"  borz profile add mini --remote http://server:13333 --description \"Mac Mini's logged-in Chrome\"",
 		},
 	},
 	"profile.set": {
 		Summary: "Edit a declared profile: switch transport or update token/description/target/tab lifecycle settings.",
-		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--description <text>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]",
+		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--daemon-port <p|dynamic>] [--daemon-token <token|generate|dynamic>] [--description <text>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]",
 		Examples: []string{
 			"  borz profile set mini --token \"$NEW_TOKEN\"",
 			"  borz profile set mdt --cdp 127.0.0.1:9222",
@@ -1056,6 +1067,7 @@ var commandHelp = map[string]cmdHelp{
 			"  borz profile set mdt --idle-tab-timeout 0        # never auto-close its tabs",
 			"  borz profile set mdt --idle-tab-timeout default  # back to flag/env/0 (disabled)",
 			"  borz profile set mdt --max-tabs 30               # cap runaway tab creation",
+			"  borz profile set mdt --daemon-port 19826 --daemon-token generate",
 		},
 	},
 	"profile.rm": {
@@ -1100,20 +1112,24 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"extension": {
 		Summary: "Download, locate, or inspect the borz Chrome extension.",
-		Usage:   "borz extension [download|update|install|path|status|capabilities|call]",
+		Usage:   "borz extension [download|update|install|path|status|capabilities|ping|call]",
 		Flags: []string{
 			"  download              Download the latest extension zip and extract it (default)",
 			"  update                Alias for 'download' — overwrites the current install",
 			"  install               Alias for 'download'",
 			"  path                  Print the local install directory and exit",
 			"  status                Query the connected extension capabilities",
+			"  status --all-profiles Audit every profile without starting browsers",
 			"  capabilities          Alias for 'status'",
+			"  ping                  Verify extension RPC end-to-end",
 			"  call <method> [json]  Raw extension RPC escape hatch",
 		},
 		Examples: []string{
 			"  borz extension download",
 			"  borz extension path",
 			"  borz extension status --json",
+			"  borz extension status --all-profiles",
+			"  borz --profile clean extension ping",
 			"  borz extension call bookmarks.search '{\"query\":\"github\"}'",
 		},
 		Notes: "Extracts to ~/.borz/extension (override with $BORZ_HOME). " +
@@ -1145,12 +1161,17 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"extension.status": {
 		Summary: "Show the connected extension's capabilities.",
-		Usage:   "borz extension status [--json]",
-		Notes:   "Requires the extension service worker to be connected to /v1/ext/ws.",
+		Usage:   "borz extension status [--all-profiles] [--json]",
+		Notes:   "Requires the extension service worker to be connected to /v1/ext/ws. --all-profiles audits default plus every declared profile without auto-starting an offline browser.",
 	},
 	"extension.capabilities": {
 		Summary: "Alias for 'extension status'.",
-		Usage:   "borz extension capabilities [--json]",
+		Usage:   "borz extension capabilities [--all-profiles] [--json]",
+	},
+	"extension.ping": {
+		Summary:  "Verify the selected profile's extension RPC bridge end-to-end.",
+		Usage:    "borz extension ping [--json]",
+		Examples: []string{"  borz --profile clean extension ping"},
 	},
 	"extension.call": {
 		Summary: "Call a supported extension RPC method directly.",
@@ -1351,6 +1372,16 @@ var commandHelp = map[string]cmdHelp{
 		Usage:   "borz daemon status",
 		Notes:   "Identical payload to the top-level 'borz status'. Status is read-only and does not start the daemon itself.",
 	},
+	"daemon.token": {
+		Summary: "Print or copy the bearer token accepted by the selected profile's local daemon.",
+		Usage:   "borz daemon token [--copy] [--json]",
+		Flags:   []string{"  --copy   Copy the token to the system clipboard instead of printing it"},
+		Examples: []string{
+			"  borz daemon token --copy",
+			"  borz --profile mdt daemon token --copy",
+		},
+		Notes: "When a daemon is running, this returns the token it accepts right now. When stopped, a configured stable daemonToken is returned without starting Chrome. Dynamic tokens are only available after the profile has started once. The token is a secret; profile show/list never expose it.",
+	},
 	"daemon.shutdown": {
 		Summary:  "Ask the running daemon to exit cleanly.",
 		Usage:    "borz daemon shutdown",
@@ -1361,7 +1392,7 @@ var commandHelp = map[string]cmdHelp{
 		Summary:  "Replace only the verified local daemon while preserving managed Chrome.",
 		Usage:    "borz daemon restart [--json]",
 		Examples: []string{"  borz daemon restart", "  borz daemon restart --json"},
-		Notes:    "Uses the loopback-only health endpoint to verify the exact daemon PID, then forcibly replaces that process without running browser cleanup. This preserves the managed Chrome process, tab IDs, and browser session. --json returns success, previousPid (when present), newPid, recoveredStale (when applicable), and browserPreserved; failures return success:false plus error. The default profile can also recover an older stale daemon with no daemon.json because its port is stable; a named profile with missing state is refused because its dynamic daemon port cannot be safely guessed. In-flight daemon requests or recordings are interrupted. Refuses remote profiles, non-loopback servers, and unverified PIDs.",
+		Notes:    "Uses the loopback-only health endpoint to verify the exact daemon PID, then forcibly replaces that process without running browser cleanup. This preserves the managed Chrome process, tab IDs, and browser session. --json returns success, previousPid (when present), newPid, recoveredStale (when applicable), and browserPreserved; failures return success:false plus error. The default profile and named profiles configured with --daemon-port can also recover an older stale daemon with no daemon.json; a named profile still using a dynamic port is refused because its daemon cannot be safely guessed. In-flight daemon requests or recordings are interrupted. Refuses remote profiles, non-loopback servers, and unverified PIDs.",
 	},
 	"daemon.stop": {
 		Summary:  "Alias for 'daemon shutdown'. Asks the running daemon to exit cleanly.",

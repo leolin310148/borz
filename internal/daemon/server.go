@@ -29,6 +29,9 @@ type ServerOptions struct {
 	Token   string
 	CDPHost string
 	CDPPort int
+	// Profile is the normalized borz profile identity exposed to extension
+	// clients. Empty is normalized to "default" for compatibility.
+	Profile string
 
 	// CloseOwnedBrowser closes the CDP browser during daemon shutdown. It is
 	// set only by the local client after discovery proves that the endpoint
@@ -82,6 +85,9 @@ func NewServer(opts ServerOptions) *Server {
 	}
 	if opts.Port == 0 {
 		opts.Port = config.DaemonPort
+	}
+	if strings.TrimSpace(opts.Profile) == "" {
+		opts.Profile = "default"
 	}
 	tabManager := NewTabStateManager()
 	cdp := NewCdpConnection(opts.CDPHost, opts.CDPPort, tabManager)
@@ -523,6 +529,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	sendJSON(w, 200, map[string]interface{}{
 		"running":             true,
+		"profile":             s.opts.Profile,
 		"cdpConnected":        s.cdp.Connected(),
 		"cdpHost":             s.cdp.Host,
 		"cdpPort":             s.cdp.Port,
@@ -553,6 +560,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	if requestFromLoopback(r) {
 		payload["pid"] = os.Getpid()
 		payload["version"] = s.opts.Version
+		payload["profile"] = s.opts.Profile
 	}
 	sendJSON(w, 200, payload)
 }

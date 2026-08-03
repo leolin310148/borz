@@ -22,10 +22,13 @@ button { margin-top: 12px; padding: 6px 12px; }
 <label>Port
   <input id="port" value="19824">
 </label>
-<label>Token
-  <input id="token" type="password" placeholder="from `borz daemon status`">
+<label>Profile
+  <input id="profile" value="default" placeholder="default, clean, mdt…">
 </label>
-<div class="hint">Run <code>borz daemon status</code> to find the token.</div>
+<label>Token
+  <input id="token" type="password" placeholder="from `borz daemon token --copy`">
+</label>
+<div class="hint" id="token-hint">Run <code>borz daemon token --copy</code>, then paste.</div>
 <button id="save">Save &amp; reconnect</button>
 <button id="record-start">Start recording</button>
 <button id="record-stop">Stop recording</button>

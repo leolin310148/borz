@@ -148,6 +148,42 @@ func TestRestartDaemonPreservingBrowserRefusesMissingNamedProfileState(t *testin
 	}
 }
 
+func TestRestartDaemonPreservingBrowserRecoversFixedPortNamedProfile(t *testing.T) {
+	withRestartStubs(t)
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	if err := os.WriteFile(home+"/profiles.json", []byte(`{"version":1,"profiles":{"work":{"transport":"managed","daemonPort":19827}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = config.SetProfile("") })
+	readCount := 0
+	restartReadDaemonJSON = func() (*protocol.DaemonInfo, error) {
+		readCount++
+		if readCount == 1 {
+			return nil, os.ErrNotExist
+		}
+		return &protocol.DaemonInfo{PID: 777, Host: "127.0.0.1", Port: 19827}, nil
+	}
+	restartDaemonPort = func() (int, error) { return 19827, nil }
+	restartProbeDaemonPort = func(port int) (daemonPortSquatter, bool) {
+		return daemonPortSquatter{PID: 666}, true
+	}
+	killed := 0
+	restartKillDaemon = func(pid int) error { killed = pid; return nil }
+	restartEnsureDaemon = func() error { return nil }
+
+	got, err := RestartDaemonPreservingBrowser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if killed != 666 || got.NewPID != 777 || !got.RecoveredStale {
+		t.Fatalf("killed=%d result=%+v", killed, got)
+	}
+}
+
 func TestRestartDaemonPIDAndLoopbackValidation(t *testing.T) {
 	if err := validateDaemonPID(os.Getpid()); err == nil || !strings.Contains(err.Error(), "current CLI pid") {
 		t.Fatalf("self pid err = %v", err)

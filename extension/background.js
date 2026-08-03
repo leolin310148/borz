@@ -66,6 +66,7 @@ async function getConfig() {
     host: bb.host || DEFAULT_HOST,
     port: bb.port || DEFAULT_PORT,
     token: bb.token || "",
+    profile: (bb.profile || "default").trim() || "default",
   };
 }
 
@@ -80,9 +81,9 @@ async function connect() {
     connectTimer = null;
   }
   const cfg = await getConfig();
-  const url = `ws://${cfg.host}:${cfg.port}/v1/ext/ws${
-    cfg.token ? `?token=${encodeURIComponent(cfg.token)}` : ""
-  }`;
+  const query = new URLSearchParams({ profile: cfg.profile });
+  if (cfg.token) query.set("token", cfg.token);
+  const url = `ws://${cfg.host}:${cfg.port}/v1/ext/ws?${query}`;
   try {
     ws = new WebSocket(url);
   } catch (err) {

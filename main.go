@@ -50,7 +50,7 @@ var cliValueFlags = []string{
 	"-d", "--depth", "-s", "--selector", "--filter", "--method", "--status", "--id",
 	"--header", "--body",
 	"--profile", "--tab", "--jq", "--port", "--since", "--host", "--token", "--url",
-	"--cdp-host", "--cdp-port", "--idle-tab-timeout", "--max-tabs", "--file", "--wait-for",
+	"--cdp-host", "--cdp-port", "--daemon-port", "--daemon-token", "--idle-tab-timeout", "--max-tabs", "--file", "--wait-for",
 	"--timeout", "--pre-delay", "--post-delay",
 	"--modifiers", "--commands",
 	"--lines",
@@ -68,7 +68,7 @@ var cliValueFlagSet = makeFlagSet(cliValueFlags)
 
 var cliBoolFlags = []string{
 	"-i", "-c",
-	"--all", "--baked", "--check", "--clear", "--close-owned-browser", "--compact", "--diff", "--ensure-browser", "--focused",
+	"--all", "--all-profiles", "--baked", "--check", "--clear", "--close-owned-browser", "--compact", "--copy", "--diff", "--ensure-browser", "--focused",
 	"--force", "--help", "--interactive", "--json", "--lossless", "--managed",
 	"--mask-by-default", "--mobile", "--new", "--no-auto-await", "--no-check",
 	"--no-touch", "--paste", "--recover", "--recursive", "--remote", "--reset", "--save-as",
@@ -715,7 +715,7 @@ func main() {
 
 	// --- Extension ---
 	case "extension":
-		handleExtension(cmdArgs, jsonOutput)
+		handleExtension(cmdArgs, jsonOutput, args)
 
 	// --- Recording ---
 	case "record":
@@ -1265,6 +1265,8 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 		}
 		out, _ := json.MarshalIndent(json.RawMessage(raw), "", "  ")
 		fmt.Println(string(out))
+	case "token":
+		handleDaemonToken(rawArgs)
 	case "shutdown", "stop":
 		if url, isRemote := remoteProfileURL(); isRemote {
 			fatal(remoteProfileLifecycleNote("daemon", url))
@@ -1406,15 +1408,21 @@ func startDaemonForeground(rawArgs []string) {
 			}
 		}
 	}
-	if !portFlagSet && config.Profile() != "" {
+	if !portFlagSet {
 		if p, err := client.DaemonPortForProfile(); err == nil {
 			port = p
 		}
 	}
 
-	token, err := randomHex(16)
-	if err != nil {
-		fatal(fmt.Sprintf("generate daemon auth token: %v", err))
+	token := ""
+	if target, targetErr := client.ActiveTarget(); targetErr == nil {
+		token = strings.TrimSpace(target.DaemonToken)
+	}
+	if token == "" {
+		token, err = randomHex(16)
+		if err != nil {
+			fatal(fmt.Sprintf("generate daemon auth token: %v", err))
+		}
 	}
 
 	srv := newDaemonServer(daemon.ServerOptions{
@@ -1423,6 +1431,7 @@ func startDaemonForeground(rawArgs []string) {
 		Token:               token,
 		CDPHost:             cdpHost,
 		CDPPort:             cdpPort,
+		Profile:             borzprofile.Normalize(config.Profile()),
 		CloseOwnedBrowser:   hasFlag(rawArgs, "--close-owned-browser"),
 		IdleTabCloseMinutes: resolveIdleTabTimeout(rawArgs),
 		MaxTabs:             resolveMaxTabs(rawArgs),
@@ -1555,6 +1564,7 @@ func serverOptionsFromArgs(rawArgs []string, defaultHost string) (daemon.ServerO
 		Token:               token,
 		CDPHost:             cdpHost,
 		CDPPort:             cdpPort,
+		Profile:             borzprofile.Normalize(config.Profile()),
 		IdleTabCloseMinutes: resolveIdleTabTimeout(rawArgs),
 		MaxTabs:             resolveMaxTabs(rawArgs),
 		Version:             version,
@@ -2539,7 +2549,9 @@ Tab Management:
   tab events [--tail]           Browser-level tab events (extension required)
 
 Browser-level (Chrome extension):
-  extension status              Connected extension capabilities
+  extension status|ping         Inspect or verify selected profile extension
+  extension status --all-profiles
+                                Audit extension connections without starting browsers
   cookies all [domain]          Cookies across every domain
   bookmarks tree/search/...     Browser bookmarks
   browser-history search        Browser history (Chrome-level)
@@ -2561,7 +2573,8 @@ Utility:
   feedback <message>            Record usage feedback (friction, missing
                                 features, ideas) to ~/.borz/feedback.jsonl
   feedback list|path            Review recorded feedback
-  daemon [shutdown]             Start/stop the local daemon
+  daemon [status|token|restart|shutdown]
+                                Inspect or control the selected local daemon
   browser status|adopt          Inspect or repair which Chrome borz owns
   server --host H --port P --token T [shutdown]
                                 Start remote-accessible HTTP server

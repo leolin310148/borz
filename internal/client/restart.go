@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/leolin310148/borz/internal/config"
+	borzprofile "github.com/leolin310148/borz/internal/profile"
 )
 
 // DaemonRestartResult is the machine-readable result of replacing only the
@@ -23,7 +24,7 @@ type DaemonRestartResult struct {
 var (
 	restartReadDaemonJSON  = ReadDaemonJSON
 	restartProbeDaemonPort = probeDaemonPort
-	restartDaemonPort      = daemonPortForProfile
+	restartDaemonPort      = DaemonPortForProfile
 	restartKillDaemon      = KillDaemon
 	restartEnsureDaemon    = EnsureDaemon
 )
@@ -52,7 +53,15 @@ func RestartDaemonPreservingBrowser() (*DaemonRestartResult, error) {
 		result.PreviousPID = info.PID
 	case errors.Is(err, os.ErrNotExist):
 		if config.Profile() != "" {
-			return nil, fmt.Errorf("cannot safely locate a named-profile daemon after %s is missing; if the daemon is confirmed stopped, run any browser command to start it again", config.DaemonJSONPath())
+			// Resolve the declaration directly so a profile edited earlier in the
+			// same process cannot be hidden by ActiveTarget's connection cache.
+			target, targetErr := borzprofile.ResolveTarget(config.Profile())
+			if targetErr != nil {
+				return nil, fmt.Errorf("resolve named profile: %w", targetErr)
+			}
+			if target.DaemonPort == 0 {
+				return nil, fmt.Errorf("cannot safely locate a named-profile daemon with a dynamic port after %s is missing; configure --daemon-port, or if the daemon is confirmed stopped, run any browser command to start it again", config.DaemonJSONPath())
+			}
 		}
 		port, portErr := restartDaemonPort()
 		if portErr != nil {

@@ -259,6 +259,74 @@ func TestProfileCLIMaxTabs(t *testing.T) {
 	}
 }
 
+func TestProfileCLIFixedDaemonEndpoint(t *testing.T) {
+	setupProfileHome(t)
+	out := runProfileCLI(t, "profile", "add", "clean", "--managed", "--daemon-port", "19827", "--daemon-token", "stable-secret")
+	if !strings.Contains(out, `Profile "clean" added`) {
+		t.Fatalf("add output = %q", out)
+	}
+	registry, err := borzprofile.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := registry.Profiles["clean"]
+	if entry.DaemonPort != 19827 || entry.DaemonToken != "stable-secret" {
+		t.Fatalf("stored daemon endpoint = %+v", entry)
+	}
+
+	list := runProfileCLI(t, "profile", "list")
+	if !strings.Contains(list, "daemonPort=19827") || !strings.Contains(list, "stable daemon token") || strings.Contains(list, "stable-secret") {
+		t.Fatalf("list output = %q", list)
+	}
+	show := runProfileCLI(t, "profile", "show", "clean")
+	if !strings.Contains(show, "Daemon port:      19827 (fixed)") || !strings.Contains(show, "configured (stable)") || strings.Contains(show, "stable-secret") {
+		t.Fatalf("show output = %q", show)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(runProfileCLI(t, "profile", "show", "clean", "--json")), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["daemonPort"] != float64(19827) || payload["daemonTokenConfigured"] != true {
+		t.Fatalf("show payload = %+v", payload)
+	}
+
+	// Local transport switches preserve the endpoint; remote drops it.
+	runProfileCLI(t, "profile", "set", "clean", "--cdp", "127.0.0.1:9222", "--no-check")
+	registry, _ = borzprofile.Load()
+	entry = registry.Profiles["clean"]
+	if entry.DaemonPort != 19827 || entry.DaemonToken != "stable-secret" {
+		t.Fatalf("cdp switch lost daemon endpoint: %+v", entry)
+	}
+	out = runProfileCLI(t, "profile", "set", "clean", "--daemon-port", "dynamic", "--daemon-token", "dynamic")
+	if !strings.Contains(out, "daemon restart") || !strings.Contains(out, "Chrome and tabs are preserved") {
+		t.Fatalf("endpoint update output = %q", out)
+	}
+	registry, _ = borzprofile.Load()
+	entry = registry.Profiles["clean"]
+	if entry.DaemonPort != 0 || entry.DaemonToken != "" {
+		t.Fatalf("dynamic reset = %+v", entry)
+	}
+
+	out = runProfileCLI(t, "profile", "set", "clean", "--managed", "--daemon-port", "19827", "--daemon-token", "generate", "--json")
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["daemonRestartRequired"] != true {
+		t.Fatalf("endpoint update payload = %+v", payload)
+	}
+	registry, _ = borzprofile.Load()
+	entry = registry.Profiles["clean"]
+	if len(entry.DaemonToken) != 32 {
+		t.Fatalf("generated token length = %d", len(entry.DaemonToken))
+	}
+	runProfileCLI(t, "profile", "set", "clean", "--remote", "http://127.0.0.1:19824", "--no-check")
+	registry, _ = borzprofile.Load()
+	entry = registry.Profiles["clean"]
+	if entry.DaemonPort != 0 || entry.DaemonToken != "" {
+		t.Fatalf("remote switch retained daemon endpoint: %+v", entry)
+	}
+}
+
 func TestProfileCLIDescription(t *testing.T) {
 	setupProfileHome(t)
 	descOf := func(name string) string {

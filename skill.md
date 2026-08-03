@@ -67,6 +67,8 @@ borz console --filter error
 borz fetch <url>                           # authenticated HTTP via page session
 borz tab                                   # list tabs
 borz extension status                      # extension connection + capabilities
+borz extension ping                        # extension RPC round-trip for selected profile
+borz extension status --all-profiles       # audit profiles without starting browsers
 borz bookmarks search github               # Chrome bookmarks (extension)
 borz browser-history search github --limit 20
 borz downloads list --limit 20
@@ -136,6 +138,7 @@ Pull community adapters: `borz site update` (CLI only — triggers a git pull, i
 - "a native confirm/alert/prompt dialog is open on this tab and is blocking the page" → the page popped a dialog nobody answered, which freezes the renderer. `borz dialog status` (`browser_dialog {command: "status"}`) shows its text; `borz dialog accept` / `dismiss` releases it. To avoid it, arm the handler *before* the click that triggers the dialog — arming is one-shot.
 - Element ref not found → page changed between snapshot and action. Re-snapshot.
 - Remote `server` refuses to start → non-loopback bind without `--token`. Set `BORZ_TOKEN` or pass `--token`.
+- Extension popup setup for a named local profile → pin its endpoint once with `borz profile set <name> --daemon-port <port> --daemon-token generate`, apply it with `borz --profile <name> daemon restart`, then paste `borz --profile <name> daemon token --copy` and the exact profile name into the popup. Verify with `borz --profile <name> extension ping`; audit all declared profiles with `borz extension status --all-profiles`. A 401 is a token problem, 409 is a profile mismatch, and only a network failure means the daemon is unreachable.
 - Hit a papercut (confusing command, missing flag, unhelpful output)? Record it: `borz feedback "<what was awkward>" [--category ux|bug|feature] [--command <cmd>]`. It appends to the local file `~/.borz/feedback.jsonl` for the maintainer to review — takes one command, do it whenever borz slows you down.
 
 ## Further reading

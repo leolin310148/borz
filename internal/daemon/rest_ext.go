@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/leolin310148/borz/internal/daemon/extbridge"
@@ -15,17 +16,24 @@ import (
 // level tab/window events, bookmarks, history, downloads, etc.
 func (s *Server) registerExtRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/ext/ws", func(w http.ResponseWriter, r *http.Request) {
+		if !s.validateExtensionProfile(w, r) {
+			return
+		}
 		s.extHub.ServeWS(w, r)
 	})
 
 	mux.HandleFunc("/v1/ext/status", func(w http.ResponseWriter, r *http.Request) {
+		if !s.validateExtensionProfile(w, r) {
+			return
+		}
 		sendJSON(w, 200, map[string]any{
 			"connected":  s.extHub.Connected(),
 			"latest_seq": s.extHub.LatestSeq(),
+			"profile":    s.opts.Profile,
 		})
 	})
 
-	mux.HandleFunc("/v1/ext/capabilities", s.extGet("capabilities", nil))
+	mux.HandleFunc("/v1/ext/capabilities", s.extCapabilities)
 	mux.HandleFunc("/v1/ext/call", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			sendJSON(w, 405, map[string]string{"error": "Method not allowed"})
@@ -154,6 +162,37 @@ func (s *Server) registerExtRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/ext/tabs/discard", s.extPost("tabs.discard"))
 	mux.HandleFunc("/v1/ext/tabs/reload", s.extPost("tabs.reload"))
 	mux.HandleFunc("/v1/ext/tab-groups/query", s.extGet("tabGroups.query", nil))
+}
+
+func (s *Server) validateExtensionProfile(w http.ResponseWriter, r *http.Request) bool {
+	received := strings.TrimSpace(r.URL.Query().Get("profile"))
+	if received == "" || received == s.opts.Profile {
+		return true
+	}
+	sendJSON(w, http.StatusConflict, map[string]any{
+		"error":           "extension profile mismatch",
+		"expectedProfile": s.opts.Profile,
+		"receivedProfile": received,
+	})
+	return false
+}
+
+func (s *Server) extCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		sendJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	raw, err := s.extHub.Request("capabilities", nil, 10*time.Second)
+	if err != nil {
+		sendJSON(w, extErrStatus(err), map[string]string{"error": err.Error()})
+		return
+	}
+	var payload map[string]any
+	if json.Unmarshal(raw, &payload) != nil || payload == nil {
+		payload = map[string]any{"capabilities": json.RawMessage(raw)}
+	}
+	payload["profile"] = s.opts.Profile
+	sendJSON(w, http.StatusOK, payload)
 }
 
 func (s *Server) extGet(method string, build func(*http.Request) map[string]any) http.HandlerFunc {

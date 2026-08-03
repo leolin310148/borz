@@ -507,7 +507,7 @@ func EnsureDaemon() error {
 		return fmt.Errorf("cannot find self executable: %w", err)
 	}
 
-	daemonPort, err := daemonPortForProfile()
+	daemonPort, err := daemonPortForTarget(target)
 	if err != nil {
 		return err
 	}
@@ -822,6 +822,26 @@ func GetJSON(path string, timeout time.Duration) (json.RawMessage, error) {
 	return httpJSON("GET", path, cachedInfo, nil, timeout)
 }
 
+// GetJSONForProfile calls a GET endpoint for an explicitly named profile
+// without changing package-global selection and without auto-starting a local
+// daemon. It is used by aggregate diagnostics where observing an offline
+// profile must not launch Chrome as a side effect.
+func GetJSONForProfile(profileName, path string, timeout time.Duration) (json.RawMessage, error) {
+	profileName = profile.Normalize(profileName)
+	target, err := profile.ResolveTarget(profileName)
+	if err != nil {
+		return nil, err
+	}
+	if target.Kind == profile.TransportRemote {
+		return httpJSONEndpoint("GET", target.Remote.URL, target.Remote.Token, path, nil, timeout)
+	}
+	info := ReadDaemonJSONFor(profileName)
+	if info == nil {
+		return nil, fmt.Errorf("daemon is not running")
+	}
+	return httpJSON("GET", path, info, nil, timeout)
+}
+
 // PostJSON calls a POST endpoint on the daemon and returns the raw response body.
 // Used by REST endpoints that don't fit the /command protocol.
 func PostJSON(path string, body interface{}, timeout time.Duration) (json.RawMessage, error) {
@@ -1023,7 +1043,10 @@ func freeTCPPort() (int, error) {
 	return port, nil
 }
 
-func daemonPortForProfile() (int, error) {
+func daemonPortForTarget(target profile.Target) (int, error) {
+	if target.DaemonPort != 0 {
+		return target.DaemonPort, nil
+	}
 	if config.Profile() == "" {
 		return config.DaemonPort, nil
 	}
@@ -1037,7 +1060,14 @@ func daemonPortForProfile() (int, error) {
 // DaemonPortForProfile returns the daemon listen port to use when starting a
 // new local daemon for the selected profile.
 func DaemonPortForProfile() (int, error) {
-	return daemonPortForProfile()
+	target, err := ActiveTarget()
+	if err != nil {
+		return 0, err
+	}
+	if target.Kind == profile.TransportRemote {
+		return 0, fmt.Errorf("profile %q is remote; it has no local daemon port", profile.Normalize(config.Profile()))
+	}
+	return daemonPortForTarget(target)
 }
 
 func cdpPortForProfile() (int, error) {

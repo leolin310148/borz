@@ -145,10 +145,27 @@ This fetches `borz-extension.zip` from the latest GitHub release, verifies its S
 
 Re-run `borz extension update` after upgrading the binary to keep the extension in lockstep. The extension version mirrors the borz release tag.
 
+The popup stores four values: **Host**, **Port**, **Token**, and **Profile**.
+For a named local profile, pin the bridge endpoint once and copy the token that
+the daemon actually accepts:
+
+```bash
+borz profile set clean --daemon-port 19827 --daemon-token generate
+borz --profile clean daemon restart       # apply endpoint changes; preserves Chrome
+borz --profile clean daemon token --copy  # paste into popup; set Profile = clean
+borz --profile clean extension ping
+```
+
+The popup distinguishes authentication failure, profile mismatch, and a truly
+unreachable daemon. A profile mismatch is rejected during the WebSocket
+handshake instead of silently wiring an extension to the wrong browser.
+
 Commands that *don't* require the extension keep working without it. Extension-backed commands tell you when it is missing:
 
 ```bash
 borz extension status             # connected extension capabilities
+borz extension ping               # extension RPC round-trip
+borz extension status --all-profiles # audit every profile without starting Chrome
 borz help extension call          # raw RPC details and examples
 borz extension call <method> '{}' # raw extension RPC escape hatch
 borz cookies all [domain]          # all-domain cookie store
@@ -370,8 +387,9 @@ borz profile list                       # name, transport, target, description (
 borz profile show mini
 borz profile add mini --remote http://100.64.0.1:13333 --token "$BORZ_TOKEN" \
     --description "Mac Mini's logged-in Chrome"
-borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 --max-tabs 30
-borz profile add clean --managed
+borz profile add mdt --cdp 127.0.0.1:19845 --daemon-port 19826 --daemon-token generate \
+    --idle-tab-timeout 0 --max-tabs 30
+borz profile add clean --managed --daemon-port 19827 --daemon-token generate
 borz profile set mini --token "$NEW_TOKEN"
 borz profile set mdt --description "MDT VPN Chrome (SSH tunnel); work sites only"
 borz profile set mdt --description ""             # drop the description
@@ -398,7 +416,14 @@ In `profiles.json` a cdp endpoint is spelled `cdpUrl`, or alternatively
       "token": "...",
       "description": "Mac Mini's logged-in Chrome"
     },
-    "mdt":  { "transport": "cdp", "cdpUrl": "http://127.0.0.1:19845", "idleTabTimeout": 0, "maxTabs": 30 }
+    "mdt":  {
+      "transport": "cdp",
+      "cdpUrl": "http://127.0.0.1:19845",
+      "daemonPort": 19826,
+      "daemonToken": "...",
+      "idleTabTimeout": 0,
+      "maxTabs": 30
+    }
   }
 }
 ```
@@ -420,6 +445,13 @@ Behaviour worth knowing:
   silently starting a managed Chrome.
 - A `remote` profile runs **no local daemon**; `borz daemon status --profile
   mini` says so instead of pretending one exists.
+- `daemonPort` and `daemonToken` optionally pin a managed/cdp profile's local
+  daemon endpoint across restarts. This is recommended when its Chrome
+  extension must reconnect without editing the popup each time. Use
+  `--daemon-token generate` to create a secret, `daemon token --copy` to copy
+  the token accepted right now, and `daemon restart` after changing either
+  field. `profile list`/`show` report whether a stable token exists but never
+  print it. Pass `dynamic` to `profile set` to clear either setting.
 - An auto-started daemon owns the managed Chrome instance it discovered or
   launched, and closes that instance on daemon shutdown. A `cdp` profile only
   attaches to an external browser, so shutting down its daemon never closes

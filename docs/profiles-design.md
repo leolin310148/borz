@@ -178,6 +178,8 @@ borz profile add <name> --remote <url> --token <t>
 borz profile add <name> --cdp <url|host:port>
 borz profile add <name> --managed
 borz profile set <name> --token <t>     # edit fields in place
+borz profile set <name> --daemon-port <p|dynamic>       # stable local bridge port
+borz profile set <name> --daemon-token <t|generate|dynamic> # stable local bridge token
 borz profile add <name> --cdp <hp> --idle-tab-timeout 0   # never reap this target's tabs
 borz profile set <name> --idle-tab-timeout <m|default>    # 'default' clears the field
 borz profile set <name> --max-tabs <n|default>            # 0 means unlimited
@@ -188,6 +190,12 @@ borz profile rm <name>
 - `profile add` probes the target (`/status` for remote, `/json/version` for
   cdp) unless `--no-check`, matching `client setup --no-check`.
 - Never print a token; `show`/`list` redact.
+- `daemonPort`/`daemonToken` apply only to managed/cdp profiles. Named profiles
+  remain dynamic when absent. A fixed port lets restart recover when
+  daemon.json is missing; a fixed token lets the Chrome extension reconnect
+  after a daemon restart. `daemon token [--copy]` is the explicit secret-read
+  command and prefers the running daemon's actual token until restart applies
+  a newly configured value.
 - Name validation reuses `config.SetProfile`'s rules (single portable path
   segment) — a profile name still becomes a directory for `managed`/`cdp`.
 

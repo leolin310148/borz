@@ -233,54 +233,32 @@ func (c *CdpConnection) Connect() error {
 	fmt.Fprintf(os.Stderr, "CDP connect attempt: %s\n", versionURL)
 	c.log("info", "cdp_connect_started", observability.Fields{})
 	httpClient := &http.Client{Timeout: 5 * time.Second}
-	resp, err := httpClient.Get(versionURL)
+	webSocketURL, err := fetchCDPWebSocketURL(httpClient, versionURL, c.Host, c.Port)
 	if err != nil && c.maybeEnsureBrowser() {
-		resp, err = httpClient.Get(versionURL)
+		webSocketURL, err = fetchCDPWebSocketURL(httpClient, versionURL, c.Host, c.Port)
 	}
 	if err != nil {
 		c.setLastError(err.Error())
-		err = fmt.Errorf("cannot reach Chrome CDP at %s:%d: %w", c.Host, c.Port, err)
-		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
-		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
-		c.completeReady(err)
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		err := fmt.Errorf("cannot reach Chrome CDP at %s:%d: /json/version returned HTTP %d", c.Host, c.Port, resp.StatusCode)
-		c.setLastError(err.Error())
-		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
-		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
-		c.completeReady(err)
-		return err
-	}
-	body, _ := io.ReadAll(resp.Body)
-
-	var version struct {
-		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-	}
-	if err := json.Unmarshal(body, &version); err != nil {
-		c.setLastError("invalid JSON from /json/version")
-		err = fmt.Errorf("invalid CDP version response: %w", err)
-		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
-		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
-		c.completeReady(err)
-		return err
-	}
-	if version.WebSocketDebuggerURL == "" {
-		c.setLastError("missing webSocketDebuggerUrl")
-		err := fmt.Errorf("CDP endpoint missing webSocketDebuggerUrl")
 		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
 		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
 		c.completeReady(err)
 		return err
 	}
 
-	// Connect WebSocket
-	ws, _, err := websocket.DefaultDialer.Dial(version.WebSocketDebuggerURL, nil)
+	// A dying Chrome can still answer /json/version while its browser
+	// WebSocket is already gone. Treat that handshake failure like any other
+	// unreachable managed endpoint so --ensure-browser can replace it.
+	ws, _, err := websocket.DefaultDialer.Dial(webSocketURL, nil)
+	if err != nil && c.maybeEnsureBrowser() {
+		if retryURL, fetchErr := fetchCDPWebSocketURL(httpClient, versionURL, c.Host, c.Port); fetchErr != nil {
+			err = fetchErr
+		} else {
+			ws, _, err = websocket.DefaultDialer.Dial(retryURL, nil)
+		}
+	}
 	if err != nil {
-		c.setLastError(err.Error())
 		err = fmt.Errorf("WebSocket dial failed: %w", err)
+		c.setLastError(err.Error())
 		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
 		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
 		c.completeReady(err)
@@ -339,6 +317,31 @@ func (c *CdpConnection) Connect() error {
 	c.completeReady(nil)
 
 	return nil
+}
+
+func fetchCDPWebSocketURL(httpClient *http.Client, versionURL, host string, port int) (string, error) {
+	resp, err := httpClient.Get(versionURL)
+	if err != nil {
+		return "", fmt.Errorf("cannot reach Chrome CDP at %s:%d: %w", host, port, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("cannot reach Chrome CDP at %s:%d: /json/version returned HTTP %d", host, port, resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read CDP version response: %w", err)
+	}
+	var version struct {
+		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+	}
+	if err := json.Unmarshal(body, &version); err != nil {
+		return "", fmt.Errorf("invalid CDP version response: %w", err)
+	}
+	if version.WebSocketDebuggerURL == "" {
+		return "", fmt.Errorf("CDP endpoint missing webSocketDebuggerUrl")
+	}
+	return version.WebSocketDebuggerURL, nil
 }
 
 // WaitUntilReady blocks until CDP connection is established.
