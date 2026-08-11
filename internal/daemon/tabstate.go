@@ -50,8 +50,13 @@ type TabState struct {
 	// nil) on text-mode or when the tree build fails.
 	PrevDiffSnapshot *DiffSnapshot
 
-	// Active frame ID for iframe navigation, empty = main frame.
-	ActiveFrameID string
+	// activeFrameID is the interaction/eval frame, empty = main frame.
+	activeFrameID string
+	// FrameExecutionContexts maps frame IDs to their current default Runtime
+	// execution context. Runtime contexts are recreated on navigation, so CDP
+	// lifecycle events keep this map fresh.
+	FrameExecutionContexts map[string]int64
+	ExecutionContextFrames map[int64]string
 
 	// Dialog auto-handler config.
 	DialogHandler *DialogHandler
@@ -222,16 +227,70 @@ func (ts *TabState) GetVisibilityOverride() (state, scriptID string) {
 
 func newTabState(targetID, shortID string, nextSeq func() int) *TabState {
 	return &TabState{
-		TargetID:        targetID,
-		ShortID:         shortID,
-		NetworkRequests: NewRingBuffer[protocol.NetworkRequestInfo](networkCapacity),
-		ConsoleMessages: NewRingBuffer[protocol.ConsoleMessageInfo](consoleCapacity),
-		JSErrors:        NewRingBuffer[protocol.JSErrorInfo](errorsCapacity),
-		DialogEvents:    NewRingBuffer[protocol.DialogEventInfo](dialogCapacity),
-		Refs:            make(map[string]*protocol.RefInfo),
-		nextSeq:         nextSeq,
-		CreatedAt:       time.Now(),
+		TargetID:               targetID,
+		ShortID:                shortID,
+		NetworkRequests:        NewRingBuffer[protocol.NetworkRequestInfo](networkCapacity),
+		ConsoleMessages:        NewRingBuffer[protocol.ConsoleMessageInfo](consoleCapacity),
+		JSErrors:               NewRingBuffer[protocol.JSErrorInfo](errorsCapacity),
+		DialogEvents:           NewRingBuffer[protocol.DialogEventInfo](dialogCapacity),
+		Refs:                   make(map[string]*protocol.RefInfo),
+		FrameExecutionContexts: make(map[string]int64),
+		ExecutionContextFrames: make(map[int64]string),
+		nextSeq:                nextSeq,
+		CreatedAt:              time.Now(),
 	}
+}
+
+func (ts *TabState) SetFrameExecutionContext(frameID string, contextID int64) {
+	if frameID == "" || contextID == 0 {
+		return
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if previous, ok := ts.FrameExecutionContexts[frameID]; ok {
+		delete(ts.ExecutionContextFrames, previous)
+	}
+	ts.FrameExecutionContexts[frameID] = contextID
+	ts.ExecutionContextFrames[contextID] = frameID
+}
+
+func (ts *TabState) SetActiveFrame(frameID string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.activeFrameID = frameID
+}
+
+func (ts *TabState) ActiveFrame() string {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.activeFrameID
+}
+
+func (ts *TabState) FrameExecutionContext(frameID string) (int64, bool) {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	contextID, ok := ts.FrameExecutionContexts[frameID]
+	return contextID, ok
+}
+
+func (ts *TabState) RemoveExecutionContext(contextID int64) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	frameID, ok := ts.ExecutionContextFrames[contextID]
+	if !ok {
+		return
+	}
+	delete(ts.ExecutionContextFrames, contextID)
+	if ts.FrameExecutionContexts[frameID] == contextID {
+		delete(ts.FrameExecutionContexts, frameID)
+	}
+}
+
+func (ts *TabState) ClearExecutionContexts() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.FrameExecutionContexts = make(map[string]int64)
+	ts.ExecutionContextFrames = make(map[int64]string)
 }
 
 // RecordAction increments global seq and records it as this tab's last action.

@@ -98,9 +98,10 @@ func TestDispatch_Open_WaitFor_Timeout(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://ex.test", "Existing")
 	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
-		// Always report "not found" so the wait times out.
+		// Always report "not found" plus diagnostic page state so the wait
+		// timeout can explain what Chrome actually rendered.
 		return map[string]interface{}{
-			"result": map[string]interface{}{"type": "boolean", "value": false},
+			"result": map[string]interface{}{"type": "string", "value": `{"found":false,"href":"https://ex.test/login","title":"Login","readyState":"complete"}`},
 		}, nil
 	})
 	c := connectCdp(t, f)
@@ -114,6 +115,11 @@ func TestDispatch_Open_WaitFor_Timeout(t *testing.T) {
 	}
 	if !strings.Contains(resp.Error, "timeout") {
 		t.Fatalf("expected timeout error, got: %q", resp.Error)
+	}
+	for _, want := range []string{`current URL "https://ex.test/login"`, `title "Login"`, `readyState "complete"`} {
+		if !strings.Contains(resp.Error, want) {
+			t.Fatalf("timeout error missing %q: %q", want, resp.Error)
+		}
 	}
 }
 

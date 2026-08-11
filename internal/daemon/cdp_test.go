@@ -190,6 +190,49 @@ func TestHandleDetached_CleansUp(t *testing.T) {
 	}))
 }
 
+func TestHandleDetached_StaleSessionKeepsSelectedTab(t *testing.T) {
+	c := NewCdpConnection("h", 1, NewTabStateManager())
+	c.TabManager.AddTab("T1")
+	c.sessions.Store("T1", "S-new")
+	c.attached.Store("S-old", "T1")
+	c.attached.Store("S-new", "T1")
+	c.SetCurrentTargetID("T1")
+
+	c.handleDetached(rawMsg(t, map[string]interface{}{
+		"params": map[string]interface{}{"sessionId": "S-old"},
+	}))
+
+	if got, ok := c.sessions.Load("T1"); !ok || got != "S-new" {
+		t.Fatalf("new session was lost: value=%v ok=%v", got, ok)
+	}
+	if c.TabManager.GetTab("T1") == nil {
+		t.Fatal("stale detach removed live tab state")
+	}
+	if got := c.GetCurrentTargetID(); got != "T1" {
+		t.Fatalf("stale detach cleared selected tab: %q", got)
+	}
+}
+
+func TestHandleDetached_FallsBackToOtherAttachedSession(t *testing.T) {
+	c := NewCdpConnection("h", 1, NewTabStateManager())
+	c.TabManager.AddTab("T1")
+	c.sessions.Store("T1", "S-current")
+	c.attached.Store("S-current", "T1")
+	c.attached.Store("S-other", "T1")
+	c.SetCurrentTargetID("T1")
+
+	c.handleDetached(rawMsg(t, map[string]interface{}{
+		"params": map[string]interface{}{"sessionId": "S-current"},
+	}))
+
+	if got, ok := c.sessions.Load("T1"); !ok || got != "S-other" {
+		t.Fatalf("replacement session = %v, ok=%v", got, ok)
+	}
+	if got := c.GetCurrentTargetID(); got != "T1" {
+		t.Fatalf("replacement detach cleared selected tab: %q", got)
+	}
+}
+
 func TestHandleTargetCreated_NonPageIgnored(t *testing.T) {
 	c := NewCdpConnection("h", 1, NewTabStateManager())
 	// background_page should be ignored — no AttachAndEnable goroutine spawned.
@@ -207,6 +250,7 @@ func TestHandleTargetDestroyed_CleansUp(t *testing.T) {
 	c.TabManager.AddTab("T1")
 	c.sessions.Store("T1", "S1")
 	c.attached.Store("S1", "T1")
+	c.attached.Store("S-stale", "T1")
 	c.SetCurrentTargetID("T1")
 
 	c.handleTargetDestroyed(rawMsg(t, map[string]interface{}{
@@ -218,6 +262,9 @@ func TestHandleTargetDestroyed_CleansUp(t *testing.T) {
 	}
 	if _, ok := c.attached.Load("S1"); ok {
 		t.Fatal("attached should be cleared")
+	}
+	if _, ok := c.attached.Load("S-stale"); ok {
+		t.Fatal("stale attached session should be cleared")
 	}
 	if c.TabManager.GetTab("T1") != nil {
 		t.Fatal("tab should be removed")

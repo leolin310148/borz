@@ -678,10 +678,15 @@ func clientBoolPtr(v bool) *bool { return &v }
 
 // SendCommand sends a command to the daemon.
 func SendCommand(req *protocol.Request) (*protocol.Response, error) {
+	baseTimeout := time.Duration(config.CommandTimeout) * time.Second
+	// Leave a small transport margin after the daemon's request-specific
+	// deadline so the structured browser/wait error wins the race against the
+	// HTTP client's generic timeout.
+	requestTimeout := protocol.CommandTimeoutBudget(req, baseTimeout) + 2*time.Second
 	if cfg, enabled, err := EnabledRemoteConfig(); err != nil {
 		return nil, err
 	} else if enabled {
-		raw, err := httpJSONEndpoint("POST", cfg.URL, cfg.Token, "/command", req, time.Duration(config.CommandTimeout)*time.Second)
+		raw, err := httpJSONEndpoint("POST", cfg.URL, cfg.Token, "/command", req, requestTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -703,7 +708,7 @@ func SendCommand(req *protocol.Request) (*protocol.Response, error) {
 		cachedInfo = info
 	}
 
-	raw, err := httpJSON("POST", "/command", cachedInfo, req, time.Duration(config.CommandTimeout)*time.Second)
+	raw, err := httpJSON("POST", "/command", cachedInfo, req, requestTimeout)
 	if err != nil {
 		return nil, err
 	}

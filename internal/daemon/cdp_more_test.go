@@ -134,7 +134,20 @@ func TestCdpEvaluatePageCommandAndReadLoopBranches(t *testing.T) {
 		t.Fatalf("Evaluate ok raw=%s err=%v", raw, err)
 	}
 	tab := c.TabManager.AddTab("T1")
-	tab.ActiveFrameID = "FRAME1"
+	tab.SetActiveFrame("FRAME1")
+	tab.SetFrameExecutionContext("FRAME1", 42)
+	if _, err := c.Evaluate("T1", "document.title", true); err != nil {
+		t.Fatalf("Evaluate in active frame: %v", err)
+	}
+	foundContextParam := false
+	for _, call := range f.Calls() {
+		if call.Method == "Runtime.evaluate" && strings.Contains(string(call.Params), `"contextId":42`) {
+			foundContextParam = true
+		}
+	}
+	if !foundContextParam {
+		t.Fatalf("Evaluate did not use active frame context, calls=%+v", f.Calls())
+	}
 	if _, err := c.PageCommand("T1", "Runtime.evaluate", nil); err != nil {
 		t.Fatalf("PageCommand nil params: %v", err)
 	}
@@ -153,6 +166,75 @@ func TestCdpEvaluatePageCommandAndReadLoopBranches(t *testing.T) {
 	c.Disconnect()
 	if c.Connected() {
 		t.Fatal("Disconnect should clear connected state")
+	}
+}
+
+func TestHandleSessionEventTracksFrameExecutionContexts(t *testing.T) {
+	c := NewCdpConnection("h", 1, NewTabStateManager())
+	tab := c.TabManager.AddTab("T1")
+	c.handleSessionEvent("T1", "Runtime.executionContextCreated", rawMsg(t, map[string]interface{}{
+		"params": map[string]interface{}{
+			"context": map[string]interface{}{
+				"id":      77,
+				"auxData": map[string]interface{}{"frameId": "F1", "isDefault": true},
+			},
+		},
+	}))
+	if got, ok := tab.FrameExecutionContext("F1"); !ok || got != 77 {
+		t.Fatalf("frame context = %d, ok=%v", got, ok)
+	}
+
+	c.handleSessionEvent("T1", "Runtime.executionContextDestroyed", rawMsg(t, map[string]interface{}{
+		"params": map[string]interface{}{"executionContextId": 77},
+	}))
+	if _, ok := tab.FrameExecutionContext("F1"); ok {
+		t.Fatal("destroyed execution context remained registered")
+	}
+
+	tab.SetFrameExecutionContext("F2", 88)
+	c.handleSessionEvent("T1", "Runtime.executionContextsCleared", rawMsg(t, map[string]interface{}{
+		"params": map[string]interface{}{},
+	}))
+	if _, ok := tab.FrameExecutionContext("F2"); ok {
+		t.Fatal("cleared execution contexts remained registered")
+	}
+}
+
+func TestEvaluateUsesSiteIsolatedFrameSession(t *testing.T) {
+	f := newFakeCDP(t)
+	f.On("Target.getTargets", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"targetInfos": []interface{}{
+			map[string]interface{}{"targetId": "T1", "type": "page", "url": "https://top.test", "title": "Top"},
+			map[string]interface{}{"targetId": "F-OOPIF", "type": "iframe", "url": "https://frame.test", "title": "Frame"},
+		}}, nil
+	})
+	f.On("Runtime.evaluate", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"result": map[string]interface{}{"type": "string", "value": "frame"}}, nil
+	})
+	c := connectCdp(t, f)
+	parent := c.TabManager.GetTab("T1")
+	parent.SetActiveFrame("F-OOPIF")
+
+	raw, err := c.Evaluate("T1", "location.href", true)
+	if err != nil || string(raw) != `"frame"` {
+		t.Fatalf("OOPIF Evaluate raw=%s err=%v", raw, err)
+	}
+	frameSessionValue, ok := c.sessions.Load("F-OOPIF")
+	if !ok {
+		t.Fatal("OOPIF was not attached on demand")
+	}
+	frameSession := frameSessionValue.(string)
+	if c.TabManager.GetTab("F-OOPIF") != nil {
+		t.Fatal("OOPIF session was incorrectly registered as a page tab")
+	}
+	usedFrameSession := false
+	for _, call := range f.Calls() {
+		if call.Method == "Runtime.evaluate" && call.SessionID == frameSession {
+			usedFrameSession = true
+		}
+	}
+	if !usedFrameSession {
+		t.Fatalf("Evaluate did not use OOPIF session %v, calls=%+v", frameSession, f.Calls())
 	}
 }
 

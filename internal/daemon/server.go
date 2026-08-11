@@ -435,7 +435,7 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 		}
 		s.logCommand(&req, surface, sessionID, started, resp.Success, errorCode)
 		sendJSON(w, 200, resp)
-	case <-time.After(time.Duration(config.CommandTimeout) * time.Second):
+	case <-time.After(protocol.CommandTimeoutBudget(&req, time.Duration(config.CommandTimeout)*time.Second)):
 		s.logCommand(&req, surface, sessionID, started, false, "command_timeout")
 		sendJSON(w, 200, &protocol.Response{
 			ID: req.ID, Success: false, Error: "Command timeout",

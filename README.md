@@ -1190,9 +1190,17 @@ over plain CDP.
 borz frame "#my-iframe"
 borz frame "iframe[name='content']"
 
+# Snapshot/interact/eval now target that frame, including cross-origin frames
+borz eval --unwrap "location.href"
+
 # Switch back to the main frame
 borz frame main
 ```
+
+The selected frame persists per tab. `eval` resolves the frame's default
+execution context (or its site-isolated iframe target), so diagnostics and
+scripts run inside cross-origin iframes instead of silently inspecting the top
+page.
 
 ### Dialog Handling
 

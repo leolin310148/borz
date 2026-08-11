@@ -567,7 +567,25 @@ func (c *CdpConnection) handleDetached(msg map[string]json.RawMessage) {
 	if v, ok := c.attached.LoadAndDelete(params.SessionID); ok {
 		targetID := v.(string)
 		c.tabLimitClosing.Delete(targetID)
-		c.sessions.Delete(targetID)
+		// More than one attach can briefly exist for a target when discovery
+		// and a user command race. A late detachedFromTarget for the older
+		// session must not erase the newer session or clear the selected tab.
+		if current, exists := c.sessions.Load(targetID); exists && current != params.SessionID {
+			return
+		}
+		c.sessions.CompareAndDelete(targetID, params.SessionID)
+		var replacement string
+		c.attached.Range(func(sessionID, attachedTarget interface{}) bool {
+			if attachedTarget == targetID {
+				replacement = sessionID.(string)
+				return false
+			}
+			return true
+		})
+		if replacement != "" {
+			c.sessions.Store(targetID, replacement)
+			return
+		}
 		c.TabManager.RemoveTab(targetID)
 		c.ClearCurrentTargetIDIf(targetID)
 	}
@@ -603,6 +621,14 @@ func (c *CdpConnection) handleTargetDestroyed(msg map[string]json.RawMessage) {
 		sessionID := v.(string)
 		c.attached.Delete(sessionID)
 	}
+	// A raced duplicate attach may have left additional session mappings.
+	// Target destruction is definitive, so remove every mapping for it.
+	c.attached.Range(func(sessionID, targetID interface{}) bool {
+		if targetID == params.TargetID {
+			c.attached.Delete(sessionID)
+		}
+		return true
+	})
 	c.TabManager.RemoveTab(params.TargetID)
 	c.ClearCurrentTargetIDIf(params.TargetID)
 }
@@ -628,6 +654,31 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 	paramsRaw := msg["params"]
 
 	switch method {
+	case "Runtime.executionContextCreated":
+		var params struct {
+			Context struct {
+				ID      int64 `json:"id"`
+				AuxData struct {
+					FrameID   string `json:"frameId"`
+					IsDefault bool   `json:"isDefault"`
+				} `json:"auxData"`
+			} `json:"context"`
+		}
+		json.Unmarshal(paramsRaw, &params)
+		if params.Context.AuxData.IsDefault {
+			tab.SetFrameExecutionContext(params.Context.AuxData.FrameID, params.Context.ID)
+		}
+
+	case "Runtime.executionContextDestroyed":
+		var params struct {
+			ExecutionContextID int64 `json:"executionContextId"`
+		}
+		json.Unmarshal(paramsRaw, &params)
+		tab.RemoveExecutionContext(params.ExecutionContextID)
+
+	case "Runtime.executionContextsCleared":
+		tab.ClearExecutionContexts()
+
 	case "Page.javascriptDialogOpening":
 		// Record every dialog, armed handler or not. An unhandled dialog
 		// blocks the renderer, so without this the only symptom would be
@@ -887,8 +938,17 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 
 // AttachAndEnable attaches to a target and enables CDP domains.
 func (c *CdpConnection) AttachAndEnable(targetID string) error {
+	return c.attachAndEnable(targetID, true)
+}
+
+// attachAndEnable optionally registers a target as a user-visible tab. OOPIF
+// iframe targets need a CDP session for eval but must not enter TabManager or
+// count toward the page-tab retention limit.
+func (c *CdpConnection) attachAndEnable(targetID string, registerAsTab bool) error {
 	if _, ok := c.sessions.Load(targetID); ok {
-		c.registerTab(targetID)
+		if registerAsTab {
+			c.registerTab(targetID)
+		}
 		return nil
 	}
 
@@ -911,7 +971,9 @@ func (c *CdpConnection) AttachAndEnable(targetID string) error {
 
 	c.sessions.Store(targetID, attached.SessionID)
 	c.attached.Store(attached.SessionID, targetID)
-	c.registerTab(targetID)
+	if registerAsTab {
+		c.registerTab(targetID)
+	}
 
 	// Enable domains (best-effort)
 	for _, domain := range []string{"Page.enable", "Runtime.enable", "Network.enable", "DOM.enable", "Accessibility.enable"} {
@@ -919,6 +981,22 @@ func (c *CdpConnection) AttachAndEnable(targetID string) error {
 	}
 
 	return nil
+}
+
+func (c *CdpConnection) attachOOPIFForFrame(frameID string) (bool, error) {
+	targets, err := c.GetTargets()
+	if err != nil {
+		return false, err
+	}
+	for _, target := range targets {
+		if target.Type == "iframe" && target.ID == frameID {
+			if err := c.attachAndEnable(target.ID, false); err != nil {
+				return true, err
+			}
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // GetTargets returns all CDP targets.
@@ -1251,11 +1329,15 @@ func truncateDialogMessage(msg string) string {
 // PageCommand sends a command scoped to the active frame of a tab.
 func (c *CdpConnection) PageCommand(targetID, method string, params map[string]interface{}) (json.RawMessage, error) {
 	tab := c.TabManager.GetTab(targetID)
-	if tab != nil && tab.ActiveFrameID != "" {
+	activeFrameID := ""
+	if tab != nil {
+		activeFrameID = tab.ActiveFrame()
+	}
+	if activeFrameID != "" {
 		if params == nil {
 			params = map[string]interface{}{}
 		}
-		params["frameId"] = tab.ActiveFrameID
+		params["frameId"] = activeFrameID
 	}
 	return c.SessionCommand(targetID, method, params)
 }
@@ -1267,11 +1349,64 @@ func (c *CdpConnection) Evaluate(targetID, expression string, returnByValue bool
 
 // EvaluateWithTimeout executes JavaScript on a target and returns the result.
 func (c *CdpConnection) EvaluateWithTimeout(targetID, expression string, returnByValue bool, timeout time.Duration) (json.RawMessage, error) {
-	result, err := c.SessionCommandWithTimeout(targetID, "Runtime.evaluate", map[string]interface{}{
+	started := time.Now()
+	evalTargetID := targetID
+	params := map[string]interface{}{
 		"expression":    expression,
 		"awaitPromise":  true,
 		"returnByValue": returnByValue,
-	}, timeout)
+	}
+	if tab := c.TabManager.GetTab(targetID); tab != nil && tab.ActiveFrame() != "" {
+		activeFrameID := tab.ActiveFrame()
+		// Site-isolated cross-origin iframes are represented as OOPIF targets.
+		// Their target ID is the frame ID and they have their own CDP session;
+		// evaluate directly in that session's default world when available.
+		_, oopif := c.sessions.Load(activeFrameID)
+		if !oopif {
+			var err error
+			oopif, err = c.attachOOPIFForFrame(activeFrameID)
+			if err != nil {
+				return nil, fmt.Errorf("attach site-isolated frame %s: %w", activeFrameID, err)
+			}
+		}
+		if oopif {
+			evalTargetID = activeFrameID
+		} else {
+			contextID, ok := tab.FrameExecutionContext(activeFrameID)
+			if !ok {
+				// Runtime.enable normally supplies the default context for every
+				// frame. If navigation raced those events, create a stable isolated
+				// world as a fallback so cross-origin frame eval remains available.
+				worldTimeout := min(timeout, 2*time.Second)
+				if worldTimeout <= 0 {
+					worldTimeout = 2 * time.Second
+				}
+				worldRaw, err := c.SessionCommandWithTimeout(targetID, "Page.createIsolatedWorld", map[string]interface{}{
+					"frameId":   activeFrameID,
+					"worldName": "__borz_eval__",
+				}, worldTimeout)
+				if err != nil {
+					return nil, fmt.Errorf("resolve execution context for active frame %s: %w", activeFrameID, err)
+				}
+				var world struct {
+					ExecutionContextID int64 `json:"executionContextId"`
+				}
+				if json.Unmarshal(worldRaw, &world) != nil || world.ExecutionContextID == 0 {
+					return nil, fmt.Errorf("resolve execution context for active frame %s: Page.createIsolatedWorld returned no context", activeFrameID)
+				}
+				contextID = world.ExecutionContextID
+				tab.SetFrameExecutionContext(activeFrameID, contextID)
+			}
+			params["contextId"] = contextID
+		}
+	}
+	remaining := timeout - time.Since(started)
+	if timeout <= 0 {
+		remaining = timeout
+	} else if remaining <= 0 {
+		return nil, fmt.Errorf("timeout resolving Runtime.evaluate execution context")
+	}
+	result, err := c.SessionCommandWithTimeout(evalTargetID, "Runtime.evaluate", params, remaining)
 	if err != nil {
 		return nil, err
 	}

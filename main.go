@@ -2501,6 +2501,8 @@ Interaction:
   type <ref> <text>             Type text (append)
   check <ref> / uncheck <ref>   (Un)check checkbox
   select <ref> <value>          Select option
+  upload <ref> <file...>        Attach local files to a file input or label
+  filechooser accept <file...>  Arm the next native file picker before click
   press <key>                   Press key (Enter, Tab, ArrowDown, ...)
   clipboard-write <text> [--paste]
                                 Set clipboard; --paste fires Ctrl+Shift+V to
@@ -2546,6 +2548,7 @@ Tab Management:
   tab close [n]                 Close tab
   tab select --id <id>          Select by ID
   tab events [--tail]           Browser-level tab events (extension required)
+  frame <selector> / frame main Switch interactions and eval into/out of iframe
 
 Browser-level (Chrome extension):
   extension status|ping         Inspect or verify selected profile extension

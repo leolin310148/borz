@@ -119,6 +119,9 @@ func root(w http.ResponseWriter, r *http.Request) {
     body { font-family: system-ui, sans-serif; margin: 24px; }
     .spacer { height: 1600px; border-top: 1px solid #ddd; margin-top: 24px; }
     #hover-target { display: inline-block; padding: 12px; border: 1px solid #777; }
+	#covered-combobox { position: relative; width: 240px; height: 36px; border: 1px solid #777; }
+	#covered-combobox input { position: absolute; inset: 0; width: 100%; box-sizing: border-box; }
+	#covered-combobox .tag-overlay { position: absolute; inset: 0; z-index: 2; background: #eee; }
   </style>
 </head>
 <body>
@@ -150,6 +153,12 @@ func root(w http.ResponseWriter, r *http.Request) {
     <option value="blue">Blue</option>
   </select>
   <output id="select-state">red</output>
+
+	<div id="covered-combobox">
+	  <input role="combobox" aria-haspopup="listbox" aria-label="Covered combobox">
+	  <span class="tag-overlay">Selected tags overlay</span>
+	</div>
+	<output id="covered-combobox-state">not clicked</output>
 
   <p><a id="page-two-link" href="/page2">Go to page two</a></p>
   <iframe id="verify-frame" title="Verify frame" src="/frame.html"></iframe>
@@ -185,6 +194,10 @@ func root(w http.ResponseWriter, r *http.Request) {
 
       const select = document.getElementById('color-select');
       select.addEventListener('change', () => text('select-state', select.value));
+
+	  document.getElementById('covered-combobox').addEventListener('click', () => {
+		text('covered-combobox-state', 'clicked');
+	  });
     });
   </script>
 </body>

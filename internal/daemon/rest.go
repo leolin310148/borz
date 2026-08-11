@@ -737,7 +737,7 @@ func (s *Server) dispatchAndWrite(w http.ResponseWriter, req *protocol.Request) 
 		}
 		s.logCommand(req, "rest", "", started, resp.Success, errorCode)
 		sendJSON(w, status, resp)
-	case <-time.After(time.Duration(config.CommandTimeout) * time.Second):
+	case <-time.After(protocol.CommandTimeoutBudget(req, time.Duration(config.CommandTimeout)*time.Second)):
 		s.logCommand(req, "rest", "", started, false, "command_timeout")
 		sendJSON(w, 504, &protocol.Response{ID: req.ID, Success: false, Error: "Command timeout"})
 	}

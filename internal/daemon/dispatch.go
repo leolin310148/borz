@@ -278,26 +278,114 @@ func waitForTabNavigated(cdp *CdpConnection, targetID, requestedURL string, time
 const newTabReadyTimeout = 5 * time.Second
 
 // waitForSelector polls Runtime.evaluate(document.querySelector(sel)!=null) on
-// 100ms ticks until truthy or timeout. cdp.Evaluate may transiently fail while
-// the navigation tears down the old execution context — those errors are
-// retried, only the timeout is reported.
+// 100ms ticks until truthy or timeout. Runtime probes use a short bounded CDP
+// timeout so an unresponsive renderer cannot consume the entire command
+// deadline in one call. Navigation context errors are retried and the final
+// error includes the last page state/probe failure for diagnosis.
 func waitForSelector(cdp *CdpConnection, targetID, selector string, timeout time.Duration) error {
 	selJSON, _ := json.Marshal(selector)
-	expr := fmt.Sprintf("!!document.querySelector(%s)", string(selJSON))
+	expr := fmt.Sprintf(`JSON.stringify({
+		found: !!document.querySelector(%s),
+		href: location.href,
+		title: document.title,
+		readyState: document.readyState
+	})`, string(selJSON))
 	deadline := time.Now().Add(timeout)
+	var lastState struct {
+		Found      bool   `json:"found"`
+		Href       string `json:"href"`
+		Title      string `json:"title"`
+		ReadyState string `json:"readyState"`
+	}
+	var lastProbeErr error
 	for {
-		raw, err := cdp.Evaluate(targetID, expr, true)
+		probeTimeout := time.Second
+		if remaining := time.Until(deadline); remaining > 0 && remaining < probeTimeout {
+			probeTimeout = remaining
+		} else if remaining <= 0 {
+			probeTimeout = 250 * time.Millisecond
+		}
+		raw, err := cdp.EvaluateWithTimeout(targetID, expr, true, probeTimeout)
 		if err == nil {
-			var found bool
-			if json.Unmarshal(raw, &found) == nil && found {
-				return nil
+			var encoded string
+			if decodeErr := json.Unmarshal(raw, &encoded); decodeErr == nil {
+				if decodeErr = json.Unmarshal([]byte(encoded), &lastState); decodeErr == nil {
+					lastProbeErr = nil
+					if lastState.Found {
+						return nil
+					}
+				} else {
+					lastProbeErr = fmt.Errorf("decode page state: %w", decodeErr)
+				}
+			} else {
+				// Keep compatibility with older/fake CDP responders that return
+				// the selector boolean directly instead of our diagnostic object.
+				var found bool
+				if boolErr := json.Unmarshal(raw, &found); boolErr == nil {
+					lastProbeErr = nil
+					if found {
+						return nil
+					}
+				} else {
+					lastProbeErr = fmt.Errorf("decode wait probe: %w", decodeErr)
+				}
 			}
+		} else {
+			lastProbeErr = err
 		}
 		if !time.Now().Before(deadline) {
-			return fmt.Errorf("wait-for selector %q: timeout after %s", selector, timeout)
+			if lastState.Href == "" {
+				lastState.Href, lastState.Title = waitForTargetInfo(cdp, targetID)
+			}
+			details := make([]string, 0, 4)
+			if lastState.Href != "" {
+				details = append(details, fmt.Sprintf("current URL %q", lastState.Href))
+			}
+			if lastState.Title != "" {
+				details = append(details, fmt.Sprintf("title %q", truncateDiagnostic(lastState.Title, 160)))
+			}
+			if lastState.ReadyState != "" {
+				details = append(details, fmt.Sprintf("readyState %q", lastState.ReadyState))
+			}
+			if lastProbeErr != nil {
+				details = append(details, fmt.Sprintf("last probe error: %s", truncateDiagnostic(lastProbeErr.Error(), 240)))
+			}
+			if len(details) == 0 {
+				return fmt.Errorf("wait-for selector %q: timeout after %s", selector, timeout)
+			}
+			return fmt.Errorf("wait-for selector %q: timeout after %s (%s)", selector, timeout, strings.Join(details, ", "))
 		}
-		time.Sleep(100 * time.Millisecond)
+		pause := min(100*time.Millisecond, time.Until(deadline))
+		if pause > 0 {
+			time.Sleep(pause)
+		}
 	}
+}
+
+func waitForTargetInfo(cdp *CdpConnection, targetID string) (url, title string) {
+	raw, err := cdp.BrowserCommandWithTimeout("Target.getTargets", nil, 500*time.Millisecond)
+	if err != nil {
+		return "", ""
+	}
+	var data struct {
+		TargetInfos []CdpTargetInfo `json:"targetInfos"`
+	}
+	if json.Unmarshal(raw, &data) != nil {
+		return "", ""
+	}
+	for _, target := range data.TargetInfos {
+		if target.ID == targetID {
+			return target.URL, target.Title
+		}
+	}
+	return "", ""
+}
+
+func truncateDiagnostic(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit] + "…"
 }
 
 // --- Snapshot ---
@@ -632,17 +720,56 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			let x = rect.left + rect.width / 2;
 			let y = rect.top + rect.height / 2;
 			const describe = (element) => {
-				if (!(element instanceof Element)) return String(element);
+				if (!element || element.nodeType !== 1) return String(element);
 				let out = element.tagName.toLowerCase();
 				if (element.id) out += '#' + element.id;
 				else if (element.classList.length) out += '.' + Array.from(element.classList).slice(0, 2).join('.');
 				return out;
 			};
+			const hitBelongsToControl = (expected, hit) => {
+				if (!hit || hit.nodeType !== 1) return false;
+				if (hit === expected || expected.contains(hit)) return true;
+				const label = expected.closest('label');
+				if (label && label.contains(hit)) return true;
+				// Component libraries commonly expose the inner input as the
+				// accessible combobox while rendering tags/placeholders as sibling
+				// elements above it. Treat a nearby sibling inside the same control
+				// as an intentional hit target, but keep the search tightly bounded.
+				if (expected.matches('[role="combobox"], input[aria-haspopup="listbox"]')) {
+					let root = expected.parentElement;
+					for (let depth = 0; root && depth < 4; depth += 1, root = root.parentElement) {
+						if (root.contains(hit)) return true;
+					}
+				}
+				return false;
+			};
+			const candidates = [
+				[0.5, 0.5], [0.15, 0.5], [0.85, 0.5],
+				[0.5, 0.2], [0.5, 0.8], [0.15, 0.2], [0.85, 0.8]
+			];
+			let initialHit = null;
+			let foundPoint = false;
+			for (const [rx, ry] of candidates) {
+				const candidateX = rect.left + rect.width * rx;
+				const candidateY = rect.top + rect.height * ry;
+				const hit = this.ownerDocument.elementFromPoint(candidateX, candidateY);
+				if (hitBelongsToControl(this, hit)) {
+					x = candidateX;
+					y = candidateY;
+					initialHit = hit;
+					foundPoint = true;
+					break;
+				}
+			}
+			if (!foundPoint) {
+				initialHit = this.ownerDocument.elementFromPoint(x, y);
+				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' instead of ' + describe(this));
+			}
 			let expected = this;
 			let view = this.ownerDocument.defaultView;
 			while (view) {
-				const hit = view.document.elementFromPoint(x, y);
-				if (!hit || (hit !== expected && !expected.contains(hit))) {
+				const hit = view === this.ownerDocument.defaultView ? initialHit : view.document.elementFromPoint(x, y);
+				if (!hitBelongsToControl(expected, hit)) {
 					throw new Error('Element is not clickable at its center; hit ' + describe(hit) + ' instead of ' + describe(expected));
 				}
 				if (!view.frameElement) break;
@@ -723,30 +850,99 @@ func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, 
 	}
 	json.Unmarshal(resolvedRaw, &resolved)
 
-	cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
-		"objectId": resolved.Object.ObjectID,
-		"functionDeclaration": fmt.Sprintf(`function(clearFirst) {
+	if resolved.Object.ObjectID == "" {
+		return fmt.Errorf("DOM.resolveNode returned no object for backend node %d", backendNodeID)
+	}
+
+	if clearFirst {
+		callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+			"objectId": resolved.Object.ObjectID,
+			"functionDeclaration": `function(value) {
 			if (typeof this.scrollIntoView === 'function') this.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
 			if (typeof this.focus === 'function') this.focus();
 			if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
-				if (clearFirst) { this.value = ''; this.dispatchEvent(new Event('input', { bubbles: true })); }
+				const prototype = this instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+				const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+				if (descriptor && typeof descriptor.set === 'function') descriptor.set.call(this, value);
+				else this.value = value;
+				if (typeof this.setSelectionRange === 'function') this.setSelectionRange(value.length, value.length);
+				const inputEvent = typeof InputEvent === 'function'
+					? new InputEvent('input', { bubbles: true, inputType: value ? 'insertText' : 'deleteContentBackward', data: value || null })
+					: new Event('input', { bubbles: true });
+				this.dispatchEvent(inputEvent);
+				this.dispatchEvent(new Event('change', { bubbles: true }));
+				return { ok: true };
+			}
+			if (this instanceof HTMLElement && this.isContentEditable) {
+				this.textContent = value;
+				const selection = window.getSelection();
+				if (selection) { const range = document.createRange(); range.selectNodeContents(this); range.collapse(false); selection.removeAllRanges(); selection.addRange(range); }
+				this.dispatchEvent(new Event('input', { bubbles: true }));
+				this.dispatchEvent(new Event('change', { bubbles: true }));
+				return { ok: true };
+			}
+			return { ok: false, error: 'element is not an input, textarea, or contenteditable' };
+		}`,
+			"arguments":     []map[string]interface{}{{"value": text}},
+			"returnByValue": true,
+		})
+		if err != nil {
+			return err
+		}
+		var call struct {
+			Result struct {
+				Value struct {
+					OK    bool   `json:"ok"`
+					Error string `json:"error"`
+				} `json:"value"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(callRaw, &call); err != nil {
+			return fmt.Errorf("decode fill result: %w", err)
+		}
+		if !call.Result.Value.OK {
+			return fmt.Errorf("fill action failed: %s", call.Result.Value.Error)
+		}
+		return nil
+	}
+
+	prepRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+		"objectId": resolved.Object.ObjectID,
+		"functionDeclaration": `function() {
+			if (typeof this.scrollIntoView === 'function') this.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+			if (typeof this.focus === 'function') this.focus();
+			if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
 				if (typeof this.setSelectionRange === 'function') { const end = this.value.length; this.setSelectionRange(end, end); }
 				return true;
 			}
 			if (this instanceof HTMLElement && this.isContentEditable) {
-				if (clearFirst) { this.textContent = ''; this.dispatchEvent(new Event('input', { bubbles: true })); }
 				const selection = window.getSelection();
 				if (selection) { const range = document.createRange(); range.selectNodeContents(this); range.collapse(false); selection.removeAllRanges(); selection.addRange(range); }
 				return true;
 			}
 			return false;
-		}`),
-		"arguments":     []map[string]interface{}{{"value": clearFirst}},
+		}`,
 		"returnByValue": true,
 	})
+	if err != nil {
+		return err
+	}
+	var prep struct {
+		Result struct {
+			Value interface{} `json:"value"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(prepRaw, &prep) != nil {
+		return fmt.Errorf("decode type preparation result")
+	}
+	if ok, isBool := prep.Result.Value.(bool); isBool && !ok {
+		return fmt.Errorf("type action failed: element is not an input, textarea, or contenteditable")
+	}
 
 	if text != "" {
-		cdp.SessionCommand(targetID, "DOM.focus", map[string]interface{}{"backendNodeId": backendNodeID})
+		if _, err := cdp.SessionCommand(targetID, "DOM.focus", map[string]interface{}{"backendNodeId": backendNodeID}); err != nil {
+			return err
+		}
 		_, err = cdp.SessionCommand(targetID, "Input.insertText", map[string]interface{}{"text": text})
 		return err
 	}
@@ -2183,7 +2379,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		if nodeName != "" && nodeName != "iframe" && nodeName != "frame" {
 			return failResp(req.ID, fmt.Sprintf("element is not an iframe: %s", nodeName))
 		}
-		tab.ActiveFrameID = desc.Node.FrameID
+		tab.SetActiveFrame(desc.Node.FrameID)
 
 		attrMap := make(map[string]string)
 		for i := 0; i+1 < len(desc.Node.Attributes); i += 2 {
@@ -2198,7 +2394,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 
 	case protocol.ActionFrameMain:
 		seq := tab.RecordAction()
-		tab.ActiveFrameID = ""
+		tab.SetActiveFrame("")
 		return okResp(req.ID, &protocol.ResponseData{
 			FrameInfo: map[string]interface{}{"frameId": 0},
 			Tab:       shortID, Seq: intPtr(seq),

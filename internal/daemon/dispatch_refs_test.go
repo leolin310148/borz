@@ -148,6 +148,18 @@ func TestDispatch_Fill_And_Type(t *testing.T) {
 	if resp.Data.Value != "hello" {
 		t.Fatalf("value: %q", resp.Data.Value)
 	}
+	frameworkEvents := false
+	for _, call := range f.Calls() {
+		if call.Method == "Runtime.callFunctionOn" &&
+			strings.Contains(string(call.Params), "Object.getOwnPropertyDescriptor") &&
+			strings.Contains(string(call.Params), "InputEvent") &&
+			strings.Contains(string(call.Params), "change") {
+			frameworkEvents = true
+		}
+	}
+	if !frameworkEvents {
+		t.Fatalf("fill did not use native value setter with framework events, calls=%+v", f.Calls())
+	}
 
 	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionType_, Ref: "1", Text: "more"})
 	if !resp.Success {

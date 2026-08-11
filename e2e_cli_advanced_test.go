@@ -326,6 +326,7 @@ func TestE2ECLIActionIdempotencyAndStateTransitions(t *testing.T) {
 	submitRef := refByName(t, snapshot, "Submit form")
 	checkRef := refByName(t, snapshot, "E2E checkbox")
 	selectRef := refByName(t, snapshot, "E2E color select")
+	coveredComboboxRef := refByName(t, snapshot, "Covered combobox")
 
 	assertState := func(label, script string) {
 		t.Helper()
@@ -353,6 +354,8 @@ func TestE2ECLIActionIdempotencyAndStateTransitions(t *testing.T) {
 		runE2EJSON(t, env, "select", selectRef, "green", "--tab", tab, "--json")
 	}
 	assertState("repeated select", `document.querySelector("#color-select").value === "green" && document.querySelector("#select-state").textContent === "green"`)
+	runE2EJSON(t, env, "click", coveredComboboxRef, "--tab", tab, "--json")
+	assertState("covered combobox click", `document.querySelector("#covered-combobox-state").textContent === "clicked"`)
 
 	for range 2 {
 		runE2EJSON(t, env, "hover", hoverRef, "--tab", tab, "--json")

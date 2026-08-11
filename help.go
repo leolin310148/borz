@@ -44,7 +44,7 @@ check, uncheck, select, press, scroll, eval):
 Delay flags (global — available on any command):
   --pre-delay <ms>        Sleep this many ms inside the daemon before the action
   --post-delay <ms>       Sleep this many ms after a successful action
-                          Both are capped by the 30s daemon command timeout.
+                          Explicit waits/delays extend the request deadline.
                           Prefer --wait-for over --post-delay when a DOM
                           selector is available.`
 
@@ -230,6 +230,8 @@ var commandHelp = map[string]cmdHelp{
 			"names and --json-arg names can be reused safely; top-level return is supported.\n" +
 			"--json-arg may be repeated; each value is parsed as JSON and prepended as\n" +
 			"a scoped `const NAME = VALUE;` so --file scripts can read CLI inputs without templating.\n" +
+			"After `borz frame <selector>`, eval runs in that frame's execution context,\n" +
+			"including site-isolated cross-origin iframes; use `borz frame main` to reset.\n" +
 			"For authenticated HTTP calls prefer 'borz fetch'.",
 	},
 	"wait": {
@@ -533,8 +535,11 @@ var commandHelp = map[string]cmdHelp{
 		Usage:   "borz frame [main|<selector>]",
 		Examples: []string{
 			"  borz frame 'iframe#checkout'",
+			"  borz eval 'location.href'  # evaluates inside the selected frame",
 			"  borz frame main",
 		},
+		Notes: "The selected frame persists per tab and applies to snapshots, interactions, " +
+			"and eval. Cross-origin/site-isolated iframe eval uses its own CDP execution context.",
 	},
 	"dialog": {
 		Summary: "Handle or pre-arm native alert/confirm/prompt/beforeunload dialogs.",

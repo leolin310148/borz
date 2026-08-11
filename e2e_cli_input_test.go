@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,6 +115,7 @@ func TestE2ECLIFrameInteraction(t *testing.T) {
 	if frameSnapshot.Data.SnapshotData == nil {
 		t.Fatalf("frame snapshot returned no snapshot data: %+v", frameSnapshot.Data)
 	}
+	requireEvalString(t, env, `document.querySelector("#frame-ready").textContent`, "Frame ready")
 	inputRef := refByName(t, frameSnapshot.Data.SnapshotData, "Frame text input")
 	submitRef := refByName(t, frameSnapshot.Data.SnapshotData, "Submit frame input")
 
@@ -131,6 +136,44 @@ func TestE2ECLIFrameInteraction(t *testing.T) {
 	runE2EJSON(t, env, "click", mainClickRef, "--json")
 	requireEvalString(t, env, `document.querySelector("#clicked-result").textContent`, "clicked 1")
 	requireEvalBool(t, env, `document.querySelector("#frame-text-input") === null`, true)
+}
+
+func TestE2ECLICrossOriginFrameEval(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	var site *httptest.Server
+	site = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		switch r.URL.Path {
+		case "/parent":
+			fmt.Fprintf(w, `<!doctype html><title>Cross-origin parent</title><h1 id="parent-ready">Parent ready</h1><iframe id="cross-frame" title="Cross origin frame" src="%s/child"></iframe>`, site.URL)
+		case "/child":
+			fmt.Fprint(w, `<!doctype html><title>Cross-origin child</title><h2 id="cross-frame-marker">Cross-origin frame ready</h2>`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(site.Close)
+
+	// localhost and 127.0.0.1 reach the same test listener but are distinct
+	// sites, which makes Chrome exercise its cross-origin/OOPIF path.
+	parentURL := strings.Replace(site.URL, "127.0.0.1", "localhost", 1) + "/parent"
+	env := startE2EDaemon(t, home)
+	tab := runE2EJSON(t, env, "open", parentURL, "--new", "--wait-for", "#cross-frame", "--timeout", "10000", "--json").Data.Tab
+	if tab == "" {
+		t.Fatal("cross-origin frame open returned no tab")
+	}
+	t.Cleanup(func() { runE2ECLI(t, env, "close", "--tab", tab, "--json") })
+
+	runE2EJSON(t, env, "frame", "#cross-frame", "--tab", tab, "--json")
+	requireEvalString(t, env, `document.querySelector("#cross-frame-marker").textContent`, "Cross-origin frame ready")
+	runE2EJSON(t, env, "frame", "main", "--tab", tab, "--json")
+	requireEvalString(t, env, `document.querySelector("#parent-ready").textContent`, "Parent ready")
 }
 
 func TestE2ECLIDialogHandling(t *testing.T) {

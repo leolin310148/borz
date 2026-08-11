@@ -202,8 +202,8 @@ func TestDispatchFrameDialogAndEventQueryBranches(t *testing.T) {
 		t.Fatalf("frame ok = %+v", resp)
 	}
 	resp = DispatchRequest(c, &protocol.Request{ID: "frame-main", Action: protocol.ActionFrameMain})
-	if !resp.Success || tab.ActiveFrameID != "" {
-		t.Fatalf("frame main = %+v active=%q", resp, tab.ActiveFrameID)
+	if !resp.Success || tab.ActiveFrame() != "" {
+		t.Fatalf("frame main = %+v active=%q", resp, tab.ActiveFrame())
 	}
 	resp = DispatchRequest(c, &protocol.Request{ID: "dialog", Action: protocol.ActionDialog, DialogResponse: "dismiss"})
 	if !resp.Success || tab.DialogHandler == nil || tab.DialogHandler.Accept {

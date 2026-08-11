@@ -477,6 +477,9 @@ func TestTopLevelHelpMentionsNewFlags(t *testing.T) {
 		"--file",
 		"--diff",
 		"--role",
+		"upload <ref> <file...>",
+		"filechooser accept <file...>",
+		"frame <selector>",
 		"record start|stop|render",
 		"help --all",
 	} {
