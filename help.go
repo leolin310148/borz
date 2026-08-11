@@ -127,13 +127,15 @@ var commandHelp = map[string]cmdHelp{
 		Notes:    refNote,
 	},
 	"upload": {
-		Summary: "Attach one or more files to an <input type=file> by ref.",
+		Summary: "Attach files to an <input type=file> or its associated label by ref.",
 		Usage:   "borz upload <ref> <file> [file...] [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{
 			"  borz upload 5 ./photo.jpg",
 			"  borz upload 5 ./a.pdf ./b.pdf  # multi-file input",
 		},
-		Notes: refNote + "\nWraps CDP DOM.setFileInputFiles. Paths are resolved on the daemon's\n" +
+		Notes: refNote + "\nThe ref may point directly at the file input or at its associated <label>;\n" +
+			"borz resolves label.control / a nested file input automatically.\n" +
+			"Wraps CDP DOM.setFileInputFiles. Paths are resolved on the daemon's\n" +
 			"filesystem (where Chrome runs) — for `--remote`, the files must live on\n" +
 			"the daemon host, not on the client.",
 	},
@@ -224,8 +226,10 @@ var commandHelp = map[string]cmdHelp{
 			"By default, scripts that contain a top-level `await` are auto-wrapped in\n" +
 			"`(async () => { return (<script>) })()` so the resolved value is returned\n" +
 			"instead of `[object Promise]`. Use --no-auto-await to disable.\n" +
+			"CLI/MCP lexical declarations are scoped to one eval call, so const/let/class\n" +
+			"names and --json-arg names can be reused safely; top-level return is supported.\n" +
 			"--json-arg may be repeated; each value is parsed as JSON and prepended as\n" +
-			"`const NAME = VALUE;` so --file scripts can read CLI inputs without templating.\n" +
+			"a scoped `const NAME = VALUE;` so --file scripts can read CLI inputs without templating.\n" +
 			"For authenticated HTTP calls prefer 'borz fetch'.",
 	},
 	"wait": {
@@ -254,11 +258,11 @@ var commandHelp = map[string]cmdHelp{
 			"  borz snapshot --text-only",
 			"  borz snapshot --diff",
 		},
-		Notes: "Always snapshot before calling interaction commands — refs are regenerated " +
+		Notes: "Snapshot before calling interaction commands — tree refs are regenerated " +
 			"on every snapshot and go stale across navigations or DOM updates.\n" +
 			"--text-only strips nav/header/footer/script/style and returns the visible text " +
-			"(plus title and URL); refs are NOT produced, so follow with a normal snapshot " +
-			"before any click/fill/etc.\n" +
+			"(plus title and URL). It produces no new refs but preserves the latest tree refs; " +
+			"they remain actionable unless the page navigated or its DOM changed.\n" +
 			"--diff returns a `+` / `-` / `~` listing of nodes added, removed, or whose tracked " +
 			"attributes (aria-pressed, aria-disabled, etc.) or accessible name changed since the " +
 			"last snapshot of this tab. The very first call (or the first after the URL changes) " +
@@ -1732,6 +1736,7 @@ var helpAliases = map[string]string{
 	"-h":        "help",
 	"--version": "version",
 	"-v":        "version",
+	"tabs":      "tab",
 }
 
 // printCommandHelp renders the help for a single command to stdout. If the

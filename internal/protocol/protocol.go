@@ -496,6 +496,7 @@ type TraceStatus struct {
 type ResponseData struct {
 	Title  string      `json:"title,omitempty"`
 	URL    string      `json:"url,omitempty"`
+	Reused bool        `json:"reused,omitempty"`
 	TabID  interface{} `json:"tabId,omitempty"`
 	Tab    string      `json:"tab,omitempty"`
 	Seq    *int        `json:"seq,omitempty"`

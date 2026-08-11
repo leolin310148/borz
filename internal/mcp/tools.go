@@ -165,8 +165,8 @@ var selectTool = mcp.NewTool("browser_select",
 )
 
 var uploadTool = mcp.NewTool("browser_upload",
-	mcp.WithDescription("Attach files to an <input type=file> element. Wraps CDP DOM.setFileInputFiles — the files dialog never opens. Paths are resolved on the daemon's filesystem (where Chrome runs), so for remote daemons the files must live on the daemon host."),
-	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot (must point at an <input type=file>)")),
+	mcp.WithDescription("Attach files to an <input type=file> element or its associated label. Wraps CDP DOM.setFileInputFiles — the files dialog never opens. Paths are resolved on the daemon's filesystem (where Chrome runs), so for remote daemons the files must live on the daemon host."),
+	mcp.WithString("ref", mcp.Required(), mcp.Description("Snapshot ref for an <input type=file> or its associated <label>")),
 	mcp.WithArray("files", mcp.Required(), mcp.Description("Absolute file paths on the daemon host. Pass one entry for single-file inputs, multiple for inputs with the `multiple` attribute."), mcp.Items(map[string]any{"type": "string"})),
 	tabParam(),
 	waitForParam(),

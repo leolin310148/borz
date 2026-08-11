@@ -49,14 +49,14 @@ borz viewport [mobile|tablet|desktop|reset]
 borz open <url> --wait-for '<selector>'    # block until selector exists (default 10s)
 borz click <ref> --wait-for '.modal'       # --wait-for works on most actions, not just open
 borz snapshot -i -c                        # -i: interactive only, -c: compact
-borz snapshot --text-only                  # reader-mode plain text (no refs); good for LLM context
+borz snapshot --text-only                  # reader text; preserves the latest tree refs
 borz click <ref>
 borz fill <ref> <text>
 borz press <key>
 borz eval "<js>"                           # JS in page context → JSON
 borz eval --unwrap "document.title"        # print result raw (strings unquoted)
 borz eval --file ./extract.js              # read script from file
-borz eval --file ./greet.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSON args as top-level consts
+borz eval --file ./greet.js --json-arg user='{"id":7}' --json-arg n=3   # per-call scoped JSON consts
 borz eval "await fetch('/api/me').then(r=>r.json())"  # top-level await auto-wraps
 borz get <url|title|text|href|value> [ref]
 borz screenshot [out.png]                  # PNG; path saves on the CLI host

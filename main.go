@@ -216,6 +216,10 @@ func main() {
 		applyCLIWaitFor(req, args)
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
 			if resp.Data != nil {
+				if resp.Data.Reused {
+					fmt.Printf("Reused existing tab (not reloaded): %s (tab: %s; run 'borz refresh' to reload)\n", resp.Data.URL, resp.Data.Tab)
+					return
+				}
 				fmt.Printf("Opened: %s (tab: %s)\n", resp.Data.URL, resp.Data.Tab)
 			}
 		})
@@ -386,16 +390,11 @@ func main() {
 			}
 			script = strings.Join(cmdArgs, " ")
 		}
-		if !hasFlag(args, "--no-auto-await") {
-			script = jseval.AutoWrapAwait(script)
-		}
 		jsonArgs, err := jseval.ParseJSONArgs(getAllArgValues(args, "--json-arg"))
 		if err != nil {
 			fatal(err.Error())
 		}
-		if prefix := jseval.PrefixJSONArgs(jsonArgs); prefix != "" {
-			script = prefix + script
-		}
+		script = jseval.PrepareCLI(script, jseval.PrefixJSONArgs(jsonArgs), !hasFlag(args, "--no-auto-await"))
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionEval, Script: script}
 		setTab(req, globalTabID)
 		applyCLIWaitFor(req, args)
@@ -561,7 +560,7 @@ func main() {
 		})
 
 	// --- Tab ---
-	case "tab":
+	case "tab", "tabs":
 		handleTab(cmdArgs, jsonOutput, globalTabID, args)
 
 	// --- Cookies (extension-backed: cross-domain) ---

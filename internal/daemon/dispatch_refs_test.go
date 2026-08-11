@@ -229,7 +229,14 @@ func TestDispatch_Upload(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
 	setupRefHandlers(f)
+	f.On("Runtime.callFunctionOn", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"result": map[string]interface{}{"objectId": "FILE1"}}, nil
+	})
+	f.On("DOM.describeNode", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"node": map[string]interface{}{"backendNodeId": 99}}, nil
+	})
 	var sawFiles []interface{}
+	var sawBackendID int
 	f.On("DOM.setFileInputFiles", func(raw json.RawMessage) (interface{}, error) {
 		var params struct {
 			BackendNodeID int           `json:"backendNodeId"`
@@ -237,6 +244,7 @@ func TestDispatch_Upload(t *testing.T) {
 		}
 		json.Unmarshal(raw, &params)
 		sawFiles = params.Files
+		sawBackendID = params.BackendNodeID
 		return map[string]interface{}{}, nil
 	})
 	c := connectCdp(t, f)
@@ -250,6 +258,9 @@ func TestDispatch_Upload(t *testing.T) {
 	}
 	if len(sawFiles) != 2 {
 		t.Fatalf("CDP received %d files, want 2", len(sawFiles))
+	}
+	if sawBackendID != 99 {
+		t.Fatalf("CDP received backend node %d, want resolved file input 99", sawBackendID)
 	}
 
 	// Missing ref -> fail.
@@ -280,6 +291,29 @@ func TestDispatch_Upload(t *testing.T) {
 	resp = DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionUpload, Ref: "ghost", Files: []string{file1}})
 	if resp.Success || !strings.Contains(resp.Error, "unknown ref") {
 		t.Fatalf("unknown ref: %+v", resp)
+	}
+}
+
+func TestDispatch_UploadRejectsRefWithoutAssociatedFileInput(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(file, []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	f.On("Runtime.callFunctionOn", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"result": map[string]interface{}{"type": "object", "subtype": "null"}}, nil
+	})
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "1", &protocol.RefInfo{BackendDOMNodeID: 10, Role: "button"})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionUpload, Ref: "1", Files: []string{file}})
+	if resp.Success || !strings.Contains(resp.Error, "associated <label>") {
+		t.Fatalf("unassociated upload ref = %+v", resp)
 	}
 }
 

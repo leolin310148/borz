@@ -354,6 +354,9 @@ func TestE2ECLIURLFidelity(t *testing.T) {
 	if reused.Data.Tab != exactTab {
 		t.Fatalf("exact URL open selected tab %q, want %q", reused.Data.Tab, exactTab)
 	}
+	if !reused.Data.Reused {
+		t.Fatalf("exact URL open did not report data.reused: %+v", reused.Data)
+	}
 	if sentinel := runE2EJSON(t, env, "eval", `window.__borzURLReuseSentinel`, "--tab", exactTab, "--json").Data.Result; sentinel != "preserved" {
 		t.Fatalf("exact URL reuse reloaded page state: result=%#v", sentinel)
 	}

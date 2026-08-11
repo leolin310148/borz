@@ -378,6 +378,10 @@ func fileUpload(w http.ResponseWriter, r *http.Request) {
   <input id="multiple-files" type="file" multiple aria-label="Multiple file upload">
   <output id="multiple-upload-state" data-file-count="0">No multiple files selected</output>
 
+  <label for="label-only-file" tabindex="0">Label-only file upload</label>
+  <input id="label-only-file" type="file" hidden>
+  <output id="label-only-upload-state" data-file-count="0">No label-only file selected</output>
+
   <script>
     async function showFiles(input, output) {
       const files = Array.from(input.files);
@@ -396,6 +400,11 @@ func fileUpload(w http.ResponseWriter, r *http.Request) {
     const multiple = document.getElementById('multiple-files');
     multiple.addEventListener('change', () => {
       showFiles(multiple, document.getElementById('multiple-upload-state'));
+    });
+
+    const labelOnly = document.getElementById('label-only-file');
+    labelOnly.addEventListener('change', () => {
+      showFiles(labelOnly, document.getElementById('label-only-upload-state'));
     });
   </script>
 </body>

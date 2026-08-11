@@ -47,15 +47,18 @@ func TestE2ECLIFileUpload(t *testing.T) {
 	}
 	singleRef := refByName(t, snapshot.Data.SnapshotData, "Single file upload")
 	multipleRef := refByName(t, snapshot.Data.SnapshotData, "Multiple file upload")
+	labelOnlyRef := refByName(t, snapshot.Data.SnapshotData, "Label-only file upload")
 
 	filesDir := t.TempDir()
 	singlePath := filepath.Join(filesDir, "single-note.txt")
 	firstPath := filepath.Join(filesDir, "first-note.txt")
 	secondPath := filepath.Join(filesDir, "second-note.txt")
+	labelOnlyPath := filepath.Join(filesDir, "label-only-note.txt")
 	for path, content := range map[string]string{
-		singlePath: "single file body",
-		firstPath:  "first file body",
-		secondPath: "second file body",
+		singlePath:    "single file body",
+		firstPath:     "first file body",
+		secondPath:    "second file body",
+		labelOnlyPath: "label-only file body",
 	} {
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Fatalf("write upload fixture %s: %v", filepath.Base(path), err)
@@ -67,6 +70,9 @@ func TestE2ECLIFileUpload(t *testing.T) {
 
 	runE2EJSON(t, env, "upload", multipleRef, firstPath, secondPath, "--wait-for", `#multiple-upload-state[data-file-count="2"]`, "--timeout", "5000", "--json")
 	requireEvalString(t, env, `document.querySelector("#multiple-upload-state").textContent`, "first-note.txt: first file body | second-note.txt: second file body")
+
+	runE2EJSON(t, env, "upload", labelOnlyRef, labelOnlyPath, "--wait-for", `#label-only-upload-state[data-file-count="1"]`, "--timeout", "5000", "--json")
+	requireEvalString(t, env, `document.querySelector("#label-only-upload-state").textContent`, "label-only-note.txt: label-only file body")
 }
 
 func TestE2ECLIFrameInteraction(t *testing.T) {

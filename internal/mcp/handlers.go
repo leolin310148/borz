@@ -120,6 +120,9 @@ func handleNavigate(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 	if e := checkError(resp, err); e != nil {
 		return e, nil
 	}
+	if resp.Data != nil && resp.Data.Reused {
+		return textResult(resp, fmt.Sprintf("Reused existing tab at %s (not reloaded; refresh it to update the rendered page)", url)), nil
+	}
 	return textResult(resp, fmt.Sprintf("Navigated to %s", url)), nil
 }
 
@@ -780,9 +783,7 @@ func handleEval(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult
 	if err != nil {
 		return mcp.NewToolResultError("script is required"), nil
 	}
-	if !r.GetBool("noAutoAwait", false) {
-		script = jseval.AutoWrapAwait(script)
-	}
+	script = jseval.PrepareCLI(script, "", !r.GetBool("noAutoAwait", false))
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionEval, Script: script}
 	setTab(req, r)
 	applyWaitFor(req, r)

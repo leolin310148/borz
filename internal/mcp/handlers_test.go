@@ -227,6 +227,15 @@ func TestHandleNavigate_Success(t *testing.T) {
 	}
 }
 
+func TestHandleNavigate_ReportsReusedTab(t *testing.T) {
+	capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{Reused: true, Tab: "a1b2"}})
+	res, _ := handleNavigate(context.Background(), mkReq(map[string]any{"url": "https://example.com"}))
+	out := firstText(t, res)
+	if !strings.Contains(out, "Reused existing tab") || !strings.Contains(out, "not reloaded") {
+		t.Fatalf("reused navigate output = %q", out)
+	}
+}
+
 func TestHandleNavigate_AppliesViewport(t *testing.T) {
 	cap := capturingSend(t, ok())
 	res, _ := handleNavigate(context.Background(), mkReq(map[string]any{"url": "https://example.com", "preset": "mobile"}))

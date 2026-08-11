@@ -373,6 +373,9 @@ func TestHandlerServesFileUploadPage(t *testing.T) {
 		`type="file" multiple aria-label="Multiple file upload"`,
 		`id="single-upload-state" data-file-count="0"`,
 		`id="multiple-upload-state" data-file-count="0"`,
+		`for="label-only-file" tabindex="0">Label-only file upload`,
+		`id="label-only-file" type="file" hidden`,
+		`id="label-only-upload-state" data-file-count="0"`,
 		`file.name + ': ' + await file.text()`,
 	} {
 		if !strings.Contains(rec.Body.String(), marker) {

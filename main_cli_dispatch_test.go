@@ -172,6 +172,7 @@ func responseDataFor(req protocol.Request) *protocol.ResponseData {
 		DialogInfo: dialogInfo,
 		Title:      "Example title",
 		URL:        "https://example.test",
+		Reused:     req.URL == "https://reused.example.test",
 		Tab:        "tab-1",
 		TabID:      "target-1",
 		SnapshotData: &protocol.SnapshotData{
@@ -417,6 +418,7 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			}
 		}},
 		{name: "tab list", args: []string{"tab", "list"}, action: protocol.ActionTabList, check: expectOutput("Tabs (1 total):")},
+		{name: "tabs alias lists", args: []string{"tabs"}, action: protocol.ActionTabList, check: expectOutput("Tabs (1 total):")},
 		{name: "tab new", args: []string{"tab", "new", "https://new.test"}, action: protocol.ActionTabNew, check: func(t *testing.T, req protocol.Request, out string) {
 			if req.URL != "https://new.test" {
 				t.Fatalf("tab new request = %+v", req)
@@ -557,6 +559,13 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			}
 			tt.check(t, reqs[0], out)
 		})
+	}
+}
+
+func TestMainOpenReportsReusedTab(t *testing.T) {
+	out, _ := runMainWithFakeDaemon(t, "open", "https://reused.example.test")
+	if !strings.Contains(out, "Reused existing tab") || !strings.Contains(out, "not reloaded") {
+		t.Fatalf("open reuse output = %q", out)
 	}
 }
 

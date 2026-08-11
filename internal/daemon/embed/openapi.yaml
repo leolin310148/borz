@@ -244,8 +244,10 @@ paths:
   /v1/upload:
     post:
       tags: [interaction]
-      summary: Attach files to an `<input type=file>` by ref
+      summary: Attach files to an `<input type=file>` or its label by ref
       description: |
+        The ref may point directly at the file input or at an associated label;
+        borz resolves `label.control` or a nested file input automatically.
         Wraps CDP `DOM.setFileInputFiles`. Paths are resolved on the daemon's
         filesystem (where Chrome runs) — remote clients must reference files
         that exist on the daemon host, not on the client.

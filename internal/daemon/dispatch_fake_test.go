@@ -236,6 +236,9 @@ func TestDispatch_Open_ReuseExisting(t *testing.T) {
 	if resp.Data.TabID != "T1" {
 		t.Fatalf("should reuse existing T1, got %v", resp.Data.TabID)
 	}
+	if !resp.Data.Reused {
+		t.Fatalf("reused open should identify itself: %+v", resp.Data)
+	}
 }
 
 func TestDispatch_Open_ForceNewWithFlag(t *testing.T) {
@@ -1185,6 +1188,7 @@ func TestDispatch_Snapshot_TextOnly(t *testing.T) {
 		}}, nil
 	})
 	c := connectCdp(t, f)
+	seedRef(c, "T1", "7", &protocol.RefInfo{BackendDOMNodeID: 70, Role: "button"})
 
 	resp := DispatchRequest(c, &protocol.Request{
 		ID:     "x",
@@ -1206,6 +1210,9 @@ func TestDispatch_Snapshot_TextOnly(t *testing.T) {
 	}
 	if len(resp.Data.SnapshotData.Refs) != 0 {
 		t.Errorf("text mode should not produce refs, got %d", len(resp.Data.SnapshotData.Refs))
+	}
+	if tab := c.TabManager.GetTab("T1"); tab == nil || tab.Refs["7"] == nil {
+		t.Errorf("text mode should preserve refs from the latest tree snapshot")
 	}
 }
 

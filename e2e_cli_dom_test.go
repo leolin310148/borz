@@ -302,6 +302,13 @@ func TestE2ECLISnapshotModes(t *testing.T) {
 	requireContains(t, interactive.Snapshot, "Click counter", "interactive snapshot")
 	requireContains(t, interactive.Snapshot, "E2E text input", "interactive snapshot")
 	requireNotContains(t, interactive.Snapshot, "not clicked", "interactive snapshot")
+	clickRef := refByName(t, interactive, "Click counter")
+	preservedTextOnly := runE2EJSON(t, env, "snapshot", "--text-only", "--json").Data.SnapshotData
+	if preservedTextOnly == nil || len(preservedTextOnly.Refs) != 0 {
+		t.Fatalf("follow-up text-only snapshot unexpectedly returned refs: %+v", preservedTextOnly)
+	}
+	runE2EJSON(t, env, "click", clickRef, "--tab", tab, "--json")
+	requireEvalString(t, env, `document.querySelector("#clicked-result").textContent`, "clicked 1")
 
 	compactDepth := runE2EJSON(t, env, "snapshot", "--compact", "--depth", "1", "--json").Data.SnapshotData
 	if compactDepth == nil {

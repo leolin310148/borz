@@ -33,13 +33,13 @@ borz open <url> --wait-for '<selector>' [--timeout <ms>]  # block until selector
 borz <any-cmd> --pre-delay <ms>              # sleep N ms before the action (replaces 'sleep N && borz ...')
 borz <any-cmd> --post-delay <ms>             # sleep N ms after a successful action (use --wait-for when a selector exists)
 borz snapshot [-i] [-c] [-d N] [--role role] # accessibility tree with refs
-borz snapshot --text-only                    # reader-mode plain text (no refs)
+borz snapshot --text-only                    # plain text; preserves latest tree refs
 borz snapshot --diff                         # only +/-/~ changes since last snapshot of this tab
 borz viewport [mobile|tablet|desktop|WxH|reset]  # responsive viewport emulation
 borz click <ref>                             # refs come from snapshot
 borz fill <ref> <text>                       # clear + fill
 borz type <ref> <text>                       # append
-borz upload <ref> <file...>                  # attach files to <input type=file> (paths on daemon host)
+borz upload <ref> <file...>                  # file input or associated label ref (paths on daemon host)
 borz filechooser accept <file...>            # arm the next native file-picker dialog (no <input> needed)
 borz webauthn enable|add|credentials|remove [--tab id]  # typed Passkey virtual-authenticator lifecycle
 borz webauthn set-user-verified <id> <bool>   # control UV result; set-automatic-presence controls presence
@@ -60,7 +60,7 @@ borz network requests --tail [--interval duration|ms]   # live stream of new req
 borz console [--clear] [--filter] [--tail]  # --tail streams new messages
 borz errors [--clear] [--filter] [--tail]   # --tail streams new JS errors
 borz fetch <url> [--method POST] [--header 'Name: value'] [--body data]  # authenticated HTTP via page
-borz tab                                     # list; "tab new", "tab 2", "tab close 1"
+borz tab | borz tabs                         # list; "tab new", "tab 2", "tab close 1"
 borz tab front                               # bring the tab to the real OS foreground (unminimize + focus)
 borz page visibility visible|hidden|reset    # override document.visibilityState without moving a window
 borz frame <selector> | main                 # iframe switching
@@ -269,6 +269,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 ## Key behaviors to remember
 
 - **`open` reuses tabs with the exact same URL** (focus only, no reload). Use `--new` / `new: true` to force a fresh tab.
+- **CLI/MCP `eval` scopes lexical declarations per call.** Reusing a `const` or `--json-arg` name is safe, and top-level `return` is supported. REST `/v1/eval` remains raw.
 - **Use viewport emulation for RWD checks.** `borz viewport mobile`, `browser_viewport {preset:"mobile"}`, or `/v1/viewport {preset:"mobile"}` applies a 390x844 mobile/touch viewport to the current tab; reset with `viewport reset`.
 - **`--wait-for <selector>` works on every action that changes the page**, not just `open`: `click`, `hover`, `fill`, `type`, `check`, `uncheck`, `select`, `press`, `scroll`, `eval`, `back`, `forward`, `refresh`. The daemon runs the action, then polls `document.querySelector(...)` on a 100 ms tick until non-null or `--timeout <ms>` elapses (default 10000 ms). Prefer it over `wait <ms>` for any DOM change.
 - **`--pre-delay <ms>` / `--post-delay <ms>` (CLI global; `preDelayMs` / `postDelayMs` on REST; `preDelay` / `postDelay` on MCP page-changing tools)** absorb the `sleep N && borz ...` / `borz ... && sleep N` shell pattern into a single daemon round-trip. Pre-delay sleeps before the action; post-delay only fires when the action succeeds. Both are capped by the 30 s daemon command timeout — for longer pauses use a separate `borz wait` call. Prefer `--wait-for` over `--post-delay` whenever a DOM selector is available.

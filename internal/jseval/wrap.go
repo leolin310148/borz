@@ -28,7 +28,7 @@ func AutoWrapAwait(script string) string {
 	// Trailing semicolons/whitespace don't make a script multi-statement —
 	// strip them before scanning so `await foo();` still gets a `return`.
 	scanInput := strings.TrimRight(script, "; \t\r\n")
-	hasAwait, hasTopSemi := scanTopLevel(scanInput)
+	hasAwait, hasTopSemi, _ := scanTopLevel(scanInput)
 	if !hasAwait {
 		return script
 	}
@@ -41,6 +41,42 @@ func AutoWrapAwait(script string) string {
 	// Single expression: preserve a return so the caller still gets the value.
 	body := strings.TrimRight(strings.TrimSpace(script), ";")
 	return "(async () => { return (" + body + ") })()"
+}
+
+// PrepareCLI scopes lexical declarations to one CLI/MCP invocation and, when
+// enabled, wraps top-level await in an async IIFE. The optional prefix is put
+// inside the same scope; this is used for --json-arg declarations so repeated
+// eval calls can safely reuse the same argument names.
+//
+// Plain expressions are left untouched to preserve Runtime.evaluate's normal
+// completion value. Statement scripts use a block, which both preserves their
+// completion value and prevents top-level let/const/class declarations from
+// leaking into later calls. A script containing top-level return needs a real
+// function body, so it is wrapped in a sync IIFE.
+func PrepareCLI(script, prefix string, autoAwait bool) string {
+	trimmed := strings.TrimSpace(script)
+	if trimmed == "" {
+		return script
+	}
+	scanInput := strings.TrimRight(script, "; \t\r\n")
+	hasAwait, hasTopSemi, hasReturn := scanTopLevel(scanInput)
+	statementLike := hasTopSemi || isStatementLike(trimmed)
+	body := prefix + script
+
+	if autoAwait && hasAwait {
+		if statementLike || hasReturn {
+			return "(async () => { " + body + " })()"
+		}
+		expr := strings.TrimRight(strings.TrimSpace(script), ";")
+		return "(async () => { " + prefix + "return (" + expr + ") })()"
+	}
+	if hasReturn {
+		return "(() => { " + body + " })()"
+	}
+	if prefix != "" || statementLike {
+		return "{\n" + body + "\n}"
+	}
+	return script
 }
 
 func isAsyncIIFE(s string) bool {
@@ -69,7 +105,7 @@ func isStatementLike(s string) bool {
 // comments. It reports whether an `await` appears at depth 0 or nested only
 // inside parentheses/brackets, and whether any top-level `;` or
 // statement-separating newline is present.
-func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
+func scanTopLevel(src string) (hasAwait, hasTopSemi, hasReturn bool) {
 	const (
 		stCode = iota
 		stLineComment
@@ -147,6 +183,9 @@ func scanTopLevel(src string) (hasAwait, hasTopSemi bool) {
 			case functionBraceDepth == 0 && c == 'a' && matchKeyword(src, i, "await"):
 				hasAwait = true
 				i += len("await")
+			case functionBraceDepth == 0 && c == 'r' && matchKeyword(src, i, "return"):
+				hasReturn = true
+				i += len("return")
 			default:
 				i++
 			}

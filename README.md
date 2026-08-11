@@ -707,6 +707,9 @@ borz open https://app.example.com --wait-for ".dashboard-loaded"
 borz open http://localhost:3000 --viewport mobile
 ```
 
+When a tab is reused, text output explicitly says `Reused existing tab (not
+reloaded)` and suggests `borz refresh`; JSON responses set `data.reused: true`.
+
 `--wait-for <selector>` and `--timeout <ms>` work on **every action that changes the page** — `open`, `click`, `hover`, `fill`, `type`, `check`, `uncheck`, `select`, `press`, `scroll`, `eval`, `back`, `forward`, `refresh`. The daemon runs the action, then polls `document.querySelector(...)` on a 100 ms tick until the node appears or the timeout elapses. Prefer this over `wait <ms>` for any DOM change.
 
 ### Observation
@@ -739,7 +742,7 @@ borz snapshot --role button
 # Combine flags
 borz snapshot -i -c
 
-# Reader-mode plain text (title + URL + visible text only) — no element refs.
+# Reader-mode text — produces no new refs and preserves the latest tree refs.
 # Good for "summarize this page" or feeding the page to an LLM as context.
 borz snapshot --text-only
 ```
@@ -923,14 +926,18 @@ borz select 6 "option2"
 #### `upload`
 
 ```bash
-# Attach a file to an <input type=file>
+# Attach a file to an <input type=file> or its associated label ref
 borz upload 5 ./photo.jpg
 
 # Multi-file input
 borz upload 5 ./a.pdf ./b.pdf
 ```
 
-Paths are resolved on the daemon's filesystem (where Chrome runs). When using `--remote`, the files must live on the daemon host, not on the client. Wraps CDP `DOM.setFileInputFiles`, so the OS file picker never opens.
+The ref may point directly at the file input or at its associated `<label>`;
+borz resolves `label.control` or a nested file input automatically. Paths are
+resolved on the daemon's filesystem (where Chrome runs). When using `--remote`,
+the files must live on the daemon host, not on the client. Wraps CDP
+`DOM.setFileInputFiles`, so the OS file picker never opens.
 
 #### `filechooser`
 
@@ -1082,6 +1089,9 @@ borz eval --file ./extract.js
 # Inject CLI-supplied JSON values as top-level consts the script can read.
 borz eval --file ./greet.js --json-arg user='{"id":7}' --json-arg n=3
 
+# CLI/MCP lexical bindings are per-call; names can be reused and top-level return works.
+borz eval --file ./phase-two.js --json-arg user='{"id":8}'
+
 # Print the result raw — strings unquoted, other shapes JSON-formatted.
 # Removes the need for ' | jq .data.result' on every call.
 borz eval --unwrap "document.title"
@@ -1102,6 +1112,7 @@ borz wait 2000
 ```bash
 # List all open tabs
 borz tab
+borz tabs  # alias
 
 # Open a new tab
 borz tab new

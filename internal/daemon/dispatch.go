@@ -320,10 +320,9 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 		if err != nil {
 			return nil, nil, err
 		}
-		// Text mode does not establish refs; clear any stale ones from a
-		// previous tree-mode snapshot so '<text-only>' followed by 'click ref'
-		// fails fast with a clear error instead of acting on a stale handle.
-		tab.Refs = map[string]*protocol.RefInfo{}
+		// Text mode is observation-only and does not replace the actionable
+		// ref map established by the latest tree snapshot. It may clear the
+		// diff baseline, but callers can still act on the previous refs.
 		tab.PrevDiffSnapshot = nil
 		return snap, nil, nil
 	}
@@ -896,6 +895,75 @@ func resolveLocalFiles(paths []string) ([]string, error) {
 	return absFiles, nil
 }
 
+// resolveFileInputBackendID accepts either a file input ref or a ref for its
+// associated label/label descendant. Accessibility snapshots often expose the
+// visible label while omitting the hidden input, so requiring the ref to point
+// directly at the input makes otherwise ordinary upload controls unusable.
+func resolveFileInputBackendID(cdp *CdpConnection, targetID string, backendNodeID int) (int, error) {
+	resolvedRaw, err := cdp.SessionCommand(targetID, "DOM.resolveNode", map[string]interface{}{
+		"backendNodeId": backendNodeID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("resolve upload ref: %w", err)
+	}
+	var resolved struct {
+		Object struct {
+			ObjectID string `json:"objectId"`
+		} `json:"object"`
+	}
+	if err := json.Unmarshal(resolvedRaw, &resolved); err != nil || resolved.Object.ObjectID == "" {
+		return 0, fmt.Errorf("upload ref could not be resolved to a DOM node")
+	}
+
+	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+		"objectId": resolved.Object.ObjectID,
+		"functionDeclaration": `function() {
+			const isFileInput = node => node instanceof HTMLInputElement && node.type === 'file';
+			if (isFileInput(this)) return this;
+			if (this instanceof HTMLLabelElement) {
+				if (isFileInput(this.control)) return this.control;
+				const nested = this.querySelector('input[type="file"]');
+				if (isFileInput(nested)) return nested;
+			}
+			const label = typeof this.closest === 'function' ? this.closest('label') : null;
+			if (label) {
+				if (isFileInput(label.control)) return label.control;
+				const nested = label.querySelector('input[type="file"]');
+				if (isFileInput(nested)) return nested;
+			}
+			return null;
+		}`,
+		"returnByValue": false,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("resolve associated file input: %w", err)
+	}
+	var call struct {
+		Result struct {
+			ObjectID string `json:"objectId"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(callRaw, &call); err != nil || call.Result.ObjectID == "" {
+		return 0, fmt.Errorf("upload ref is not an <input type=file> or an associated <label>")
+	}
+
+	describedRaw, err := cdp.SessionCommand(targetID, "DOM.describeNode", map[string]interface{}{
+		"objectId": call.Result.ObjectID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("describe associated file input: %w", err)
+	}
+	var described struct {
+		Node struct {
+			BackendNodeID int `json:"backendNodeId"`
+		} `json:"node"`
+	}
+	if err := json.Unmarshal(describedRaw, &described); err != nil || described.Node.BackendNodeID == 0 {
+		return 0, fmt.Errorf("associated file input has no backend DOM node")
+	}
+	return described.Node.BackendNodeID, nil
+}
+
 // editingCommandsFor auto-maps meta-modifier key combos to CDP editing
 // commands (Input.dispatchKeyEvent `commands`). Synthesized key events never
 // reach the browser-process shortcut layer — on macOS that layer owns
@@ -1174,7 +1242,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 				}
 				return withWaitFor(req, cdp, existing.ID, okResp(req.ID, &protocol.ResponseData{
 					TabID: existing.ID, URL: existing.URL, Title: existing.Title,
-					Tab: shortID, Seq: seq, Viewport: viewport,
+					Tab: shortID, Seq: seq, Viewport: viewport, Reused: true,
 				}))
 			}
 		}
@@ -1487,6 +1555,10 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		}
 		seq := tab.RecordAction()
 		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
+		if err != nil {
+			return failResp(req.ID, err)
+		}
+		backendID, err = resolveFileInputBackendID(cdp, target.ID, backendID)
 		if err != nil {
 			return failResp(req.ID, err)
 		}

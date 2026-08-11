@@ -74,6 +74,33 @@ func TestE2ECLIEvalOptions(t *testing.T) {
 		t.Fatalf("eval --file JSON args result = %#v", result)
 	}
 
+	// Repeating the same --json-arg names must not collide with lexical
+	// bindings left behind by the previous Runtime.evaluate call.
+	repeated := runE2EJSON(t, env,
+		"eval", "--file", scriptPath,
+		"--json-arg", `user={"name":"Unicode 雪人 ☃️"}`,
+		"--json-arg", `payload={"levels":[{"values":["",42]}]}`,
+		"--json-arg", `emptyString=""`,
+		"--json-arg", `emptyList=[]`,
+		"--json-arg", `emptyObject={}`,
+		"--json-arg", `nullValue=null`,
+		"--tab", tab, "--json",
+	)
+	if repeated.Data.Result == nil {
+		t.Fatalf("repeated eval --json-arg returned no result: %+v", repeated.Data)
+	}
+
+	for i := 0; i < 2; i++ {
+		lexical := runE2ECLI(t, env, "eval", `const phase = 7; phase`, "--tab", tab, "--unwrap")
+		if got := strings.TrimSpace(lexical); got != "7" {
+			t.Fatalf("scoped lexical eval #%d = %q", i+1, got)
+		}
+	}
+	returned := runE2ECLI(t, env, "eval", `const value = 9; return value`, "--tab", tab, "--unwrap")
+	if got := strings.TrimSpace(returned); got != "9" {
+		t.Fatalf("top-level return = %q", got)
+	}
+
 	unwrapped := runE2ECLI(t, env, "eval", "window.__borzEvalState.unicode", "--tab", tab, "--unwrap")
 	if got := strings.TrimSpace(unwrapped); got != "Unicode 雪人 ☃️" {
 		t.Fatalf("eval --unwrap = %q", got)

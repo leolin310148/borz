@@ -223,3 +223,59 @@ func TestAutoWrapAwait(t *testing.T) {
 		})
 	}
 }
+
+func TestPrepareCLI(t *testing.T) {
+	tests := []struct {
+		name      string
+		script    string
+		prefix    string
+		autoAwait bool
+		want      string
+	}{
+		{
+			name:      "plain expression keeps completion semantics",
+			script:    "document.title",
+			autoAwait: true,
+			want:      "document.title",
+		},
+		{
+			name:      "lexical declaration gets per-call block scope",
+			script:    "const f = 1; f",
+			autoAwait: true,
+			want:      "{\nconst f = 1; f\n}",
+		},
+		{
+			name:      "json args share the invocation scope",
+			script:    "user.id",
+			prefix:    "const user = {\"id\":7};\n",
+			autoAwait: true,
+			want:      "{\nconst user = {\"id\":7};\nuser.id\n}",
+		},
+		{
+			name:      "json args stay inside async wrapper",
+			script:    "await load(user.id)",
+			prefix:    "const user = {\"id\":7};\n",
+			autoAwait: true,
+			want:      "(async () => { const user = {\"id\":7};\nreturn (await load(user.id)) })()",
+		},
+		{
+			name:      "top-level return gets a function scope",
+			script:    "const value = 7; return value",
+			autoAwait: true,
+			want:      "(() => { const value = 7; return value })()",
+		},
+		{
+			name:      "no auto await preserves raw await expression",
+			script:    "await load()",
+			autoAwait: false,
+			want:      "await load()",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := PrepareCLI(tc.script, tc.prefix, tc.autoAwait); got != tc.want {
+				t.Fatalf("PrepareCLI() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
