@@ -695,6 +695,10 @@ paths:
         back into `/v1/click`, `/v1/fill`, etc. Use `interactive: true` to skip
         non-interactive nodes, or `selector` / `role` to filter.
 
+        Ref visibility follows `snapshot.showRefs` in the daemon host's
+        `~/.borz/settings.json` (visible when omitted). Pass `showRefs` to
+        override that setting for this request. Hidden refs remain actionable.
+
         Pass `diff: true` to also receive a `snapshotDiffData` object that
         lists only what was added, removed, or whose tracked attributes
         (aria-pressed, aria-disabled, etc.) or accessible name changed since
@@ -714,6 +718,9 @@ paths:
                     maxDepth: { type: integer }
                     selector: { type: string, description: CSS selector subtree root }
                     role: { type: string, description: ARIA role filter }
+                    showRefs:
+                      type: boolean
+                      description: Override settings.json ref visibility for this request. Refs are returned either way.
                     diff:
                       type: boolean
                       description: |
@@ -743,6 +750,15 @@ paths:
                         properties:
                           snapshotData: { $ref: "#/components/schemas/SnapshotData" }
                           snapshotDiffData: { $ref: "#/components/schemas/SnapshotDiffData" }
+
+  /v1/refs/clear:
+    post:
+      tags: [observation]
+      summary: Remove snapshot ref overlays without invalidating refs
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/TabTarget" } } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
 
   /v1/screenshot:
     post:

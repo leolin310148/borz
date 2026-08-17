@@ -9,9 +9,15 @@ dist/
 .idea/
 .vscode/
 .codex/skills/local-*/
+.claude/settings.local.json
 *.swp
 *.swo
 *~
+
+# Local tooling and runtime artifacts
+.cache/
+.tmact/
+borz.trace
 
 # OS
 .DS_Store

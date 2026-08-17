@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/leolin310148/borz/internal/config"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -415,7 +416,17 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 		return snap, nil, nil
 	}
 	script := loadBuildDomTreeScript()
-	buildArgs := `{"showHighlightElements":true,"focusHighlightIndex":-1,"viewportExpansion":-1,"debugMode":false,"startId":0,"startHighlightIndex":0}`
+	showRefs := true
+	if req.ShowRefs != nil {
+		showRefs = *req.ShowRefs
+	} else {
+		var err error
+		showRefs, err = config.SnapshotShowRefs()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	buildArgs := `{"showHighlightElements":` + strconv.FormatBool(showRefs) + `,"focusHighlightIndex":-1,"viewportExpansion":-1,"debugMode":false,"startId":0,"startHighlightIndex":0}`
 	expression := fmt.Sprintf(`(() => { %s; const fn = globalThis.buildDomTree ?? (typeof window !== 'undefined' ? window.buildDomTree : undefined); if (typeof fn !== 'function') { throw new Error('buildDomTree is not available after script injection'); } return fn(%s); })()`, script, buildArgs)
 
 	raw, err := cdp.Evaluate(targetID, expression, true)
@@ -449,6 +460,24 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 	}
 	tab.PrevDiffSnapshot = currDiff
 	return snapshot, diffData, nil
+}
+
+const clearSnapshotRefsScript = `(() => {
+	if (Array.isArray(window._highlightCleanupFunctions)) {
+		for (const cleanup of window._highlightCleanupFunctions) {
+			if (typeof cleanup !== 'function') continue;
+			try { cleanup(); } catch (_) {}
+		}
+	}
+	window._highlightCleanupFunctions = [];
+	const container = document.getElementById('playwright-highlight-container');
+	if (container) container.remove();
+	return true;
+})()`
+
+func clearSnapshotRefs(cdp *CdpConnection, targetID string) error {
+	_, err := cdp.Evaluate(targetID, clearSnapshotRefsScript, true)
+	return err
 }
 
 // captureScreenshot hides the DOM overlay produced by snapshot while Chrome
@@ -1578,6 +1607,12 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			SnapshotDiffData: diffData,
 			Tab:              shortID,
 		})
+
+	case protocol.ActionClearRefs:
+		if err := clearSnapshotRefs(cdp, target.ID); err != nil {
+			return failResp(req.ID, err)
+		}
+		return okResp(req.ID, &protocol.ResponseData{Result: true, Tab: shortID})
 
 	case protocol.ActionScreenshot:
 		result, err := captureScreenshot(cdp, target.ID, tab, req.Annotations)

@@ -131,7 +131,7 @@ func TestReadBody_ParsesDelays(t *testing.T) {
 
 func TestReadBody_ParsesNewFields(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/x",
-		strings.NewReader(`{"waitFor":".x","timeoutMs":250,"mode":"text","limit":12}`))
+		strings.NewReader(`{"waitFor":".x","timeoutMs":250,"mode":"text","limit":12,"showRefs":false}`))
 	body, err := readBody(req)
 	if err != nil {
 		t.Fatalf("readBody: %v", err)
@@ -147,6 +147,9 @@ func TestReadBody_ParsesNewFields(t *testing.T) {
 	}
 	if body.Limit == nil || *body.Limit != 12 {
 		t.Errorf("limit = %v", body.Limit)
+	}
+	if body.ShowRefs == nil || *body.ShowRefs {
+		t.Errorf("showRefs = %v, want explicit false", body.ShowRefs)
 	}
 }
 
@@ -429,7 +432,8 @@ func TestRESTRoutes_RequestBuilders(t *testing.T) {
 		{"/v1/wait", `{"ms":1,"activate":true}`},
 		{"/v1/viewport", `{"preset":"mobile"}`},
 		{"/v1/snapshot", `{"interactive":true,"compact":true,"maxDepth":2,"selector":"main","role":"button","mode":"text","activate":true}`},
-		{"/v1/snapshot", `{"diff":true}`},
+		{"/v1/snapshot", `{"diff":true,"showRefs":false}`},
+		{"/v1/refs/clear", `{}`},
 		{"/v1/screenshot", `{"path":"/tmp/shot.png","activate":true}`},
 		{"/v1/get", `{"attribute":"text","ref":"e1","activate":true}`},
 		{"/v1/network", `{"command":"requests","filter":"api","withBody":true,"method":"GET","status":"200","since":"last_action","limit":10,"activate":true}`},

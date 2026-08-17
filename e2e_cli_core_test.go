@@ -386,6 +386,23 @@ func TestE2ECLIScreenshotOutput(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "nested", "screenshot.png")
 	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json")
 	clickRef := refByName(t, snapshot.Data.SnapshotData, "Click counter")
+	requireEvalBool(t, env, `document.querySelector("#playwright-highlight-container .playwright-highlight-label") !== null`, true)
+
+	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(`{"snapshot":{"showRefs":false}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hiddenSnapshot := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json")
+	if refByName(t, hiddenSnapshot.Data.SnapshotData, "Click counter") == "" {
+		t.Fatal("settings-hidden snapshot did not return actionable refs")
+	}
+	requireEvalBool(t, env, `document.querySelector("#playwright-highlight-container") === null`, true)
+
+	shownSnapshot := runE2EJSON(t, env, "snapshot", "-i", "--show-refs", "--tab", tab, "--json")
+	clickRef = refByName(t, shownSnapshot.Data.SnapshotData, "Click counter")
+	requireEvalBool(t, env, `document.querySelector("#playwright-highlight-container .playwright-highlight-label") !== null`, true)
+	runE2EJSON(t, env, "clear-refs", "--tab", tab, "--json")
+	requireEvalBool(t, env, `document.querySelector("#playwright-highlight-container") === null`, true)
+
 	pathResp := runE2EJSON(t, env, "screenshot", outputPath, "--annotate", "@"+clickRef+"=Click here to continue", "--tab", tab, "--json")
 	if pathResp.Data.ScreenshotPath != outputPath {
 		t.Fatalf("screenshot path = %q, want %q", pathResp.Data.ScreenshotPath, outputPath)

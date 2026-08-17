@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -263,6 +264,43 @@ func ClientJSONPath() string {
 // file is shared by all profiles; it is not profile-scoped.
 func ProfilesJSONPath() string {
 	return filepath.Join(HomeDir(), "profiles.json")
+}
+
+// SettingsJSONPath returns the shared, non-profile-scoped user settings file.
+func SettingsJSONPath() string {
+	return filepath.Join(HomeDir(), "settings.json")
+}
+
+// Settings contains user-facing borz behavior that is shared by all profiles.
+// Pointer booleans distinguish an omitted setting from an explicit false.
+type Settings struct {
+	Snapshot SnapshotSettings `json:"snapshot,omitempty"`
+}
+
+type SnapshotSettings struct {
+	ShowRefs *bool `json:"showRefs,omitempty"`
+}
+
+// SnapshotShowRefs reads the current preference on every call so editing
+// settings.json takes effect without restarting the daemon. Missing files and
+// omitted fields preserve the historical default: visible ref overlays.
+func SnapshotShowRefs() (bool, error) {
+	path := SettingsJSONPath()
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", path, err)
+	}
+	var settings Settings
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return false, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if settings.Snapshot.ShowRefs == nil {
+		return true, nil
+	}
+	return *settings.Snapshot.ShowRefs, nil
 }
 
 // SitesDir returns the local site adapters directory.

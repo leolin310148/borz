@@ -270,7 +270,7 @@ func TestCommandHelpCoversDispatch(t *testing.T) {
 		"open", "back", "forward", "refresh", "close",
 		"click", "hover", "fill", "type", "check", "uncheck", "select",
 		"eval", "get", "screenshot", "viewport", "press", "clipboard-write", "term-text", "scroll", "wait",
-		"snapshot", "tab", "frame", "dialog", "network", "console", "errors", "trace",
+		"snapshot", "clear-refs", "tab", "frame", "dialog", "network", "console", "errors", "trace",
 		"fetch", "mcp", "daemon", "server", "service", "client", "profile", "status", "doctor", "logs", "feedback", "site", "update", "record", "history",
 		"cookies", "bookmarks", "browser-history", "downloads", "window", "windows", "extension",
 		"help", "version",

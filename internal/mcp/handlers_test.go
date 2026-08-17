@@ -998,6 +998,31 @@ func TestHandleSnapshot_TextOnlySetsMode(t *testing.T) {
 	}
 }
 
+func TestHandleSnapshot_ShowRefsOverride(t *testing.T) {
+	cap := capturingSend(t, ok())
+	_, _ = handleSnapshot(context.Background(), mkReq(map[string]any{}))
+	if cap.req.ShowRefs != nil {
+		t.Fatalf("omitted showRefs = %v, want nil for settings.json fallback", cap.req.ShowRefs)
+	}
+
+	cap = capturingSend(t, ok())
+	_, _ = handleSnapshot(context.Background(), mkReq(map[string]any{"showRefs": false}))
+	if cap.req.ShowRefs == nil || *cap.req.ShowRefs {
+		t.Fatalf("explicit showRefs=false = %v", cap.req.ShowRefs)
+	}
+}
+
+func TestHandleClearRefs(t *testing.T) {
+	cap := capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{Tab: "T1"}})
+	result, _ := handleClearRefs(context.Background(), mkReq(map[string]any{"tab": "T1"}))
+	if cap.req.Action != protocol.ActionClearRefs || cap.req.TabID != "T1" {
+		t.Fatalf("clear refs request = %+v", cap.req)
+	}
+	if result.IsError || !strings.Contains(firstText(t, result), "Cleared snapshot ref overlay") {
+		t.Fatalf("clear refs result = %+v", result)
+	}
+}
+
 func TestHandleEval_AutoWrapsTopLevelAwait(t *testing.T) {
 	cap := capturingSend(t, &protocol.Response{Success: true, Data: &protocol.ResponseData{Result: "ok"}})
 	_, _ = handleEval(context.Background(), mkReq(map[string]any{"script": "await fetch('/x')"}))

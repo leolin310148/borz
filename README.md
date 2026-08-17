@@ -226,14 +226,14 @@ Add to your MCP client configuration (e.g. `.claude/settings.json` for Claude Co
 
 ### Available Tools
 
-The MCP server exposes 44 tools:
+The MCP server exposes 45 tools:
 
 | Category | Tools |
 |----------|-------|
 | **Navigation** | `browser_navigate`, `browser_back`, `browser_forward`, `browser_refresh`, `browser_close` |
 | **Interaction** | `browser_click`, `browser_hover`, `browser_fill`, `browser_type`, `browser_check`, `browser_uncheck`, `browser_select`, `browser_upload`, `browser_filechooser`, `browser_dialog`, `browser_press`, `browser_page_visibility`, `browser_clipboard_write`, `browser_scroll` |
 | **Browser testing** | `browser_webauthn` |
-| **Observation** | `browser_snapshot`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_term_text`, `browser_wait` |
+| **Observation** | `browser_snapshot`, `browser_clear_refs`, `browser_screenshot`, `browser_viewport`, `browser_get`, `browser_eval`, `browser_term_text`, `browser_wait` |
 | **Tab Management** | `browser_tab_list`, `browser_tab_new`, `browser_tab_select`, `browser_tab_front`, `browser_tab_close` |
 | **Diagnostics** | `browser_network`, `browser_console`, `browser_errors`, `browser_doctor` |
 | **Extension-backed** | `browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows` |
@@ -252,6 +252,7 @@ Most action tools accept optional `waitFor` (CSS selector) and `timeout` (ms, de
 Other notable params:
 
 - `browser_snapshot` accepts `textOnly: true` for a reader-mode plain-text dump (no element refs) — useful for summarization or feeding the page to an LLM as context.
+- `browser_snapshot` accepts `showRefs: true|false` to override `~/.borz/settings.json` for one call; `browser_clear_refs` removes an existing overlay without invalidating refs.
 - `browser_viewport` accepts `preset: "mobile"` for responsive/mobile layout checks, custom `width`/`height`/`dpr`, and `reset: true` to clear viewport emulation.
 - `browser_eval` auto-wraps top-level `await` in an async IIFE so `await fetch(...)` works without manual boilerplate. Pass `noAutoAwait: true` to opt out.
 - `browser_doctor` runs end-to-end stack diagnostics (binary PATH drift → daemon → CDP → tabs) and reports each layer with remediation hints. Pass `json: true` for structured output.
@@ -568,7 +569,8 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/open` | `{url, new?, tab?, waitFor?, timeoutMs?, preset?, viewport?}` — reuses a tab with the exact same URL when one exists; `new: true` forces a fresh tab |
 | POST | `/v1/back` \| `/forward` \| `/refresh` | `{tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/close` | `{tab?}` |
-| POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, role?, mode?, tab?}` — `mode: "text"` returns a reader-mode plain-text dump (no element refs) |
+| POST | `/v1/snapshot` | `{interactive?, compact?, maxDepth?, selector?, role?, showRefs?, mode?, tab?}` — refs are visually shown by default; `showRefs: false` hides the overlay without removing refs; `mode: "text"` returns a reader-mode plain-text dump (no element refs) |
+| POST | `/v1/refs/clear` | `{tab?}` — remove the visual ref overlay without invalidating refs |
 | POST | `/v1/screenshot` | `{path?, annotations?: [{ref,text}], tab?}` |
 | POST | `/v1/viewport` | `{preset?, width?, height?, dpr?, mobile?, touch?, reset?, tab?}` — read or emulate the tab viewport |
 | POST | `/v1/get` | `{attribute, ref?, tab?}` |
@@ -761,6 +763,22 @@ Example output:
 ```
 
 The `[ref=N]` numbers are what you use with interaction commands like `click`, `fill`, `type`, etc.
+
+They are also drawn over the live page by default. To hide them persistently,
+create `~/.borz/settings.json`:
+
+```json
+{
+  "snapshot": {
+    "showRefs": false
+  }
+}
+```
+
+The daemon reloads this setting on each snapshot, so no restart is needed.
+Use `borz snapshot --show-refs` or `--hide-refs` to override it once. Use
+`borz clear-refs` to remove an existing overlay without taking another
+snapshot or invalidating the latest actionable refs.
 
 #### `screenshot`
 

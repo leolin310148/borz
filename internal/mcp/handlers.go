@@ -653,6 +653,10 @@ func handleSnapshot(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 		Role:        r.GetString("role", ""),
 		Diff:        r.GetBool("diff", false),
 	}
+	if _, ok := r.GetArguments()["showRefs"]; ok {
+		showRefs := r.GetBool("showRefs", true)
+		req.ShowRefs = &showRefs
+	}
 	if depth := r.GetInt("maxDepth", 0); depth > 0 {
 		req.MaxDepth = intPtr(depth)
 	}
@@ -667,6 +671,16 @@ func handleSnapshot(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 		return e, nil
 	}
 	return formatSnapshot(resp), nil
+}
+
+func handleClearRefs(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionClearRefs}
+	setTab(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	return textResult(resp, "Cleared snapshot ref overlay"), nil
 }
 
 func handleScreenshot(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {

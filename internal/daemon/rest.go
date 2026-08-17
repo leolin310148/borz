@@ -200,10 +200,14 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			MaxDepth:    body.MaxDepth,
 			Selector:    body.Selector,
 			Role:        body.Role,
+			ShowRefs:    body.ShowRefs,
 			Mode:        body.Mode,
 			Diff:        body.Diff,
 			TabID:       body.tabID(),
 		})
+	}))
+	mux.HandleFunc("/v1/refs/clear", s.restJSON(func(body restBody) *protocol.Request {
+		return body.withActivate(&protocol.Request{Action: protocol.ActionClearRefs, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/screenshot", s.restJSON(func(body restBody) *protocol.Request {
 		return body.withActivate(&protocol.Request{Action: protocol.ActionScreenshot, Path: body.Path, Annotations: body.Annotations, TabID: body.tabID()})
@@ -366,6 +370,7 @@ type restBody struct {
 	MaxDepth    *int                      `json:"maxDepth,omitempty"`
 	Selector    string                    `json:"selector,omitempty"`
 	Role        string                    `json:"role,omitempty"`
+	ShowRefs    *bool                     `json:"showRefs,omitempty"`
 	Diff        bool                      `json:"diff,omitempty"`
 	Value       string                    `json:"value,omitempty"`
 	Script      string                    `json:"script,omitempty"`

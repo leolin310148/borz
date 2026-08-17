@@ -7,6 +7,7 @@ type ActionType string
 const (
 	ActionOpen       ActionType = "open"
 	ActionSnapshot   ActionType = "snapshot"
+	ActionClearRefs  ActionType = "clear_refs"
 	ActionClick      ActionType = "click"
 	ActionHover      ActionType = "hover"
 	ActionFill       ActionType = "fill"
@@ -108,6 +109,10 @@ type Request struct {
 	MaxDepth    *int   `json:"maxDepth,omitempty"`
 	Selector    string `json:"selector,omitempty"`
 	Role        string `json:"role,omitempty"`
+	// ShowRefs controls snapshot ref boxes and labels in the live page. Nil
+	// preserves the default (visible). Refs are always returned in SnapshotData
+	// regardless of this visual-only option.
+	ShowRefs *bool `json:"showRefs,omitempty"`
 	// Diff, when true on a snapshot request, returns SnapshotDiffData
 	// computed against the previous snapshot of the same tab/URL. The
 	// regular snapshot text/refs are still produced and remain available

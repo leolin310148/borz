@@ -265,14 +265,34 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 		},
 		{
 			name:   "snapshot options",
-			args:   []string{"snapshot", "--text", "-i", "-c", "-d", "3", "-s", "main", "--role", "button"},
+			args:   []string{"snapshot", "--text", "-i", "-c", "-d", "3", "-s", "main", "--role", "button", "--show-refs"},
 			action: protocol.ActionSnapshot,
 			check: func(t *testing.T, req protocol.Request, out string) {
-				if req.Mode != "text" || !req.Interactive || !req.Compact || req.MaxDepth == nil || *req.MaxDepth != 3 || req.Selector != "main" || req.Role != "button" {
+				if req.Mode != "text" || !req.Interactive || !req.Compact || req.MaxDepth == nil || *req.MaxDepth != 3 || req.Selector != "main" || req.Role != "button" || req.ShowRefs == nil || !*req.ShowRefs {
 					t.Fatalf("snapshot request = %+v", req)
 				}
 				if !strings.Contains(out, "Page snapshot") {
 					t.Fatalf("snapshot output = %q", out)
+				}
+			},
+		},
+		{
+			name:   "snapshot hides refs",
+			args:   []string{"snapshot", "--hide-refs"},
+			action: protocol.ActionSnapshot,
+			check: func(t *testing.T, req protocol.Request, out string) {
+				if req.ShowRefs == nil || *req.ShowRefs {
+					t.Fatalf("snapshot showRefs = %v, want explicit false", req.ShowRefs)
+				}
+			},
+		},
+		{
+			name:   "clear refs",
+			args:   []string{"clear-refs", "--tab", "tab-a"},
+			action: protocol.ActionClearRefs,
+			check: func(t *testing.T, req protocol.Request, out string) {
+				if req.TabID != "tab-a" || !strings.Contains(out, "Cleared snapshot ref overlay") {
+					t.Fatalf("clear refs request/output = %+v / %q", req, out)
 				}
 			},
 		},

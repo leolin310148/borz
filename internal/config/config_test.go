@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -231,6 +232,7 @@ func TestDerivedPaths(t *testing.T) {
 		{"DaemonJSONPath", DaemonJSONPath, "/tmp/borz/daemon.json"},
 		{"LogsDir", LogsDir, "/tmp/borz/logs/default"},
 		{"ClientJSONPath", ClientJSONPath, "/tmp/borz/client.json"},
+		{"SettingsJSONPath", SettingsJSONPath, "/tmp/borz/settings.json"},
 		{"SitesDir", SitesDir, "/tmp/borz/sites"},
 		{"CommunitySitesDir", CommunitySitesDir, "/tmp/borz/bb-sites"},
 		{"CommunityLockPath", CommunityLockPath, "/tmp/borz/community.lock"},
@@ -250,6 +252,41 @@ func TestDerivedPaths(t *testing.T) {
 				t.Fatalf("%s = %q, want %q", c.name, got, c.want)
 			}
 		})
+	}
+}
+
+func TestSnapshotShowRefs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(HomeEnv, home)
+	t.Setenv(LegacyHomeEnv, "")
+
+	got, err := SnapshotShowRefs()
+	if err != nil || !got {
+		t.Fatalf("missing settings = %v, %v; want true, nil", got, err)
+	}
+
+	path := SettingsJSONPath()
+	if err := os.WriteFile(path, []byte(`{"snapshot":{"showRefs":false}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = SnapshotShowRefs()
+	if err != nil || got {
+		t.Fatalf("explicit false = %v, %v; want false, nil", got, err)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"snapshot":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = SnapshotShowRefs()
+	if err != nil || !got {
+		t.Fatalf("omitted showRefs = %v, %v; want true, nil", got, err)
+	}
+
+	if err := os.WriteFile(path, []byte(`{broken`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SnapshotShowRefs(); err == nil || !strings.Contains(err.Error(), "settings.json") {
+		t.Fatalf("invalid settings error = %v", err)
 	}
 }
 

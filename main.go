@@ -73,7 +73,7 @@ var cliBoolFlags = []string{
 	"--mask-by-default", "--mobile", "--new", "--no-auto-await", "--no-check",
 	"--no-touch", "--paste", "--recover", "--recursive", "--remote", "--reset", "--save-as",
 	"--smooth", "--tail", "--text", "--text-only", "--touch", "--unwrap",
-	"--version", "--with-body",
+	"--version", "--with-body", "--hide-refs", "--show-refs",
 }
 
 var cliBoolFlagSet = makeFlagSet(cliBoolFlags)
@@ -237,6 +237,15 @@ func main() {
 		}
 		if hasFlag(args, "--diff") {
 			req.Diff = true
+		}
+		showRefsFlag := hasFlag(args, "--show-refs")
+		hideRefsFlag := hasFlag(args, "--hide-refs")
+		if showRefsFlag && hideRefsFlag {
+			fatal("--show-refs and --hide-refs are mutually exclusive")
+		}
+		if showRefsFlag || hideRefsFlag {
+			showRefs := showRefsFlag
+			req.ShowRefs = &showRefs
 		}
 		if v := getArgValue(args, "-d"); v != "" {
 			if d, err := strconv.Atoi(v); err == nil {
@@ -415,6 +424,15 @@ func main() {
 			if resp.Data != nil {
 				fmt.Println(resp.Data.Value)
 			}
+		})
+
+	case "clear-refs":
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionClearRefs}
+		if globalTabID != "" {
+			req.TabID = globalTabID
+		}
+		sendAndPrint(req, jsonOutput, func(*protocol.Response) {
+			fmt.Println("Cleared snapshot ref overlay")
 		})
 
 	case "screenshot":
@@ -2516,10 +2534,11 @@ Interaction:
                                 consts, repeatable)
 
 Observation:
-  snapshot [-i] [-c] [-d N] [-s <sel>] [--role <role>] [--text-only] [--diff]
+  snapshot [-i] [-c] [-d N] [-s <sel>] [--role <role>] [--show-refs|--hide-refs] [--text-only] [--diff]
                                 Get accessibility tree (or reader-mode
                                 plain text with --text-only; --diff shows
-                                changes since the previous snapshot)
+                                changes; ref visibility is configurable)
+  clear-refs                    Remove snapshot ref overlays; keep refs usable
   screenshot [path]             Take screenshot; --annotate ref=text adds callouts
   viewport [status|current|mobile|tablet|desktop|WxH|reset]
                                 Inspect or emulate viewport for responsive UI

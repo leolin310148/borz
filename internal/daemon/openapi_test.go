@@ -59,6 +59,9 @@ func TestOpenAPIRoutes(t *testing.T) {
 		if !strings.Contains(body, "SnapshotDiffData:") {
 			t.Fatal("components/schemas must define SnapshotDiffData")
 		}
+		if !strings.Contains(body, "showRefs:") || !strings.Contains(body, "/v1/refs/clear:") {
+			t.Fatal("spec is missing snapshot ref visibility controls")
+		}
 		if !strings.Contains(body, "DiffEntry:") || !strings.Contains(body, "DiffChange:") {
 			t.Fatal("components/schemas must define DiffEntry and DiffChange")
 		}

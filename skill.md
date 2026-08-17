@@ -38,7 +38,7 @@ If `borz` is configured as an MCP server, call tools directly. Workflow:
 
 All tools accept an optional `tab` param (short id from `browser_tab_list`) to target a specific tab.
 
-Tool categories (44 total): navigation, interaction, observation (includes `browser_viewport` for responsive layouts and `browser_eval` for arbitrary JS), browser testing (`browser_webauthn` for typed Passkey virtual authenticators), tab management, diagnostics, extension-backed Chrome APIs (`browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`), site adapters (`browser_site_list`/`_info`/`_run`).
+Tool categories (45 total): navigation, interaction, observation (includes `browser_clear_refs`, `browser_viewport` for responsive layouts and `browser_eval` for arbitrary JS), browser testing (`browser_webauthn` for typed Passkey virtual authenticators), tab management, diagnostics, extension-backed Chrome APIs (`browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`), site adapters (`browser_site_list`/`_info`/`_run`).
 
 ### 2. Shell / CLI
 

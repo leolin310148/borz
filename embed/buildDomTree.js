@@ -101,6 +101,26 @@ window.buildDomTree = (
 
   const HIGHLIGHT_CONTAINER_ID = 'playwright-highlight-container';
 
+  // Every snapshot replaces the previous visual overlay. Ref generation does
+  // not depend on the overlay, so hidden snapshots can stay DOM-neutral while
+  // still returning the same actionable highlightIndex values.
+  function cleanupHighlights() {
+    if (Array.isArray(window._highlightCleanupFunctions)) {
+      for (const cleanup of window._highlightCleanupFunctions) {
+        if (typeof cleanup !== 'function') continue;
+        try {
+          cleanup();
+        } catch (_) {
+          // A detached frame or page-owned mutation should not break snapshot.
+        }
+      }
+    }
+    window._highlightCleanupFunctions = [];
+    document.getElementById(HIGHLIGHT_CONTAINER_ID)?.remove();
+  }
+
+  cleanupHighlights();
+
   // Add a WeakMap cache for XPath strings
   const xpathCache = new WeakMap();
 
@@ -124,6 +144,8 @@ window.buildDomTree = (
    */
   function highlightElement(element, index, parentIframe = null) {
     if (!element) return index;
+
+    if (!showHighlightElements) return index + 1;
 
     const overlays = [];
     /**
