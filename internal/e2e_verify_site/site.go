@@ -122,6 +122,7 @@ func root(w http.ResponseWriter, r *http.Request) {
 	#covered-combobox { position: relative; width: 240px; height: 36px; border: 1px solid #777; }
 	#covered-combobox input { position: absolute; inset: 0; width: 100%; box-sizing: border-box; }
 	#covered-combobox .tag-overlay { position: absolute; inset: 0; z-index: 2; background: #eee; }
+	ui5-checkbox { display: inline-block; width: 24px; height: 24px; border: 1px solid #777; }
   </style>
 </head>
 <body>
@@ -154,6 +155,23 @@ func root(w http.ResponseWriter, r *http.Request) {
   </select>
   <output id="select-state">red</output>
 
+  <section data-testid="node-settings-panel">
+    <label for="live-textarea">Description</label>
+    <textarea id="live-textarea" aria-label="Live description"></textarea>
+    <button id="panel-save" type="button" aria-label="Save scoped panel">Save panel</button>
+  </section>
+
+  <ul>
+    <li id="nested-action"><button type="button" aria-label="Nested create action">Create</button></li>
+  </ul>
+  <output id="nested-action-state">not clicked</output>
+
+  <ui5-button id="framework-button" role="button" tabindex="0" aria-label="Framework press action">Framework action</ui5-button>
+  <output id="framework-press-state">not pressed</output>
+
+  <ui5-checkbox id="framework-checkbox" role="checkbox" tabindex="0" aria-label="Framework checkbox" aria-checked="false"></ui5-checkbox>
+  <output id="framework-checkbox-state">unchecked</output>
+
 	<div id="covered-combobox">
 	  <input role="combobox" aria-haspopup="listbox" aria-label="Covered combobox">
 	  <span class="tag-overlay">Selected tags overlay</span>
@@ -167,6 +185,26 @@ func root(w http.ResponseWriter, r *http.Request) {
   <div id="scroll-marker">Scroll marker</div>
 
   <script>
+	class VerifyUI5Button extends HTMLElement {
+	  constructor() {
+		super();
+		const root = this.attachShadow({ mode: 'open' });
+		root.innerHTML = '<button type="button"><slot></slot></button>';
+	  }
+	  firePress() {
+		this.dispatchEvent(new CustomEvent('press', { bubbles: true, composed: true }));
+	  }
+	}
+	class VerifyUI5Checkbox extends HTMLElement {
+	  get checked() { return this.getAttribute('aria-checked') === 'true'; }
+	  set checked(value) { this.setAttribute('aria-checked', String(Boolean(value))); }
+	  fireChange() {
+		this.dispatchEvent(new CustomEvent('ui5-change', { bubbles: true, composed: true }));
+	  }
+	}
+	customElements.define('ui5-button', VerifyUI5Button);
+	customElements.define('ui5-checkbox', VerifyUI5Checkbox);
+
     const text = (id, value) => { document.getElementById(id).textContent = value; };
     window.addEventListener('DOMContentLoaded', () => {
       console.log('e2e site loaded');
@@ -194,6 +232,12 @@ func root(w http.ResponseWriter, r *http.Request) {
 
       const select = document.getElementById('color-select');
       select.addEventListener('change', () => text('select-state', select.value));
+
+	  document.getElementById('live-textarea').value = 'description from live property';
+	  document.querySelector('#nested-action button').addEventListener('click', () => text('nested-action-state', 'clicked'));
+	  document.getElementById('framework-button').addEventListener('press', () => text('framework-press-state', 'pressed'));
+	  const frameworkCheckbox = document.getElementById('framework-checkbox');
+	  frameworkCheckbox.addEventListener('ui5-change', () => text('framework-checkbox-state', frameworkCheckbox.checked ? 'checked' : 'unchecked'));
 
 	  document.getElementById('covered-combobox').addEventListener('click', () => {
 		text('covered-combobox-state', 'clicked');

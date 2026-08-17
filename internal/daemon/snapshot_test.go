@@ -229,6 +229,13 @@ func TestEl2XPath(t *testing.T) {
 	}
 }
 
+func TestGetNameUsesRenderedComponentLabel(t *testing.T) {
+	el := rawDomElementNode{Attributes: map[string]string{"borz-rendered-name": "Global Account – Production"}}
+	if got := getName(el, nil); got != "Global Account – Production" {
+		t.Fatalf("getName rendered component label = %q", got)
+	}
+}
+
 func TestConvertBuildDomTreeResult_Nil(t *testing.T) {
 	for name, in := range map[string]*buildDomTreeResult{
 		"nil":     nil,

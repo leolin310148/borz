@@ -735,7 +735,7 @@ borz snapshot -c
 # Limit tree depth
 borz snapshot -d 3
 
-# Filter by selector/keyword substring
+# Scope to a CSS subtree (or use a keyword when no element matches)
 borz snapshot -s "search"
 
 # Filter by exact accessibility role

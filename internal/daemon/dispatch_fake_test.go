@@ -441,6 +441,11 @@ func TestDispatch_TabSelect(t *testing.T) {
 func TestDispatch_Activate_Flag_FocusesTab(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
+	f.On("Runtime.evaluate", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"result": map[string]interface{}{"value": map[string]interface{}{
+			"rootId": "r", "map": map[string]interface{}{"r": map[string]interface{}{"tagName": "body", "children": []string{}}},
+		}}}, nil
+	})
 	c := connectCdp(t, f)
 
 	// Any action with Activate=true should bring the tab forward before
@@ -1157,7 +1162,15 @@ func TestDispatch_Snapshot_Fallback(t *testing.T) {
 		if strings.Contains(p.Expression, "buildDomTree") {
 			return nil, &cdpErr{msg: "script failed"}
 		}
-		return map[string]interface{}{"result": map[string]interface{}{"value": "Page Title"}}, nil
+		if strings.Contains(p.Expression, "borzFallbackSnapshot") {
+			return map[string]interface{}{"result": map[string]interface{}{"value": map[string]interface{}{
+				"rootId": "r", "map": map[string]interface{}{
+					"r": map[string]interface{}{"tagName": "body", "children": []string{"b"}},
+					"b": map[string]interface{}{"tagName": "button", "xpath": "/html/body/button", "children": []string{}, "highlightIndex": 0, "attributes": map[string]string{"aria-label": "Recovered"}},
+				},
+			}}}, nil
+		}
+		return nil, &cdpErr{msg: "unexpected evaluation"}
 	})
 	c := connectCdp(t, f)
 
@@ -1167,6 +1180,9 @@ func TestDispatch_Snapshot_Fallback(t *testing.T) {
 	}
 	if resp.Data.SnapshotData == nil {
 		t.Fatalf("missing snapshot data: %+v", resp)
+	}
+	if !strings.Contains(resp.Data.SnapshotData.Snapshot, "Recovered") {
+		t.Fatalf("fallback snapshot missing recovered control: %+v", resp.Data.SnapshotData)
 	}
 }
 

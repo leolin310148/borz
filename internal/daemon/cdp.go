@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,17 +40,19 @@ type CdpConnection struct {
 	TabManager      *TabStateManager
 	CurrentTargetID string
 
-	currentMu sync.RWMutex
-	connectMu sync.Mutex
-	socket    *websocket.Conn
-	writeMu   sync.Mutex // serializes socket.WriteMessage calls (gorilla requires one writer)
-	pending   sync.Map   // id -> *pendingCommand
-	nextID    atomic.Int64
-	sessions  sync.Map // targetId -> sessionId
-	attached  sync.Map // sessionId -> targetId
-	connected atomic.Bool
-	logger    *observability.Logger
-	maxTabs   int
+	currentMu  sync.RWMutex
+	tabOrderMu sync.Mutex
+	tabOrder   []string
+	connectMu  sync.Mutex
+	socket     *websocket.Conn
+	writeMu    sync.Mutex // serializes socket.WriteMessage calls (gorilla requires one writer)
+	pending    sync.Map   // id -> *pendingCommand
+	nextID     atomic.Int64
+	sessions   sync.Map // targetId -> sessionId
+	attached   sync.Map // sessionId -> targetId
+	connected  atomic.Bool
+	logger     *observability.Logger
+	maxTabs    int
 	// tabLimitMu serializes capacity checks. tabLimitClosing tracks successful
 	// close requests until Chrome reports target destruction, preventing a
 	// burst of targetCreated events from over-closing while events are in flight.
@@ -1025,6 +1028,61 @@ func (c *CdpConnection) GetTargets() ([]CdpTargetInfo, error) {
 	return pages, nil
 }
 
+// stablePageTargets returns page targets in the TabStateManager's stable
+// creation order. Target.getTargets does not promise an order and Chrome can
+// reshuffle its result between two immediately adjacent commands, which made
+// a displayed tab index select a different page on the next invocation.
+// Targets not registered yet are appended in target-ID order so startup races
+// are deterministic too.
+func stablePageTargets(c *CdpConnection, targets []CdpTargetInfo) []CdpTargetInfo {
+	byID := make(map[string]CdpTargetInfo)
+	for _, target := range targets {
+		if target.Type == "page" {
+			byID[target.ID] = target
+		}
+	}
+
+	c.tabOrderMu.Lock()
+	defer c.tabOrderMu.Unlock()
+
+	// Keep every surviving target exactly where it was the first time it was
+	// exposed. This also covers startup: a target initially appended as
+	// "unregistered" must not jump elsewhere when its asynchronous attach
+	// creates TabState a moment later.
+	order := make([]string, 0, len(byID))
+	seen := make(map[string]bool, len(byID))
+	for _, targetID := range c.tabOrder {
+		if _, ok := byID[targetID]; ok {
+			order = append(order, targetID)
+			seen[targetID] = true
+		}
+	}
+
+	// New registered tabs retain their creation order.
+	for _, tab := range c.TabManager.AllTabs() {
+		if _, ok := byID[tab.TargetID]; ok && !seen[tab.TargetID] {
+			order = append(order, tab.TargetID)
+			seen[tab.TargetID] = true
+		}
+	}
+
+	remaining := make([]string, 0, len(byID))
+	for targetID := range byID {
+		if !seen[targetID] {
+			remaining = append(remaining, targetID)
+		}
+	}
+	sort.Strings(remaining)
+	order = append(order, remaining...)
+	c.tabOrder = append(c.tabOrder[:0], order...)
+
+	pages := make([]CdpTargetInfo, 0, len(order))
+	for _, targetID := range order {
+		pages = append(pages, byID[targetID])
+	}
+	return pages
+}
+
 // findTargetByExactURL returns the page target whose URL exactly matches the
 // given string. If multiple tabs match, the one with the highest LastActionSeq
 // wins (most recently interacted with); ties fall back to first-seen order.
@@ -1059,12 +1117,7 @@ func (c *CdpConnection) EnsurePageTarget(tabRef string) (*CdpTargetInfo, error) 
 		return nil, err
 	}
 
-	var pages []CdpTargetInfo
-	for _, t := range allTargets {
-		if t.Type == "page" {
-			pages = append(pages, t)
-		}
-	}
+	pages := stablePageTargets(c, allTargets)
 	if len(pages) == 0 {
 		return nil, fmt.Errorf("no page target found")
 	}

@@ -8,7 +8,7 @@ window.buildDomTree = (
     startHighlightIndex: 0,
   },
 ) => {
-  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId, debugMode } =
+  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId, debugMode, rootSelector } =
     args;
   // Make sure to do highlight elements always, but we can hide the highlights if needed
   const doHighlightElements = true;
@@ -1404,6 +1404,16 @@ window.buildDomTree = (
         const value = node.getAttribute(name);
         nodeData.attributes[name] = value;
       }
+
+      // Some component libraries expose an interactive host whose visible
+      // label lives in slots or a closed shadow root. That text is rendered
+      // to the user but absent from the child-node walk, leaving refs such as
+      // account-picker rows unnamed. Preserve a bounded rendered label as a
+      // synthetic snapshot-only attribute; the live DOM is not mutated.
+      if (node !== document.body && isInteractiveCandidate(node) && !nodeData.attributes['aria-label'] && !nodeData.attributes.title) {
+        const renderedLabel = String(node.innerText || '').replace(/\s+/g, ' ').trim();
+        if (renderedLabel) nodeData.attributes['borz-rendered-name'] = renderedLabel.slice(0, 500);
+      }
     }
 
     let nodeWasHighlighted = false;
@@ -1523,10 +1533,24 @@ window.buildDomTree = (
 
   // Reset visited nodes for new DOM tree build
   visitedNodes = null;
-  const rootId = buildDomTree(document.body);
+  let rootNode = document.body;
+  let rootSelectorMatched = false;
+  if (rootSelector) {
+    try {
+      const selectedRoot = document.querySelector(rootSelector);
+      if (selectedRoot) {
+        rootNode = selectedRoot;
+        rootSelectorMatched = true;
+      }
+    } catch (_) {
+      // Backward compatibility: invalid CSS remains a keyword substring
+      // filter in the Go converter.
+    }
+  }
+  const rootId = buildDomTree(rootNode);
 
   // Clear the cache before starting
   DOM_CACHE.clearCache();
 
-  return { rootId, map: DOM_HASH_MAP };
+  return { rootId, map: DOM_HASH_MAP, rootSelectorMatched };
 };

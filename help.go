@@ -248,7 +248,7 @@ var commandHelp = map[string]cmdHelp{
 			"  -i, --interactive   Include only clickable/fillable elements (much shorter)",
 			"  -c, --compact       Collapse whitespace and redundant nesting",
 			"  -d, --depth N       Limit tree depth to N levels",
-			"  -s, --selector <s>  Keep nodes whose tag/role/name/xpath/attributes contain <s>",
+			"  -s, --selector <s>  Scope to a CSS subtree; unmatched/invalid CSS falls back to keyword filtering",
 			"  --role <role>       Keep only nodes with this exact accessibility role",
 			"  --show-refs         Force ref boxes and numbers on, overriding settings.json",
 			"  --hide-refs         Force ref boxes and numbers off, overriding settings.json",
@@ -333,7 +333,7 @@ var commandHelp = map[string]cmdHelp{
 			"  borz get text 5",
 			"  borz get href 12",
 		},
-		Notes: refNote,
+		Notes: refNote + " The optional element argument accepts snapshot refs only, not CSS selectors; use eval/document.querySelector for selector-based reads.",
 	},
 	"network": {
 		Summary: "List, clear, or live-tail network requests captured for the current tab.",

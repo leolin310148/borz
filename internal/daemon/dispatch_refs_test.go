@@ -198,6 +198,28 @@ func TestDispatch_Check_Uncheck_Select(t *testing.T) {
 	}
 }
 
+func TestDispatch_CheckRejectsUnchangedCustomControl(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	f.On("Runtime.callFunctionOn", func(params json.RawMessage) (interface{}, error) {
+		if strings.Contains(string(params), "async function(desired)") {
+			return map[string]interface{}{"result": map[string]interface{}{"value": map[string]interface{}{
+				"ok": false, "checked": false, "error": "checkbox state remained false after interaction",
+			}}}, nil
+		}
+		return map[string]interface{}{"result": map[string]interface{}{"value": map[string]interface{}{"x": 12.5, "y": 20.0, "ok": true}}}, nil
+	})
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "1", &protocol.RefInfo{BackendDOMNodeID: 10})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionCheck, Ref: "1"})
+	if resp.Success || !strings.Contains(resp.Error, "state remained false") {
+		t.Fatalf("unchanged checkbox response = %+v", resp)
+	}
+}
+
 func TestDispatch_SelectRejectsWrongElementAndUnknownValue(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
@@ -357,6 +379,32 @@ func TestDispatch_Get_WithRef(t *testing.T) {
 	}
 }
 
+func TestDispatch_GetValueReadsLiveProperty(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	var functionDeclaration string
+	f.On("Runtime.callFunctionOn", func(params json.RawMessage) (interface{}, error) {
+		var call struct {
+			FunctionDeclaration string `json:"functionDeclaration"`
+		}
+		_ = json.Unmarshal(params, &call)
+		functionDeclaration = call.FunctionDeclaration
+		return map[string]interface{}{"result": map[string]interface{}{"value": "live textarea value"}}, nil
+	})
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "13", &protocol.RefInfo{BackendDOMNodeID: 10})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionGet, Attribute: "value", Ref: "13"})
+	if !resp.Success || resp.Data.Value != "live textarea value" {
+		t.Fatalf("get live value = %+v", resp)
+	}
+	if !strings.Contains(functionDeclaration, "'value' in this") || !strings.Contains(functionDeclaration, "this.getValue") {
+		t.Fatalf("get value does not read DOM/framework property: %s", functionDeclaration)
+	}
+}
+
 func TestDispatch_ParseRef_Unknown(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
@@ -426,6 +474,28 @@ func TestDispatch_ResolveByXPath_NoResults(t *testing.T) {
 	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionClick, Ref: "1"})
 	if resp.Success {
 		t.Fatalf("expected failure: %+v", resp)
+	}
+	if !strings.Contains(resp.Error, "stale because the page or DOM changed") || !strings.Contains(resp.Error, "run snapshot again") {
+		t.Fatalf("stale ref error is not actionable: %q", resp.Error)
+	}
+}
+
+func TestDispatch_SnapshotScopesToCSSRoot(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	f.On("Runtime.evaluate", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"result": map[string]interface{}{"value": map[string]interface{}{
+			"rootId": "panel", "rootSelectorMatched": true,
+			"map": map[string]interface{}{
+				"panel": map[string]interface{}{"tagName": "section", "children": []string{"save"}, "attributes": map[string]string{"data-testid": "node-settings-panel"}},
+				"save":  map[string]interface{}{"tagName": "button", "xpath": "/html/body/section/button", "children": []string{}, "highlightIndex": 7, "attributes": map[string]string{"aria-label": "Save node"}},
+			},
+		}}}, nil
+	})
+	c := connectCdp(t, f)
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionSnapshot, Interactive: true, Selector: "[data-testid=node-settings-panel]"})
+	if !resp.Success || resp.Data.SnapshotData.Refs["7"] == nil {
+		t.Fatalf("CSS-scoped snapshot should retain descendants that do not contain selector text: %+v", resp)
 	}
 }
 

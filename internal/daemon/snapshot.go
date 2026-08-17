@@ -30,8 +30,9 @@ type rawDomElementNode struct {
 }
 
 type buildDomTreeResult struct {
-	RootID string                     `json:"rootId"`
-	Map    map[string]json.RawMessage `json:"map"`
+	RootID              string                     `json:"rootId"`
+	Map                 map[string]json.RawMessage `json:"map"`
+	RootSelectorMatched bool                       `json:"rootSelectorMatched,omitempty"`
 }
 
 func parseNode(raw json.RawMessage) (isText bool, text rawDomTextNode, el rawDomElementNode) {
@@ -135,6 +136,9 @@ func getName(el rawDomElementNode, nodeMap map[string]json.RawMessage) string {
 	if v := attrs["value"]; v != "" {
 		return v
 	}
+	if v := attrs["borz-rendered-name"]; v != "" {
+		return v
+	}
 	if text := collectTextContent(el, nodeMap, 5); text != "" {
 		return text
 	}
@@ -216,7 +220,8 @@ func isAccessibilityHidden(el rawDomElementNode) bool {
 
 // ConvertBuildDomTreeResult converts buildDomTree.js output to an accessibility tree.
 //
-// selector is a case-insensitive substring match across tag/role/name/xpath/attr values.
+// selector is the backward-compatible keyword filter. buildSnapshot clears it
+// when buildDomTree.js successfully scoped the tree to a CSS selector root.
 // roleFilter, when non-empty, requires an exact (case-insensitive) role match and is AND'd
 // with selector. Both default to "match anything" when empty.
 func ConvertBuildDomTreeResult(result *buildDomTreeResult, interactiveOnly, compact bool, maxDepth *int, selector, roleFilter string) *protocol.SnapshotData {

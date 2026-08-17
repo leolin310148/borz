@@ -42,7 +42,8 @@ type TabState struct {
 	lastActionUnixNano atomic.Int64
 
 	// Element refs from the most recent snapshot.
-	Refs map[string]*protocol.RefInfo
+	Refs                  map[string]*protocol.RefInfo
+	RefInvalidationReason string
 
 	// PrevDiffSnapshot is the baseline used by `snapshot --diff`. It is
 	// rewritten after every successful tree-mode snapshot so the next

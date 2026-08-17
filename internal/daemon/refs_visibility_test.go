@@ -75,6 +75,11 @@ func TestDispatchSnapshotRejectsInvalidSettings(t *testing.T) {
 	}
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
+	f.On("Runtime.evaluate", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"result": map[string]interface{}{"value": map[string]interface{}{
+			"rootId": "r", "map": map[string]interface{}{"r": map[string]interface{}{"tagName": "body", "children": []string{}}},
+		}}}, nil
+	})
 	c := connectCdp(t, f)
 
 	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionSnapshot})

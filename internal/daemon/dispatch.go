@@ -38,6 +38,95 @@ func loadBuildDomTreeScript() string {
 	return buildDomTreeScript
 }
 
+// fallbackDOMTreeScript is intentionally small and dependency-free. The
+// primary tree builder has richer visibility and shadow-DOM handling, but a
+// page-specific DOM edge case must not silently degrade `snapshot` to only a
+// document title. This walker preserves useful structure and actionable XPath
+// refs while making the fallback explicit in the returned data.
+const fallbackDOMTreeScript = `(function borzFallbackSnapshot(rootSelector) {
+	const map = {};
+	let nextID = 0;
+	let nextRef = 0;
+	const seen = new WeakSet();
+	const ignored = new Set(['script', 'style', 'noscript', 'template']);
+	const interactiveSelector = 'a[href],button,input,select,textarea,summary,ui5-button,ui5-link,ui5-checkbox,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"],[role="textbox"],[tabindex],[contenteditable="true"]';
+	const xpath = (element) => {
+		if (!element || element.nodeType !== 1) return '';
+		const parts = [];
+		for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
+			let index = 1;
+			for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
+				if (sibling.tagName === node.tagName) index += 1;
+			}
+			parts.unshift(node.tagName.toLowerCase() + '[' + index + ']');
+		}
+		return '/' + parts.join('/');
+	};
+	const visible = (element) => {
+		if (element === document.body) return true;
+		const style = getComputedStyle(element);
+		if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+		const rect = element.getBoundingClientRect();
+		return rect.width > 0 && rect.height > 0;
+	};
+	const walk = (node, depth) => {
+		if (!node || depth > 100) return null;
+		if (node.nodeType === Node.TEXT_NODE) {
+			const text = String(node.textContent || '').replace(/\s+/g, ' ').trim();
+			if (!text || !node.parentElement || !visible(node.parentElement)) return null;
+			const id = String(nextID++);
+			map[id] = { type: 'TEXT_NODE', text, isVisible: true };
+			return id;
+		}
+		if (node.nodeType !== Node.ELEMENT_NODE || seen.has(node)) return null;
+		seen.add(node);
+		const tagName = node.tagName.toLowerCase();
+		if (ignored.has(tagName) || !visible(node)) return null;
+		const attributes = {};
+		for (const name of node.getAttributeNames ? node.getAttributeNames() : []) attributes[name] = node.getAttribute(name) || '';
+		const isInteractive = node.matches(interactiveSelector) || typeof node.onclick === 'function';
+		if (isInteractive && !attributes['aria-label'] && !attributes.title) {
+			const renderedName = String(node.innerText || '').replace(/\s+/g, ' ').trim();
+			if (renderedName) attributes['borz-rendered-name'] = renderedName.slice(0, 500);
+		}
+		const data = { tagName, xpath: xpath(node), attributes, children: [], isVisible: true, isTopElement: true, isInteractive };
+		if (isInteractive) data.highlightIndex = nextRef++;
+		const children = node.shadowRoot ? [...node.childNodes, ...node.shadowRoot.childNodes] : [...node.childNodes];
+		for (const child of children) {
+			const childID = walk(child, depth + 1);
+			if (childID !== null) data.children.push(childID);
+		}
+		const id = String(nextID++);
+		map[id] = data;
+		return id;
+	};
+	let root = document.body;
+	let rootSelectorMatched = false;
+	if (rootSelector) {
+		try {
+			const selected = document.querySelector(rootSelector);
+			if (selected) { root = selected; rootSelectorMatched = true; }
+		} catch (_) {}
+	}
+	return { rootId: walk(root, 0), map, rootSelectorMatched, fallback: true };
+})`
+
+func evaluateFallbackDOMTree(cdp *CdpConnection, targetID, selector string) (*buildDomTreeResult, error) {
+	selectorJSON, _ := json.Marshal(selector)
+	raw, err := cdp.Evaluate(targetID, fallbackDOMTreeScript+"("+string(selectorJSON)+")", true)
+	if err != nil {
+		return nil, err
+	}
+	var result buildDomTreeResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("decode fallback DOM tree: %w", err)
+	}
+	if result.RootID == "" || result.Map == nil {
+		return nil, fmt.Errorf("fallback DOM tree returned no root")
+	}
+	return &result, nil
+}
+
 func okResp(id string, data *protocol.ResponseData) *protocol.Response {
 	return &protocol.Response{ID: id, Success: true, Data: data}
 }
@@ -144,12 +233,7 @@ func ensureSiteAdapterTarget(cdp *CdpConnection, req *protocol.Request) (*CdpTar
 		return nil, err
 	}
 
-	var pages []CdpTargetInfo
-	for _, t := range targets {
-		if t.Type == "page" {
-			pages = append(pages, t)
-		}
-	}
+	pages := stablePageTargets(cdp, targets)
 
 	var current *CdpTargetInfo
 	if currentID := cdp.GetCurrentTargetID(); currentID != "" {
@@ -426,29 +510,52 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 			return nil, nil, err
 		}
 	}
-	buildArgs := `{"showHighlightElements":` + strconv.FormatBool(showRefs) + `,"focusHighlightIndex":-1,"viewportExpansion":-1,"debugMode":false,"startId":0,"startHighlightIndex":0}`
+	buildArgsRaw, err := json.Marshal(map[string]interface{}{
+		"showHighlightElements": showRefs,
+		"focusHighlightIndex":   -1,
+		"viewportExpansion":     -1,
+		"debugMode":             false,
+		"startId":               0,
+		"startHighlightIndex":   0,
+		"rootSelector":          req.Selector,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("encode snapshot options: %w", err)
+	}
+	buildArgs := string(buildArgsRaw)
 	expression := fmt.Sprintf(`(() => { %s; const fn = globalThis.buildDomTree ?? (typeof window !== 'undefined' ? window.buildDomTree : undefined); if (typeof fn !== 'function') { throw new Error('buildDomTree is not available after script injection'); } return fn(%s); })()`, script, buildArgs)
 
-	raw, err := cdp.Evaluate(targetID, expression, true)
-	if err != nil || raw == nil || string(raw) == "null" {
-		// Fallback: return page title
-		titleRaw, _ := cdp.Evaluate(targetID, "document.title", true)
-		title := ""
-		json.Unmarshal(titleRaw, &title)
-		tab.Refs = map[string]*protocol.RefInfo{}
-		tab.PrevDiffSnapshot = nil
-		return &protocol.SnapshotData{Snapshot: title, Refs: map[string]*protocol.RefInfo{}}, nil, nil
-	}
-
 	var result buildDomTreeResult
-	if err := json.Unmarshal(raw, &result); err != nil || result.RootID == "" {
-		tab.Refs = map[string]*protocol.RefInfo{}
-		tab.PrevDiffSnapshot = nil
-		return &protocol.SnapshotData{Snapshot: "", Refs: map[string]*protocol.RefInfo{}}, nil, nil
+	raw, primaryErr := cdp.Evaluate(targetID, expression, true)
+	if primaryErr == nil && raw != nil && string(raw) != "null" {
+		if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil || result.RootID == "" {
+			if decodeErr != nil {
+				primaryErr = fmt.Errorf("decode DOM tree: %w", decodeErr)
+			} else {
+				primaryErr = fmt.Errorf("DOM tree returned no root")
+			}
+		}
+	} else if primaryErr == nil {
+		primaryErr = fmt.Errorf("DOM tree returned no value")
+	}
+	if primaryErr != nil {
+		fallback, fallbackErr := evaluateFallbackDOMTree(cdp, targetID, req.Selector)
+		if fallbackErr != nil {
+			tab.Refs = map[string]*protocol.RefInfo{}
+			tab.RefInvalidationReason = "the snapshot could not be rebuilt"
+			tab.PrevDiffSnapshot = nil
+			return nil, nil, fmt.Errorf("build DOM snapshot: %v; fallback failed: %w", primaryErr, fallbackErr)
+		}
+		result = *fallback
 	}
 
-	snapshot := ConvertBuildDomTreeResult(&result, req.Interactive, req.Compact, req.MaxDepth, req.Selector, req.Role)
+	selectorFilter := req.Selector
+	if result.RootSelectorMatched {
+		selectorFilter = ""
+	}
+	snapshot := ConvertBuildDomTreeResult(&result, req.Interactive, req.Compact, req.MaxDepth, selectorFilter, req.Role)
 	tab.Refs = snapshot.Refs
+	tab.RefInvalidationReason = ""
 
 	// Always build the structural DiffSnapshot — it's cheap and being
 	// always-on means whether or not the *current* call asked for --diff,
@@ -704,7 +811,10 @@ func resolveBackendNodeIDByXPath(cdp *CdpConnection, targetID, xpath string) (in
 func parseRef(cdp *CdpConnection, targetID string, tab *TabState, ref string) (int, error) {
 	found, ok := tab.Refs[ref]
 	if !ok {
-		return 0, fmt.Errorf("unknown ref: %s. Run snapshot first", ref)
+		if tab.RefInvalidationReason != "" {
+			return 0, fmt.Errorf("unknown ref: %s. Snapshot refs were invalidated because %s. Run snapshot again", ref, tab.RefInvalidationReason)
+		}
+		return 0, fmt.Errorf("unknown ref: %s. Element arguments accept snapshot refs only (for example @12), not CSS selectors; Run snapshot first or use eval/document.querySelector", ref)
 	}
 	if found.BackendDOMNodeID > 0 {
 		return found.BackendDOMNodeID, nil
@@ -712,7 +822,7 @@ func parseRef(cdp *CdpConnection, targetID string, tab *TabState, ref string) (i
 	if found.XPath != "" {
 		backendID, err := resolveBackendNodeIDByXPath(cdp, targetID, found.XPath)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("ref %s is stale because the page or DOM changed; run snapshot again (%v)", ref, err)
 		}
 		found.BackendDOMNodeID = backendID
 		return backendID, nil
@@ -743,8 +853,18 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 		"objectId": resolved.Object.ObjectID,
 		"functionDeclaration": `function() {
 			if (!(this instanceof Element)) throw new Error('Ref does not resolve to an element');
-			this.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-			const rect = this.getBoundingClientRect();
+			const actionableSelector = 'button,a[href],input,select,textarea,summary,ui5-button,ui5-link,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"]';
+			let expected = this;
+			if (!expected.matches(actionableSelector)) {
+				const descendants = Array.from(expected.querySelectorAll(actionableSelector)).filter((element) => {
+					const candidateRect = element.getBoundingClientRect();
+					const style = getComputedStyle(element);
+					return candidateRect.width > 0 && candidateRect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+				});
+				if (descendants.length === 1) expected = descendants[0];
+			}
+			expected.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+			const rect = expected.getBoundingClientRect();
 			if (!rect || rect.width <= 0 || rect.height <= 0) throw new Error('Element is not visible');
 			let x = rect.left + rect.width / 2;
 			let y = rect.top + rect.height / 2;
@@ -781,8 +901,8 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			for (const [rx, ry] of candidates) {
 				const candidateX = rect.left + rect.width * rx;
 				const candidateY = rect.top + rect.height * ry;
-				const hit = this.ownerDocument.elementFromPoint(candidateX, candidateY);
-				if (hitBelongsToControl(this, hit)) {
+				const hit = expected.ownerDocument.elementFromPoint(candidateX, candidateY);
+				if (hitBelongsToControl(expected, hit)) {
 					x = candidateX;
 					y = candidateY;
 					initialHit = hit;
@@ -791,13 +911,13 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 				}
 			}
 			if (!foundPoint) {
-				initialHit = this.ownerDocument.elementFromPoint(x, y);
-				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' instead of ' + describe(this));
+				initialHit = expected.ownerDocument.elementFromPoint(x, y);
+				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' instead of ' + describe(expected));
 			}
-			let expected = this;
-			let view = this.ownerDocument.defaultView;
+			const initialView = expected.ownerDocument.defaultView;
+			let view = initialView;
 			while (view) {
-				const hit = view === this.ownerDocument.defaultView ? initialHit : view.document.elementFromPoint(x, y);
+				const hit = view === initialView ? initialHit : view.document.elementFromPoint(x, y);
 				if (!hitBelongsToControl(expected, hit)) {
 					throw new Error('Element is not clickable at its center; hit ' + describe(hit) + ' instead of ' + describe(expected));
 				}
@@ -863,6 +983,121 @@ func mouseClick(cdp *CdpConnection, targetID string, x, y float64) error {
 		return fmt.Errorf("release mouse button: %w", err)
 	}
 	return nil
+}
+
+// beginClickProbe records whether the browser-generated mouse sequence reaches
+// the referenced control. finalizeClickProbe then supplies an element-level
+// fallback only when Chrome produced no click at all, and supplies UI5's
+// framework press event only when the mouse click did not already do so.
+func beginClickProbe(cdp *CdpConnection, targetID string, backendNodeID int) bool {
+	resolvedRaw, err := cdp.SessionCommand(targetID, "DOM.resolveNode", map[string]interface{}{"backendNodeId": backendNodeID})
+	if err != nil {
+		return false
+	}
+	var resolved struct {
+		Object struct {
+			ObjectID string `json:"objectId"`
+		} `json:"object"`
+	}
+	json.Unmarshal(resolvedRaw, &resolved)
+	if resolved.Object.ObjectID == "" {
+		return false
+	}
+	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+		"objectId": resolved.Object.ObjectID,
+		"functionDeclaration": `function() {
+			const key = '__borzClickProbe';
+			const previous = this[key];
+			if (previous && previous.cleanup) previous.cleanup();
+			const state = { click: false, press: false };
+			const onClick = () => { state.click = true; };
+			const onPress = () => { state.press = true; };
+			this.addEventListener('click', onClick, true);
+			this.addEventListener('press', onPress, true);
+			state.cleanup = () => {
+				this.removeEventListener('click', onClick, true);
+				this.removeEventListener('press', onPress, true);
+			};
+			this[key] = state;
+			return true;
+		}`,
+		"returnByValue": true,
+	})
+	if err != nil {
+		return false
+	}
+	var call struct {
+		Result struct {
+			Value bool `json:"value"`
+		} `json:"result"`
+	}
+	return json.Unmarshal(callRaw, &call) == nil && call.Result.Value
+}
+
+func finalizeClickProbe(cdp *CdpConnection, targetID string, backendNodeID int, allowFallback bool) (string, error) {
+	resolvedRaw, err := cdp.SessionCommand(targetID, "DOM.resolveNode", map[string]interface{}{"backendNodeId": backendNodeID})
+	if err != nil {
+		// Navigation commonly destroys the old node after a successful click.
+		return "", nil
+	}
+	var resolved struct {
+		Object struct {
+			ObjectID string `json:"objectId"`
+		} `json:"object"`
+	}
+	json.Unmarshal(resolvedRaw, &resolved)
+	if resolved.Object.ObjectID == "" {
+		return "", nil
+	}
+	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+		"objectId": resolved.Object.ObjectID,
+		"functionDeclaration": `function(allowFallback) {
+			const key = '__borzClickProbe';
+			const state = this[key] || { click: false, press: false };
+			if (state.cleanup) state.cleanup();
+			delete this[key];
+			const actionableSelector = 'button,a[href],input,select,textarea,summary,ui5-button,ui5-link,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"]';
+			let target = this;
+			if (!target.matches(actionableSelector)) {
+				const candidates = Array.from(target.querySelectorAll(actionableSelector)).filter((element) => {
+					const rect = element.getBoundingClientRect();
+					return rect.width > 0 && rect.height > 0;
+				});
+				if (candidates.length === 1) target = candidates[0];
+			}
+			if (allowFallback && !state.press && typeof target.firePress === 'function') {
+				target.firePress();
+				return { fallback: 'firePress', observedClick: state.click, observedPress: state.press };
+			}
+			if (allowFallback && !state.click && typeof target.click === 'function') {
+				target.click();
+				return { fallback: 'element.click', observedClick: false, observedPress: state.press };
+			}
+			return { fallback: '', observedClick: state.click, observedPress: state.press };
+		}`,
+		"arguments":     []map[string]interface{}{{"value": allowFallback}},
+		"returnByValue": true,
+	})
+	if err != nil {
+		return "", err
+	}
+	var call struct {
+		Result struct {
+			Value struct {
+				Fallback string `json:"fallback"`
+			} `json:"value"`
+		} `json:"result"`
+		ExceptionDetails *struct {
+			Text string `json:"text"`
+		} `json:"exceptionDetails"`
+	}
+	if err := json.Unmarshal(callRaw, &call); err != nil {
+		return "", fmt.Errorf("decode click verification: %w", err)
+	}
+	if call.ExceptionDetails != nil {
+		return "", fmt.Errorf("click verification failed: %s", call.ExceptionDetails.Text)
+	}
+	return call.Result.Value.Fallback, nil
 }
 
 func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, text string, clearFirst bool) error {
@@ -978,6 +1213,108 @@ func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, 
 	return nil
 }
 
+func setCheckedState(cdp *CdpConnection, targetID string, backendNodeID int, desired bool) error {
+	resolvedRaw, err := cdp.SessionCommand(targetID, "DOM.resolveNode", map[string]interface{}{
+		"backendNodeId": backendNodeID,
+	})
+	if err != nil {
+		return err
+	}
+	var resolved struct {
+		Object struct {
+			ObjectID string `json:"objectId"`
+		} `json:"object"`
+	}
+	if err := json.Unmarshal(resolvedRaw, &resolved); err != nil {
+		return fmt.Errorf("decode checkbox node: %w", err)
+	}
+	if resolved.Object.ObjectID == "" {
+		return fmt.Errorf("DOM.resolveNode returned no object for backend node %d", backendNodeID)
+	}
+
+	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+		"objectId": resolved.Object.ObjectID,
+		"functionDeclaration": `async function(desired) {
+			const checkboxSelector = 'input[type="checkbox"],ui5-checkbox,[role="checkbox"]';
+			let control = this.matches && this.matches(checkboxSelector) ? this : null;
+			if (!control && this.shadowRoot) control = this.shadowRoot.querySelector(checkboxSelector);
+			if (!control && this.querySelector) control = this.querySelector(checkboxSelector);
+			if (!control && ('checked' in this || this.getAttribute?.('role') === 'checkbox')) control = this;
+			if (!control) return { ok: false, error: 'element is not a checkbox control' };
+			if (control.disabled || control.getAttribute?.('aria-disabled') === 'true') {
+				return { ok: false, error: 'checkbox is disabled' };
+			}
+			const read = () => {
+				if ('checked' in control) return Boolean(control.checked);
+				return control.getAttribute?.('aria-checked') === 'true';
+			};
+			if (read() === desired) return { ok: true, checked: desired, method: 'already-set' };
+
+			if (typeof control.click === 'function') control.click();
+			await Promise.resolve();
+			if (read() === desired) return { ok: true, checked: desired, method: 'click' };
+
+			if (control instanceof HTMLInputElement && control.type === 'checkbox') {
+				const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
+				if (descriptor && typeof descriptor.set === 'function') descriptor.set.call(control, desired);
+				else control.checked = desired;
+			} else if ('checked' in control) {
+				control.checked = desired;
+			} else {
+				control.setAttribute('aria-checked', String(desired));
+			}
+			control.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+			control.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+			if (typeof control.fireChange === 'function') control.fireChange();
+			await Promise.resolve();
+			const actual = read();
+			if (actual !== desired) {
+				return { ok: false, checked: actual, error: 'checkbox state remained ' + actual + ' after interaction' };
+			}
+			return { ok: true, checked: actual, method: 'property-and-events' };
+		}`,
+		"arguments":     []map[string]interface{}{{"value": desired}},
+		"returnByValue": true,
+		"awaitPromise":  true,
+	})
+	if err != nil {
+		return err
+	}
+	var call struct {
+		Result struct {
+			Value struct {
+				OK      bool   `json:"ok"`
+				Checked bool   `json:"checked"`
+				Error   string `json:"error"`
+			} `json:"value"`
+		} `json:"result"`
+		ExceptionDetails *struct {
+			Text      string `json:"text"`
+			Exception struct {
+				Description string `json:"description"`
+			} `json:"exception"`
+		} `json:"exceptionDetails"`
+	}
+	if err := json.Unmarshal(callRaw, &call); err != nil {
+		return fmt.Errorf("decode checkbox result: %w", err)
+	}
+	if call.ExceptionDetails != nil {
+		message := strings.TrimSpace(call.ExceptionDetails.Exception.Description)
+		if message == "" {
+			message = strings.TrimSpace(call.ExceptionDetails.Text)
+		}
+		return fmt.Errorf("checkbox interaction failed: %s", message)
+	}
+	if !call.Result.Value.OK {
+		message := call.Result.Value.Error
+		if message == "" {
+			message = fmt.Sprintf("checkbox state did not become %v", desired)
+		}
+		return fmt.Errorf("%s", message)
+	}
+	return nil
+}
+
 func getAttributeValue(cdp *CdpConnection, targetID string, backendNodeID int, attribute string) (string, error) {
 	resolvedRaw, err := cdp.SessionCommand(targetID, "DOM.resolveNode", map[string]interface{}{
 		"backendNodeId": backendNodeID,
@@ -997,7 +1334,22 @@ func getAttributeValue(cdp *CdpConnection, targetID string, backendNodeID int, a
 		fn = `function() { return (this instanceof HTMLElement ? this.innerText : this.textContent || '').trim(); }`
 	} else {
 		attrJSON, _ := json.Marshal(attribute)
-		fn = fmt.Sprintf(`function() { if (%s === 'url') return this.href || this.src || location.href; if (%s === 'title') return document.title; return this.getAttribute(%s) || ''; }`, string(attrJSON), string(attrJSON), string(attrJSON))
+		fn = fmt.Sprintf(`function() {
+			const attribute = %s;
+			if (attribute === 'url') return this.href || this.src || location.href;
+			if (attribute === 'title') return document.title;
+			if (attribute === 'text') return (this instanceof HTMLElement ? this.innerText : this.textContent || '').trim();
+			if (attribute === 'value') {
+				if ('value' in this) return String(this.value ?? '');
+				if (typeof this.getValue === 'function') return String(this.getValue() ?? '');
+			}
+			if (attribute === 'html') return this.outerHTML || '';
+			const attrValue = this.getAttribute ? this.getAttribute(attribute) : null;
+			if (attrValue !== null) return attrValue;
+			const propertyValue = this[attribute];
+			if (typeof propertyValue === 'string' || typeof propertyValue === 'number' || typeof propertyValue === 'boolean') return String(propertyValue);
+			return '';
+		}`, string(attrJSON))
 	}
 
 	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
@@ -1350,11 +1702,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 	if req.Action == protocol.ActionTabList {
 		targets, _ := cdp.GetTargets()
 		var tabs []protocol.TabInfo
-		idx := 0
-		for _, t := range targets {
-			if t.Type != "page" {
-				continue
-			}
+		for idx, t := range stablePageTargets(cdp, targets) {
 			tState := cdp.TabManager.GetTab(t.ID)
 			tabShort := strings.ToLower(t.ID[max(0, len(t.ID)-4):])
 			if tState != nil {
@@ -1369,7 +1717,6 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 				TabID:  t.ID,
 				Tab:    tabShort,
 			})
-			idx++
 		}
 		activeIdx := 0
 		for i, t := range tabs {
@@ -1463,6 +1810,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 					}
 					if reused != nil {
 						reused.Refs = map[string]*protocol.RefInfo{}
+						reused.RefInvalidationReason = "the viewport changed"
 					}
 				}
 				return withWaitFor(req, cdp, existing.ID, okResp(req.ID, &protocol.ResponseData{
@@ -1570,6 +1918,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		// no longer mutates it for explicit-tab requests.
 		cdp.SetCurrentTargetID(target.ID)
 		tab.Refs = map[string]*protocol.RefInfo{}
+		tab.RefInvalidationReason = "the page navigated"
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{
 			URL: req.URL, Title: target.Title, TabID: target.ID, Tab: shortID, Seq: intPtr(seq), Viewport: viewport,
 		}))
@@ -1577,16 +1926,22 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 	case protocol.ActionBack:
 		seq := tab.RecordAction()
 		cdp.Evaluate(target.ID, "history.back(); undefined", false)
+		tab.Refs = map[string]*protocol.RefInfo{}
+		tab.RefInvalidationReason = "the page navigated backward"
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionForward:
 		seq := tab.RecordAction()
 		cdp.Evaluate(target.ID, "history.forward(); undefined", false)
+		tab.Refs = map[string]*protocol.RefInfo{}
+		tab.RefInvalidationReason = "the page navigated forward"
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionRefresh:
 		seq := tab.RecordAction()
 		cdp.SessionCommand(target.ID, "Page.reload", map[string]interface{}{"ignoreCache": false})
+		tab.Refs = map[string]*protocol.RefInfo{}
+		tab.RefInvalidationReason = "the page reloaded"
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionClose:
@@ -1650,6 +2005,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			s := tab.RecordAction()
 			seq = &s
 			tab.Refs = map[string]*protocol.RefInfo{}
+			tab.RefInvalidationReason = "the viewport changed"
 		}
 		viewport, err := applyViewport(cdp, target.ID, req.Viewport)
 		if err != nil {
@@ -1672,8 +2028,17 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			return failResp(req.ID, err)
 		}
 		if req.Action == protocol.ActionClick {
+			probeStarted := beginClickProbe(cdp, target.ID, backendID)
 			if err := mouseClick(cdp, target.ID, x, y); err != nil {
+				if probeStarted {
+					_, _ = finalizeClickProbe(cdp, target.ID, backendID, false)
+				}
 				return failResp(req.ID, err)
+			}
+			if probeStarted {
+				if _, err := finalizeClickProbe(cdp, target.ID, backendID, true); err != nil {
+					return failResp(req.ID, err)
+				}
 			}
 		} else if _, err := cdp.SessionCommand(target.ID, "Input.dispatchMouseEvent", map[string]interface{}{
 			"type": "mouseMoved", "x": x, "y": y, "button": "none",
@@ -1707,17 +2072,9 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		if err != nil {
 			return failResp(req.ID, err)
 		}
-		resolvedRaw, _ := cdp.SessionCommand(target.ID, "DOM.resolveNode", map[string]interface{}{"backendNodeId": backendID})
-		var resolved struct {
-			Object struct {
-				ObjectID string `json:"objectId"`
-			} `json:"object"`
+		if err := setCheckedState(cdp, target.ID, backendID, desired); err != nil {
+			return failResp(req.ID, err)
 		}
-		json.Unmarshal(resolvedRaw, &resolved)
-		cdp.SessionCommand(target.ID, "Runtime.callFunctionOn", map[string]interface{}{
-			"objectId":            resolved.Object.ObjectID,
-			"functionDeclaration": fmt.Sprintf(`function() { this.checked = %v; this.dispatchEvent(new Event('input', { bubbles: true })); this.dispatchEvent(new Event('change', { bubbles: true })); }`, desired),
-		})
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionSelect:
@@ -2202,12 +2559,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 
 	case protocol.ActionTabSelect:
 		targets, _ := cdp.GetTargets()
-		var pages []CdpTargetInfo
-		for _, t := range targets {
-			if t.Type == "page" {
-				pages = append(pages, t)
-			}
-		}
+		pages := stablePageTargets(cdp, targets)
 		selected := resolvePageTarget(cdp, pages, req.TabID, req.Index)
 		if selected == nil {
 			return failResp(req.ID, "tab not found")
@@ -2350,12 +2702,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 
 	case protocol.ActionTabClose:
 		targets, _ := cdp.GetTargets()
-		var pages []CdpTargetInfo
-		for _, t := range targets {
-			if t.Type == "page" {
-				pages = append(pages, t)
-			}
-		}
+		pages := stablePageTargets(cdp, targets)
 		selected := resolvePageTarget(cdp, pages, req.TabID, req.Index)
 		if selected == nil {
 			return failResp(req.ID, "tab not found")

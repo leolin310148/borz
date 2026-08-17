@@ -634,6 +634,53 @@ func TestDispatch_TabList_Disconnected(t *testing.T) {
 	}
 }
 
+func TestStablePageTargetsUsesTabCreationOrder(t *testing.T) {
+	c := NewCdpConnection("h", 1, NewTabStateManager())
+	first := c.TabManager.AddTab("page-a")
+	second := c.TabManager.AddTab("page-b")
+	base := time.Unix(100, 0)
+	first.CreatedAt = base
+	second.CreatedAt = base.Add(time.Second)
+
+	targets := []CdpTargetInfo{
+		{ID: "page-b", Type: "page"},
+		{ID: "worker", Type: "worker"},
+		{ID: "page-a", Type: "page"},
+		{ID: "page-unregistered-z", Type: "page"},
+		{ID: "page-unregistered-c", Type: "page"},
+	}
+	got := stablePageTargets(c, targets)
+	want := []string{"page-a", "page-b", "page-unregistered-c", "page-unregistered-z"}
+	if len(got) != len(want) {
+		t.Fatalf("stablePageTargets length = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i].ID != want[i] {
+			t.Fatalf("stablePageTargets[%d] = %q, want %q (all=%+v)", i, got[i].ID, want[i], got)
+		}
+	}
+}
+
+func TestStablePageTargetsDoesNotReorderAfterLateRegistration(t *testing.T) {
+	c := NewCdpConnection("h", 1, NewTabStateManager())
+	targets := []CdpTargetInfo{
+		{ID: "page-z", Type: "page"},
+		{ID: "page-a", Type: "page"},
+	}
+	first := stablePageTargets(c, targets)
+	if first[0].ID != "page-a" || first[1].ID != "page-z" {
+		t.Fatalf("initial deterministic order = %+v", first)
+	}
+
+	// Simulate asynchronous CDP attachment completing in the opposite order.
+	c.TabManager.AddTab("page-z")
+	c.TabManager.AddTab("page-a")
+	second := stablePageTargets(c, []CdpTargetInfo{targets[1], targets[0]})
+	if second[0].ID != "page-a" || second[1].ID != "page-z" {
+		t.Fatalf("late registration reordered displayed indices: %+v", second)
+	}
+}
+
 func TestDispatch_TabNew_Disconnected(t *testing.T) {
 	c := NewCdpConnection("h", 1, NewTabStateManager())
 	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionTabNew, URL: ""})

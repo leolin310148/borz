@@ -71,6 +71,10 @@ func TestE2ECLICommandsAgainstVerifySite(t *testing.T) {
 		inputRef := refByName(t, snapshot.Data.SnapshotData, "E2E text input")
 		checkRef := refByName(t, snapshot.Data.SnapshotData, "E2E checkbox")
 		selectRef := refByName(t, snapshot.Data.SnapshotData, "E2E color select")
+		textareaRef := refByName(t, snapshot.Data.SnapshotData, "Live description")
+		nestedRef := refByName(t, snapshot.Data.SnapshotData, "Nested create action")
+		frameworkButtonRef := refByName(t, snapshot.Data.SnapshotData, "Framework press action")
+		frameworkCheckboxRef := refByName(t, snapshot.Data.SnapshotData, "Framework checkbox")
 
 		getTextResp := runE2EJSON(t, env, "get", "text", clickRef, "--json")
 		if getTextResp.Data.Value != "Click me" {
@@ -97,6 +101,29 @@ func TestE2ECLICommandsAgainstVerifySite(t *testing.T) {
 
 		runE2EJSON(t, env, "select", selectRef, "green", "--json")
 		requireEvalString(t, env, `document.querySelector("#color-select").value`, "green")
+
+		valueResp := runE2EJSON(t, env, "get", "value", textareaRef, "--json")
+		if valueResp.Data.Value != "description from live property" {
+			t.Fatalf("get textarea live value = %q", valueResp.Data.Value)
+		}
+
+		runE2EJSON(t, env, "click", nestedRef, "--json")
+		requireEvalString(t, env, `document.querySelector("#nested-action-state").textContent`, "clicked")
+
+		runE2EJSON(t, env, "click", frameworkButtonRef, "--json")
+		requireEvalString(t, env, `document.querySelector("#framework-press-state").textContent`, "pressed")
+
+		runE2EJSON(t, env, "check", frameworkCheckboxRef, "--json")
+		requireEvalBool(t, env, `document.querySelector("#framework-checkbox").checked`, true)
+		requireEvalString(t, env, `document.querySelector("#framework-checkbox-state").textContent`, "checked")
+
+		scoped := runE2EJSON(t, env, "snapshot", "--interactive", "--selector", "[data-testid=node-settings-panel]", "--json")
+		if scoped.Data.SnapshotData == nil {
+			t.Fatal("CSS-scoped snapshot returned no data")
+		}
+		requireContains(t, scoped.Data.SnapshotData.Snapshot, "Live description", "CSS-scoped snapshot")
+		requireContains(t, scoped.Data.SnapshotData.Snapshot, "Save scoped panel", "CSS-scoped snapshot")
+		requireNotContains(t, scoped.Data.SnapshotData.Snapshot, "Click counter", "CSS-scoped snapshot")
 	})
 
 	t.Run("scroll_and_screenshot", func(t *testing.T) {

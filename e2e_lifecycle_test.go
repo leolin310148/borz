@@ -114,7 +114,9 @@ func TestE2ECLITabLifecycle(t *testing.T) {
 	staleRef := refByName(t, snapshot, "Click counter")
 	runE2EJSON(t, env, "open", baseURL+"/page2", "--tab", primary, "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
 	staleAction := runE2EJSONResponse(t, env, "click", staleRef, "--tab", primary, "--json")
-	if staleAction.Success || !strings.Contains(staleAction.Error, "unknown ref: "+staleRef) || !strings.Contains(staleAction.Error, "Run snapshot first") {
+	if staleAction.Success || !strings.Contains(staleAction.Error, "unknown ref: "+staleRef) ||
+		!strings.Contains(staleAction.Error, "invalidated because the page navigated") ||
+		!strings.Contains(staleAction.Error, "Run snapshot again") {
 		t.Fatalf("stale ref response = %+v, want structured ref-not-found error", staleAction)
 	}
 	guardTitle := runE2EJSON(t, env, "get", "title", "--tab", guard, "--json")
