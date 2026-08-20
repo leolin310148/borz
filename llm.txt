@@ -42,6 +42,7 @@ borz viewport [mobile|tablet|desktop|WxH|reset]  # responsive viewport emulation
 borz click <ref>                             # refs come from snapshot
 borz fill <ref> <text>                       # clear + fill
 borz type <ref> <text>                       # append
+borz select <ref> <value-or-visible-text>    # native select or ARIA/component combobox; verifies change
 borz upload <ref> <file...>                  # file input or associated label ref (paths on daemon host)
 borz filechooser accept <file...>            # arm the next native file-picker dialog (no <input> needed)
 borz webauthn enable|add|credentials|remove [--tab id]  # typed Passkey virtual-authenticator lifecycle

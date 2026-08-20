@@ -156,9 +156,10 @@ func TestHandleAttached_StoresSession(t *testing.T) {
 	c2.handleAttached(map[string]json.RawMessage{})
 }
 
-func TestHandleDetached_CleansUp(t *testing.T) {
+func TestHandleDetached_PreservesLiveTargetState(t *testing.T) {
 	c := NewCdpConnection("h", 1, NewTabStateManager())
-	c.TabManager.AddTab("T1")
+	tab := c.TabManager.AddTab("T1")
+	tab.Refs["7"] = &protocol.RefInfo{BackendDOMNodeID: 42}
 	c.sessions.Store("T1", "S1")
 	c.attached.Store("S1", "T1")
 	c.SetCurrentTargetID("T1")
@@ -173,11 +174,11 @@ func TestHandleDetached_CleansUp(t *testing.T) {
 	if _, ok := c.attached.Load("S1"); ok {
 		t.Fatal("attached should be cleared")
 	}
-	if c.TabManager.GetTab("T1") != nil {
-		t.Fatal("tab should be removed")
+	if got := c.TabManager.GetTab("T1"); got == nil || got.Refs["7"] == nil {
+		t.Fatal("detaching a session should preserve the live target and its refs")
 	}
-	if got := c.GetCurrentTargetID(); got != "" {
-		t.Fatalf("current should be cleared: %q", got)
+	if got := c.GetCurrentTargetID(); got != "T1" {
+		t.Fatalf("selected live target should be preserved: %q", got)
 	}
 
 	// Empty session id: no-op.

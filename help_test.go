@@ -387,6 +387,18 @@ func TestSuggestCommands(t *testing.T) {
 	}
 }
 
+func TestCommandUsageHintNavigate(t *testing.T) {
+	hint := commandUsageHint("navigate")
+	for _, want := range []string{"--tab <id>", "open <url>", "open/reuse"} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("navigate hint missing %q: %q", want, hint)
+		}
+	}
+	if got := commandUsageHint("xyzzy"); got != "" {
+		t.Fatalf("unrelated command hint = %q", got)
+	}
+}
+
 func TestSuggestNamesNonPositiveLimit(t *testing.T) {
 	for _, tc := range []struct {
 		name string

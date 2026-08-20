@@ -154,9 +154,9 @@ var uncheckTool = mcp.NewTool("browser_uncheck",
 )
 
 var selectTool = mcp.NewTool("browser_select",
-	mcp.WithDescription("Select an option from a dropdown/select element"),
-	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot")),
-	mcp.WithString("value", mcp.Required(), mcp.Description("Value to select")),
+	mcp.WithDescription("Select an option from a native select or visible ARIA/component-library combobox; verifies the resulting selection"),
+	mcp.WithString("ref", mcp.Required(), mcp.Description("Snapshot ref for the select or combobox")),
+	mcp.WithString("value", mcp.Required(), mcp.Description("Native option value, or custom-combobox option value/aria-label/exact visible text")),
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),

@@ -72,7 +72,7 @@ func RestartDaemonPreservingBrowser() (*DaemonRestartResult, error) {
 				return nil, fmt.Errorf("refusing to replace stale daemon on port %d: %w", port, err)
 			}
 			if err := restartKillDaemon(squatter.PID); err != nil {
-				return nil, fmt.Errorf("replace stale daemon pid %d: %w", squatter.PID, err)
+				return nil, restartSignalError("replace stale daemon", squatter.PID, err)
 			}
 			result.PreviousPID = squatter.PID
 			result.RecoveredStale = true
@@ -104,9 +104,16 @@ func stopVerifiedDaemon(pid, port int) error {
 		return fmt.Errorf("refusing to replace daemon pid %d: loopback health check on port %d reports pid %d", pid, port, live.PID)
 	}
 	if err := restartKillDaemon(pid); err != nil {
-		return fmt.Errorf("replace daemon pid %d: %w", pid, err)
+		return restartSignalError("replace daemon", pid, err)
 	}
 	return nil
+}
+
+func restartSignalError(action string, pid int, err error) error {
+	if errors.Is(err, os.ErrPermission) {
+		return fmt.Errorf("%s pid %d: %w; the current sandbox/user cannot signal the daemon process. Allow process-signaling permission or rerun this command outside the restricted workspace; the browser has not been closed", action, pid, err)
+	}
+	return fmt.Errorf("%s pid %d: %w", action, pid, err)
 }
 
 func validateDaemonPID(pid int) error {

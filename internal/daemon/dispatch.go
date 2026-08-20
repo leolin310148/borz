@@ -832,12 +832,12 @@ func parseRef(cdp *CdpConnection, targetID string, tab *TabState, ref string) (i
 
 // --- Input helpers ---
 
-func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int) (x, y float64, err error) {
+func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int) (x, y float64, focusOnly bool, err error) {
 	resolvedRaw, err := cdp.SessionCommand(targetID, "DOM.resolveNode", map[string]interface{}{
 		"backendNodeId": backendNodeID,
 	})
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 	var resolved struct {
 		Object struct {
@@ -846,13 +846,15 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 	}
 	json.Unmarshal(resolvedRaw, &resolved)
 	if resolved.Object.ObjectID == "" {
-		return 0, 0, fmt.Errorf("DOM.resolveNode returned no object for backend node %d", backendNodeID)
+		return 0, 0, false, fmt.Errorf("DOM.resolveNode returned no object for backend node %d", backendNodeID)
 	}
 
 	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
 		"objectId": resolved.Object.ObjectID,
 		"functionDeclaration": `function() {
 			if (!(this instanceof Element)) throw new Error('Ref does not resolve to an element');
+			const isTerminalInput = this instanceof HTMLTextAreaElement &&
+				(this.classList.contains('xterm-helper-textarea') || Boolean(this.closest('.xterm')));
 			const actionableSelector = 'button,a[href],input,select,textarea,summary,ui5-button,ui5-link,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"]';
 			let expected = this;
 			if (!expected.matches(actionableSelector)) {
@@ -865,7 +867,10 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			}
 			expected.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
 			const rect = expected.getBoundingClientRect();
-			if (!rect || rect.width <= 0 || rect.height <= 0) throw new Error('Element is not visible');
+			if (!rect || rect.width <= 0 || rect.height <= 0) {
+				if (isTerminalInput) return { x: 0, y: 0, focusOnly: true };
+				throw new Error('Element is not visible');
+			}
 			let x = rect.left + rect.width / 2;
 			let y = rect.top + rect.height / 2;
 			const describe = (element) => {
@@ -912,14 +917,14 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			}
 			if (!foundPoint) {
 				initialHit = expected.ownerDocument.elementFromPoint(x, y);
-				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' instead of ' + describe(expected));
+				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' instead of ' + describe(expected) + ". Close the blocking popup/overlay (try 'borz press Escape') and take a fresh snapshot.");
 			}
 			const initialView = expected.ownerDocument.defaultView;
 			let view = initialView;
 			while (view) {
 				const hit = view === initialView ? initialHit : view.document.elementFromPoint(x, y);
 				if (!hitBelongsToControl(expected, hit)) {
-					throw new Error('Element is not clickable at its center; hit ' + describe(hit) + ' instead of ' + describe(expected));
+					throw new Error('Element is not clickable at its center; hit ' + describe(hit) + ' instead of ' + describe(expected) + ". Close the blocking popup/overlay (try 'borz press Escape') and take a fresh snapshot.");
 				}
 				if (!view.frameElement) break;
 				const frame = view.frameElement;
@@ -934,14 +939,15 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 		"returnByValue": true,
 	})
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 
 	var call struct {
 		Result struct {
 			Value struct {
-				X float64 `json:"x"`
-				Y float64 `json:"y"`
+				X         float64 `json:"x"`
+				Y         float64 `json:"y"`
+				FocusOnly bool    `json:"focusOnly"`
 			} `json:"value"`
 		} `json:"result"`
 		ExceptionDetails *struct {
@@ -961,9 +967,9 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 		if message == "" {
 			message = "failed to calculate an interactable point"
 		}
-		return 0, 0, fmt.Errorf("%s", message)
+		return 0, 0, false, fmt.Errorf("%s", message)
 	}
-	return call.Result.Value.X, call.Result.Value.Y, nil
+	return call.Result.Value.X, call.Result.Value.Y, call.Result.Value.FocusOnly, nil
 }
 
 func mouseClick(cdp *CdpConnection, targetID string, x, y float64) error {
@@ -1311,6 +1317,137 @@ func setCheckedState(cdp *CdpConnection, targetID string, backendNodeID int, des
 			message = fmt.Sprintf("checkbox state did not become %v", desired)
 		}
 		return fmt.Errorf("%s", message)
+	}
+	return nil
+}
+
+// selectValue supports both native <select> controls and ARIA comboboxes used
+// by component libraries such as Element Plus. Custom combobox options are
+// commonly teleported under document.body, so the lookup follows aria-controls
+// first and then considers only visible global options. It verifies the
+// resulting selection instead of reporting success after an ineffective click.
+func selectValue(cdp *CdpConnection, targetID string, backendNodeID int, value string) error {
+	resolvedRaw, err := cdp.SessionCommand(targetID, "DOM.resolveNode", map[string]interface{}{
+		"backendNodeId": backendNodeID,
+	})
+	if err != nil {
+		return err
+	}
+	var resolved struct {
+		Object struct {
+			ObjectID string `json:"objectId"`
+		} `json:"object"`
+	}
+	if err := json.Unmarshal(resolvedRaw, &resolved); err != nil {
+		return fmt.Errorf("decode select node: %w", err)
+	}
+	if resolved.Object.ObjectID == "" {
+		return fmt.Errorf("DOM.resolveNode returned no object for backend node %d", backendNodeID)
+	}
+
+	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+		"objectId": resolved.Object.ObjectID,
+		"functionDeclaration": `async function(value) {
+			const wanted = String(value).trim();
+			const normalize = text => String(text ?? '').replace(/\s+/g, ' ').trim();
+			const visible = element => {
+				if (!(element instanceof Element)) return false;
+				const rect = element.getBoundingClientRect();
+				const style = getComputedStyle(element);
+				return rect.width > 0 && rect.height > 0 && style.display !== 'none' &&
+					style.visibility !== 'hidden' && style.pointerEvents !== 'none';
+			};
+			// setTimeout keeps working in background tabs where requestAnimationFrame
+			// may be paused entirely.
+			const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+			if (this instanceof HTMLSelectElement) {
+				if (!Array.from(this.options).some(option => option.value === wanted)) {
+					return { ok: false, error: 'select value not found: ' + wanted };
+				}
+				this.value = wanted;
+				this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+				this.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+				return { ok: this.value === wanted, method: 'native' };
+			}
+
+			const comboSelector = '[role="combobox"],input[aria-haspopup="listbox"],.el-select';
+			let combo = this.matches?.(comboSelector) ? this : this.closest?.(comboSelector);
+			if (!combo) combo = this.querySelector?.(comboSelector);
+			if (!combo) {
+				return { ok: false, error: 'element is not a native select or ARIA combobox' };
+			}
+			const input = combo.matches?.('input,[role="combobox"]') ? combo :
+				combo.querySelector?.('input[role="combobox"],input[aria-haspopup="listbox"],[role="combobox"]');
+			const opener = combo.closest?.('.el-select') || combo;
+			if (input?.getAttribute('aria-expanded') !== 'true') {
+				if (typeof opener.click === 'function') opener.click();
+				await settle();
+			}
+
+			const controlsID = input?.getAttribute('aria-controls') || combo.getAttribute?.('aria-controls');
+			const controlled = controlsID ? document.getElementById(controlsID) : null;
+			const optionSelector = '[role="option"],[role="listitem"],.el-select-dropdown__item';
+			let options = controlled ? Array.from(controlled.querySelectorAll(optionSelector)) : [];
+			if (!options.length) options = Array.from(document.querySelectorAll(optionSelector)).filter(visible);
+			const optionValue = option => normalize(
+				option.getAttribute('value') ?? option.getAttribute('data-value') ??
+				option.getAttribute('aria-label') ?? option.textContent
+			);
+			const option = options.find(candidate => visible(candidate) && optionValue(candidate) === wanted);
+			if (!option) {
+				return { ok: false, error: 'combobox option not found or not visible: ' + wanted };
+			}
+
+			option.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'nearest' });
+			option.click();
+			await settle();
+			const selected = option.getAttribute('aria-selected') === 'true' ||
+				option.matches(':checked,.is-selected,.selected,[data-selected="true"]');
+			const inputValue = normalize(input && 'value' in input ? input.value : '');
+			const displayed = normalize(opener.textContent);
+			if (!selected && inputValue !== wanted && !displayed.includes(wanted)) {
+				return { ok: false, error: 'combobox selection did not change to ' + wanted +
+					'; take a fresh snapshot and verify the option is still open' };
+			}
+			return { ok: true, method: 'combobox-option-click' };
+		}`,
+		"arguments":     []map[string]interface{}{{"value": value}},
+		"returnByValue": true,
+		"awaitPromise":  true,
+	})
+	if err != nil {
+		return err
+	}
+	var call struct {
+		Result struct {
+			Value struct {
+				OK    bool   `json:"ok"`
+				Error string `json:"error"`
+			} `json:"value"`
+		} `json:"result"`
+		ExceptionDetails *struct {
+			Text      string `json:"text"`
+			Exception struct {
+				Description string `json:"description"`
+			} `json:"exception"`
+		} `json:"exceptionDetails"`
+	}
+	if err := json.Unmarshal(callRaw, &call); err != nil {
+		return fmt.Errorf("decode select result: %w", err)
+	}
+	if call.ExceptionDetails != nil {
+		message := strings.TrimSpace(call.ExceptionDetails.Exception.Description)
+		if message == "" {
+			message = strings.TrimSpace(call.ExceptionDetails.Text)
+		}
+		return fmt.Errorf("select action failed: %s", message)
+	}
+	if !call.Result.Value.OK {
+		if call.Result.Value.Error == "" {
+			call.Result.Value.Error = "select action failed"
+		}
+		return fmt.Errorf("%s", call.Result.Value.Error)
 	}
 	return nil
 }
@@ -2023,11 +2160,17 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		if err != nil {
 			return failResp(req.ID, err)
 		}
-		x, y, err := getInteractablePoint(cdp, target.ID, backendID)
+		x, y, focusOnly, err := getInteractablePoint(cdp, target.ID, backendID)
 		if err != nil {
 			return failResp(req.ID, err)
 		}
 		if req.Action == protocol.ActionClick {
+			if focusOnly {
+				if _, err := cdp.SessionCommand(target.ID, "DOM.focus", map[string]interface{}{"backendNodeId": backendID}); err != nil {
+					return failResp(req.ID, fmt.Errorf("focus hidden terminal input: %w", err))
+				}
+				return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
+			}
 			probeStarted := beginClickProbe(cdp, target.ID, backendID)
 			if err := mouseClick(cdp, target.ID, x, y); err != nil {
 				if probeStarted {
@@ -2040,6 +2183,8 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 					return failResp(req.ID, err)
 				}
 			}
+		} else if focusOnly {
+			return failResp(req.ID, "terminal helper input has no hoverable box; click it to focus the terminal")
 		} else if _, err := cdp.SessionCommand(target.ID, "Input.dispatchMouseEvent", map[string]interface{}{
 			"type": "mouseMoved", "x": x, "y": y, "button": "none",
 		}); err != nil {
@@ -2086,47 +2231,8 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		if err != nil {
 			return failResp(req.ID, err)
 		}
-		resolvedRaw, _ := cdp.SessionCommand(target.ID, "DOM.resolveNode", map[string]interface{}{"backendNodeId": backendID})
-		var resolved struct {
-			Object struct {
-				ObjectID string `json:"objectId"`
-			} `json:"object"`
-		}
-		json.Unmarshal(resolvedRaw, &resolved)
-		callRaw, err := cdp.SessionCommand(target.ID, "Runtime.callFunctionOn", map[string]interface{}{
-			"objectId": resolved.Object.ObjectID,
-			"functionDeclaration": `function(value) {
-				if (!(this instanceof HTMLSelectElement)) return { ok: false, error: 'element is not a select' };
-				if (!Array.from(this.options).some((option) => option.value === value)) {
-					return { ok: false, error: 'select value not found: ' + value };
-				}
-				this.value = value;
-				this.dispatchEvent(new Event('input', { bubbles: true }));
-				this.dispatchEvent(new Event('change', { bubbles: true }));
-				return { ok: true };
-			}`,
-			"arguments":     []map[string]interface{}{{"value": req.Value}},
-			"returnByValue": true,
-		})
-		if err != nil {
+		if err := selectValue(cdp, target.ID, backendID, req.Value); err != nil {
 			return failResp(req.ID, err)
-		}
-		var call struct {
-			Result struct {
-				Value struct {
-					OK    bool   `json:"ok"`
-					Error string `json:"error"`
-				} `json:"value"`
-			} `json:"result"`
-		}
-		if err := json.Unmarshal(callRaw, &call); err != nil {
-			return failResp(req.ID, fmt.Errorf("decode select result: %w", err))
-		}
-		if !call.Result.Value.OK {
-			if call.Result.Value.Error == "" {
-				call.Result.Value.Error = "select action failed"
-			}
-			return failResp(req.ID, call.Result.Value.Error)
 		}
 		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Value: req.Value, Tab: shortID, Seq: intPtr(seq)}))
 

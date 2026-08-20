@@ -749,6 +749,9 @@ func main() {
 			handleSiteRun(command, cmdArgs, jsonOutput, globalTabID)
 		} else {
 			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
+			if hint := commandUsageHint(command); hint != "" {
+				fmt.Fprintln(os.Stderr, hint)
+			}
 			if suggestions := suggestCommands(command, 3); len(suggestions) > 0 {
 				fmt.Fprintf(os.Stderr, "Did you mean: %s?\n", strings.Join(formatCommandSuggestions("", suggestions), ", "))
 			}

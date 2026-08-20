@@ -122,6 +122,8 @@ func root(w http.ResponseWriter, r *http.Request) {
 	#covered-combobox { position: relative; width: 240px; height: 36px; border: 1px solid #777; }
 	#covered-combobox input { position: absolute; inset: 0; width: 100%; box-sizing: border-box; }
 	#covered-combobox .tag-overlay { position: absolute; inset: 0; z-index: 2; background: #eee; }
+	#custom-options { display: none; position: fixed; z-index: 10; background: white; border: 1px solid #777; padding: 4px; }
+	#custom-options .el-select-dropdown__item { cursor: pointer; padding: 4px 8px; }
 	ui5-checkbox { display: inline-block; width: 24px; height: 24px; border: 1px solid #777; }
   </style>
 </head>
@@ -154,6 +156,16 @@ func root(w http.ResponseWriter, r *http.Request) {
     <option value="blue">Blue</option>
   </select>
   <output id="select-state">red</output>
+
+  <div id="custom-select" class="el-select">
+    <input role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="custom-options" aria-label="E2E custom combobox" readonly>
+    <span class="el-select__selected-item">Choose language</span>
+  </div>
+  <ul id="custom-options" role="listbox">
+    <li role="option" class="el-select-dropdown__item" data-value="English" aria-selected="false">English</li>
+    <li role="option" class="el-select-dropdown__item" data-value="繁體中文" aria-selected="false">繁體中文</li>
+  </ul>
+  <output id="custom-select-state">not selected</output>
 
   <section data-testid="node-settings-panel">
     <label for="live-textarea">Description</label>
@@ -232,6 +244,24 @@ func root(w http.ResponseWriter, r *http.Request) {
 
       const select = document.getElementById('color-select');
       select.addEventListener('change', () => text('select-state', select.value));
+
+	  const customSelect = document.getElementById('custom-select');
+	  const customInput = customSelect.querySelector('input');
+	  const customOptions = document.getElementById('custom-options');
+	  customSelect.addEventListener('click', () => {
+		customOptions.style.display = 'block';
+		customInput.setAttribute('aria-expanded', 'true');
+	  });
+	  customOptions.addEventListener('click', event => {
+		const option = event.target.closest('[role="option"]');
+		if (!option) return;
+		for (const candidate of customOptions.querySelectorAll('[role="option"]')) candidate.setAttribute('aria-selected', String(candidate === option));
+		customInput.value = option.dataset.value;
+		customSelect.querySelector('.el-select__selected-item').textContent = option.textContent;
+		customInput.setAttribute('aria-expanded', 'false');
+		customOptions.style.display = 'none';
+		text('custom-select-state', option.dataset.value);
+	  });
 
 	  document.getElementById('live-textarea').value = 'description from live property';
 	  document.querySelector('#nested-action button').addEventListener('click', () => text('nested-action-state', 'clicked'));

@@ -95,7 +95,13 @@ func TestDispatch_Click_ReportsCoveredElement(t *testing.T) {
 	f := newFakeCDP(t)
 	setupOnePage(f, "T1", "https://a", "A")
 	setupRefHandlers(f)
-	f.On("Runtime.callFunctionOn", func(json.RawMessage) (interface{}, error) {
+	var pointScript string
+	f.On("Runtime.callFunctionOn", func(params json.RawMessage) (interface{}, error) {
+		var call struct {
+			FunctionDeclaration string `json:"functionDeclaration"`
+		}
+		_ = json.Unmarshal(params, &call)
+		pointScript = call.FunctionDeclaration
 		return map[string]interface{}{
 			"result": map[string]interface{}{},
 			"exceptionDetails": map[string]interface{}{
@@ -114,6 +120,44 @@ func TestDispatch_Click_ReportsCoveredElement(t *testing.T) {
 	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionClick, Ref: "1"})
 	if resp.Success || !strings.Contains(resp.Error, "div.overlay instead of button#save") {
 		t.Fatalf("covered click response = %+v", resp)
+	}
+	if !strings.Contains(pointScript, "borz press Escape") || !strings.Contains(pointScript, "fresh snapshot") {
+		t.Fatalf("covered click script lacks an actionable overlay hint: %s", pointScript)
+	}
+}
+
+func TestDispatch_Click_FocusesHiddenXtermInput(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	f.On("Runtime.callFunctionOn", func(params json.RawMessage) (interface{}, error) {
+		if strings.Contains(string(params), "isTerminalInput") {
+			return map[string]interface{}{
+				"result": map[string]interface{}{"value": map[string]interface{}{"focusOnly": true}},
+			}, nil
+		}
+		return map[string]interface{}{"result": map[string]interface{}{"value": true}}, nil
+	})
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "0", &protocol.RefInfo{BackendDOMNodeID: 42, Role: "textbox"})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionClick, Ref: "0"})
+	if !resp.Success {
+		t.Fatalf("hidden terminal click = %+v", resp)
+	}
+	var focused bool
+	var mouseEvents int
+	for _, call := range f.Calls() {
+		if call.Method == "DOM.focus" {
+			focused = true
+		}
+		if call.Method == "Input.dispatchMouseEvent" {
+			mouseEvents++
+		}
+	}
+	if !focused || mouseEvents != 0 {
+		t.Fatalf("hidden terminal focus=%v mouseEvents=%d calls=%+v", focused, mouseEvents, f.Calls())
 	}
 }
 
@@ -246,6 +290,36 @@ func TestDispatch_SelectRejectsWrongElementAndUnknownValue(t *testing.T) {
 	invalidValue := DispatchRequest(c, &protocol.Request{ID: "invalid-value", Action: protocol.ActionSelect, Ref: "1", Value: "missing"})
 	if invalidValue.Success || !strings.Contains(invalidValue.Error, "select value not found: missing") {
 		t.Fatalf("select invalid value = %+v", invalidValue)
+	}
+}
+
+func TestDispatch_SelectSupportsAndVerifiesCustomCombobox(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	var selectScript string
+	f.On("Runtime.callFunctionOn", func(params json.RawMessage) (interface{}, error) {
+		var call struct {
+			FunctionDeclaration string `json:"functionDeclaration"`
+		}
+		_ = json.Unmarshal(params, &call)
+		selectScript = call.FunctionDeclaration
+		return map[string]interface{}{
+			"result": map[string]interface{}{"value": map[string]interface{}{"ok": true}},
+		}, nil
+	})
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "76", &protocol.RefInfo{BackendDOMNodeID: 10, Role: "combobox"})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionSelect, Ref: "76", Value: "qwen/qwen3.6-35b-a3b"})
+	if !resp.Success {
+		t.Fatalf("custom combobox select = %+v", resp)
+	}
+	for _, want := range []string{"aria-controls", "el-select-dropdown__item", "aria-selected", "selection did not change"} {
+		if !strings.Contains(selectScript, want) {
+			t.Fatalf("custom select script missing %q: %s", want, selectScript)
+		}
 	}
 }
 

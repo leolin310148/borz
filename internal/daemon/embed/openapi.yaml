@@ -224,7 +224,7 @@ paths:
   /v1/select:
     post:
       tags: [interaction]
-      summary: Select an `<option>` in a `<select>` by ref
+      summary: Select an option in a native select or visible ARIA combobox by ref
       requestBody:
         required: true
         content:
@@ -236,8 +236,8 @@ paths:
                 - type: object
                   required: [ref, value]
                   properties:
-                    ref: { type: string }
-                    value: { type: string }
+                    ref: { type: string, description: Snapshot ref for the select or combobox }
+                    value: { type: string, description: Native option value or custom-combobox value/aria-label/exact visible text }
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 

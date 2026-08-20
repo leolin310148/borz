@@ -937,9 +937,17 @@ borz uncheck 7
 #### `select`
 
 ```bash
-# Select a dropdown option by value
+# Select a native dropdown option by value
 borz select 6 "option2"
+
+# Component-library / ARIA comboboxes match an exact visible option too
+borz select 12 "繁體中文"
 ```
+
+For custom comboboxes (including teleported Element Plus dropdowns), `select`
+opens the control when needed, chooses a visible option by value, `aria-label`,
+or exact rendered text, and verifies that the selection changed before
+reporting success.
 
 #### `upload`
 

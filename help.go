@@ -121,10 +121,12 @@ var commandHelp = map[string]cmdHelp{
 		Notes:    refNote,
 	},
 	"select": {
-		Summary:  "Select an <option> in a <select> element by value.",
+		Summary:  "Select a native <select> option or a visible ARIA combobox option.",
 		Usage:    "borz select <ref> <value> [--tab <id>]" + waitForUsageSuffix,
-		Examples: []string{"  borz select 9 'us-east-1'"},
-		Notes:    refNote,
+		Examples: []string{"  borz select 9 'us-east-1'", "  borz select 12 '繁體中文'  # custom combobox visible text"},
+		Notes: refNote + "\nNative <select> controls match option.value. ARIA/component-library comboboxes\n" +
+			"match a visible option by value, aria-label, or exact rendered text and verify\n" +
+			"that the selected state/display changed before reporting success.",
 	},
 	"upload": {
 		Summary: "Attach files to an <input type=file> or its associated label by ref.",
@@ -1905,6 +1907,16 @@ func printAllHelp() {
 // suggestCommands returns up to maxN top-level command names closest to input.
 func suggestCommands(input string, maxN int) []string {
 	return suggestNames(input, topLevelCommandNames(), maxN)
+}
+
+// commandUsageHint covers familiar command names whose borz equivalent is
+// intentionally spelled differently. These are workflow hints, not fuzzy typo
+// matches, so they can show the exact flags needed for the equivalent action.
+func commandUsageHint(command string) string {
+	if strings.EqualFold(strings.TrimSpace(command), "navigate") {
+		return "To navigate an existing tab, use: borz --tab <id> open <url> (or 'borz open <url>' to open/reuse a tab)."
+	}
+	return ""
 }
 
 // suggestSubcommands returns up to maxN subcommands for parent closest to input.

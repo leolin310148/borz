@@ -71,6 +71,7 @@ func TestE2ECLICommandsAgainstVerifySite(t *testing.T) {
 		inputRef := refByName(t, snapshot.Data.SnapshotData, "E2E text input")
 		checkRef := refByName(t, snapshot.Data.SnapshotData, "E2E checkbox")
 		selectRef := refByName(t, snapshot.Data.SnapshotData, "E2E color select")
+		customSelectRef := refByName(t, snapshot.Data.SnapshotData, "E2E custom combobox")
 		textareaRef := refByName(t, snapshot.Data.SnapshotData, "Live description")
 		nestedRef := refByName(t, snapshot.Data.SnapshotData, "Nested create action")
 		frameworkButtonRef := refByName(t, snapshot.Data.SnapshotData, "Framework press action")
@@ -101,6 +102,8 @@ func TestE2ECLICommandsAgainstVerifySite(t *testing.T) {
 
 		runE2EJSON(t, env, "select", selectRef, "green", "--json")
 		requireEvalString(t, env, `document.querySelector("#color-select").value`, "green")
+		runE2EJSON(t, env, "select", customSelectRef, "繁體中文", "--json")
+		requireEvalString(t, env, `document.querySelector("#custom-select-state").textContent`, "繁體中文")
 
 		valueResp := runE2EJSON(t, env, "get", "value", textareaRef, "--json")
 		if valueResp.Data.Value != "description from live property" {

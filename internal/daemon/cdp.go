@@ -589,8 +589,12 @@ func (c *CdpConnection) handleDetached(msg map[string]json.RawMessage) {
 			c.sessions.Store(targetID, replacement)
 			return
 		}
-		c.TabManager.RemoveTab(targetID)
-		c.ClearCurrentTargetIDIf(targetID)
+		// A detached CDP session does not mean the page target was closed.
+		// Chrome can detach a session while DevTools, another CDP client, or a
+		// raced attach replaces it. Keep the tab state (including snapshot refs)
+		// and the selected-tab pointer; EnsurePageTarget will attach a fresh
+		// session on the next request. Target.targetDestroyed is the definitive
+		// lifecycle event that removes both.
 	}
 }
 

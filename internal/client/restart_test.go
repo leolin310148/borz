@@ -200,6 +200,15 @@ func TestRestartDaemonPIDAndLoopbackValidation(t *testing.T) {
 	}
 }
 
+func TestRestartSignalPermissionErrorIsActionable(t *testing.T) {
+	err := restartSignalError("replace daemon", 123, os.ErrPermission)
+	for _, want := range []string{"replace daemon pid 123", "cannot signal", "outside the restricted workspace", "browser has not been closed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("permission error missing %q: %v", want, err)
+		}
+	}
+}
+
 func TestRestartDaemonPreservingBrowserRefusesUnverifiedTargets(t *testing.T) {
 	tests := []struct {
 		name string
