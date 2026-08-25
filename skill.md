@@ -38,6 +38,11 @@ If `borz` is configured as an MCP server, call tools directly. Workflow:
 
 All tools accept an optional `tab` param (short id from `browser_tab_list`) to target a specific tab.
 
+Do not pass `showRefs: true` during ordinary agent operation. It only draws
+boxes and numbers over the user's live page; it is not needed to receive or
+act on refs, and it overrides the user's `~/.borz/settings.json` preference.
+Enable it only when the user explicitly asks to see the visual overlay.
+
 Tool categories (45 total): navigation, interaction, observation (includes `browser_clear_refs`, `browser_viewport` for responsive layouts and `browser_eval` for arbitrary JS), browser testing (`browser_webauthn` for typed Passkey virtual authenticators), tab management, diagnostics, extension-backed Chrome APIs (`browser_extension_status`, `browser_extension_call`, `browser_bookmarks`, `browser_history`, `browser_downloads`, `browser_windows`), site adapters (`browser_site_list`/`_info`/`_run`).
 
 ### 2. Shell / CLI
@@ -111,15 +116,16 @@ Site adapters over HTTP: `GET /v1/sites`, `POST /v1/sites/info {name}`, `POST /v
 1. **Always snapshot before interacting.** Refs are regenerated per snapshot — don't reuse stale ones across navigations.
 2. **`open`/`browser_navigate` reuses same-URL tabs by default.** This is intentional to avoid tab blowup. Pass `new: true` to force a fresh tab when the user clearly wants one.
 3. **Prefer compact interactive snapshots (`-i -c` or `{interactive: true, compact: true}`)** when you only need clickable/fillable elements — much shorter and cheaper.
-4. **`browser_eval` is the escape hatch** for anything the structured tools can't express — custom DOM queries, reading `localStorage`, calling page APIs with the user's session.
-5. **Use `--since last_action`** on network/console/errors to get only events since your last interaction. Avoids re-reading the full ring buffer.
-6. **For RWD/mobile checks**, set viewport before observing: `browser_viewport {preset: "mobile"}` or `borz viewport mobile`. Re-snapshot afterward because refs can go stale after layout changes.
-7. **For page visuals**, use `browser_screenshot` — it shows the rendered UI (post-JS, post-CSS, with the user's logged-in state) that fetched HTML can't.
-8. **Diagnose failures with `browser_console` + `browser_errors`** before assuming the automation is broken. Pages often log hints.
-9. **Prefer `--wait-for '<selector>'` over `wait <ms>`** for any DOM change. Works on `open`, `click`, `fill`, `press`, `eval`, etc. — the action runs, then the daemon polls `document.querySelector(...)` until non-null or timeout (default 10s, override with `--timeout <ms>`). When no selector is available (animations, backend polling, "give it a moment"), reach for the **global `--pre-delay <ms>` / `--post-delay <ms>` flags** (`preDelay`/`postDelay` on MCP, `preDelayMs`/`postDelayMs` on REST) to absorb the `sleep N && borz ...` shell pattern into one daemon call. Explicit waits and delays extend the request deadline.
-10. **Use `eval --unwrap` to strip `{success, data, result, ...}` envelopes** when you only want the value — strings are emitted unquoted, other shapes as JSON. Combine with `--file <path>` for non-trivial scripts.
-11. **Use extension-backed tools for browser-level state CDP cannot see**: all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser events. Check `browser_extension_status` / `borz extension status` first if one of these reports that no extension is connected.
-12. **Use the typed WebAuthn lifecycle for Passkey E2E**: target one tab, `enable`, `add`, run the real registration/login UI, inspect with `credentials`, control negative/success paths with `set-user-verified` and `set-automatic-presence`, then `remove` and `disable`. `add` defaults to CTAP2/internal with resident key, UV, verified user, and automatic presence enabled. Keep `data.result.authenticatorId`; virtual state is scoped to that tab's CDP session.
+4. **Keep snapshot overlays off unless the user explicitly requests them.** Omit CLI `--show-refs` and MCP/REST `showRefs: true`; refs are returned and actionable without drawing anything in the user's live page.
+5. **`browser_eval` is the escape hatch** for anything the structured tools can't express — custom DOM queries, reading `localStorage`, calling page APIs with the user's session.
+6. **Use `--since last_action`** on network/console/errors to get only events since your last interaction. Avoids re-reading the full ring buffer.
+7. **For RWD/mobile checks**, set viewport before observing: `browser_viewport {preset: "mobile"}` or `borz viewport mobile`. Re-snapshot afterward because refs can go stale after layout changes.
+8. **For page visuals**, use `browser_screenshot` — it shows the rendered UI (post-JS, post-CSS, with the user's logged-in state) that fetched HTML can't.
+9. **Diagnose failures with `browser_console` + `browser_errors`** before assuming the automation is broken. Pages often log hints.
+10. **Prefer `--wait-for '<selector>'` over `wait <ms>`** for any DOM change. Works on `open`, `click`, `fill`, `press`, `eval`, etc. — the action runs, then the daemon polls `document.querySelector(...)` until non-null or timeout (default 10s, override with `--timeout <ms>`). When no selector is available (animations, backend polling, "give it a moment"), reach for the **global `--pre-delay <ms>` / `--post-delay <ms>` flags** (`preDelay`/`postDelay` on MCP, `preDelayMs`/`postDelayMs` on REST) to absorb the `sleep N && borz ...` shell pattern into one daemon call. Explicit waits and delays extend the request deadline.
+11. **Use `eval --unwrap` to strip `{success, data, result, ...}` envelopes** when you only want the value — strings are emitted unquoted, other shapes as JSON. Combine with `--file <path>` for non-trivial scripts.
+12. **Use extension-backed tools for browser-level state CDP cannot see**: all-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, and browser events. Check `browser_extension_status` / `borz extension status` first if one of these reports that no extension is connected.
+13. **Use the typed WebAuthn lifecycle for Passkey E2E**: target one tab, `enable`, `add`, run the real registration/login UI, inspect with `credentials`, control negative/success paths with `set-user-verified` and `set-automatic-presence`, then `remove` and `disable`. `add` defaults to CTAP2/internal with resident key, UV, verified user, and automatic presence enabled. Keep `data.result.authenticatorId`; virtual state is scoped to that tab's CDP session.
 
 ## Site adapters
 

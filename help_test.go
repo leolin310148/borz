@@ -89,6 +89,23 @@ func TestScreenshotHelpMentionsAnnotations(t *testing.T) {
 	}
 }
 
+func TestSnapshotHelpWarnsAgentsNotToShowRefs(t *testing.T) {
+	out := captureStdout(t, func() {
+		if !printCommandHelp("snapshot") {
+			t.Fatal("printCommandHelp should return true for snapshot")
+		}
+	})
+	for _, want := range []string{
+		"human visual debugging",
+		"Agents and automation should omit --show-refs",
+		"never required to receive or act on refs",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("snapshot help missing %q; got:\n%s", want, out)
+		}
+	}
+}
+
 func TestActionCommandUsageMentionsWaitFor(t *testing.T) {
 	for _, name := range []string{
 		"back", "forward", "refresh", "click", "hover", "fill", "type",

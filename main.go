@@ -2540,7 +2540,8 @@ Observation:
   snapshot [-i] [-c] [-d N] [-s <sel>] [--role <role>] [--show-refs|--hide-refs] [--text-only] [--diff]
                                 Get accessibility tree (or reader-mode
                                 plain text with --text-only; --diff shows
-                                changes; ref visibility is configurable)
+                                changes). Refs are always returned; --show-refs
+                                only draws a visible overlay in the live page
   clear-refs                    Remove snapshot ref overlays; keep refs usable
   screenshot [path]             Take screenshot; --annotate ref=text adds callouts
   viewport [status|current|mobile|tablet|desktop|WxH|reset]
@@ -2640,6 +2641,8 @@ Tips:
   - Use '--since last_action' on network/console/errors for incremental reads.
 
 Agents & automation:
+  Omit snapshot --show-refs unless the user explicitly asks to see the
+  overlay. It overrides the user's settings and is not needed to get refs.
   See skill.md / llm.txt in this repo for end-to-end guidance on driving
   borz from an agent (MCP, CLI, and HTTP modes).`)
 }

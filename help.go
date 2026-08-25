@@ -252,7 +252,7 @@ var commandHelp = map[string]cmdHelp{
 			"  -d, --depth N       Limit tree depth to N levels",
 			"  -s, --selector <s>  Scope to a CSS subtree; unmatched/invalid CSS falls back to keyword filtering",
 			"  --role <role>       Keep only nodes with this exact accessibility role",
-			"  --show-refs         Force ref boxes and numbers on, overriding settings.json",
+			"  --show-refs         Draw ref boxes/numbers for human visual debugging; overrides settings.json",
 			"  --hide-refs         Force ref boxes and numbers off, overriding settings.json",
 			"  --text-only         Reader-mode plain text (no refs, no tree); good for LLM context",
 			"  --diff              Print only what changed since the previous snapshot of this tab (+/-/~)",
@@ -271,6 +271,8 @@ var commandHelp = map[string]cmdHelp{
 			"Refs are drawn in the live browser by default. Set snapshot.showRefs=false in " +
 			"~/.borz/settings.json to hide them persistently. --show-refs and --hide-refs " +
 			"override that setting for one snapshot; refs remain in the response either way.\n" +
+			"Agents and automation should omit --show-refs (and MCP showRefs=true) unless the " +
+			"user explicitly asks to see an overlay. The flag is never required to receive or act on refs.\n" +
 			"--text-only strips nav/header/footer/script/style and returns the visible text " +
 			"(plus title and URL). It produces no new refs but preserves the latest tree refs; " +
 			"they remain actionable unless the page navigated or its DOM changed.\n" +

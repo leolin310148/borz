@@ -96,6 +96,9 @@ Snapshot overlays default to visible. To hide them without affecting returned
 refs, set `{"snapshot":{"showRefs":false}}` in `~/.borz/settings.json`.
 The daemon reloads the file per snapshot; CLI flags and MCP/REST `showRefs`
 override it for one request.
+Agents should omit `--show-refs` and `showRefs: true` unless the user explicitly
+asks to see the overlay. Neither is needed to receive or act on refs, and both
+override the user's live-page visibility preference.
 
 Use `borz daemon restart [--json]` for a version refresh or stale daemon: it verifies the exact local PID through loopback `/healthz`, forcibly replaces only the daemon, and preserves the managed Chrome process, tab IDs, and session. The default profile and named profiles configured with `daemonPort` can recover missing daemon state; a named profile still using a dynamic port is refused because its daemon cannot be safely guessed. The command also refuses remote/non-loopback/unverified targets and interrupts in-flight daemon work. Shutting down an auto-started daemon is different: `borz daemon shutdown` performs graceful cleanup and also closes its borz-owned managed Chrome instance. Browsers attached through a `cdp` profile remain externally owned and are never closed by daemon shutdown. `server --ensure-browser` closes Chrome only when its ensure hook actually launched that instance, and relaunches on either CDP discovery or WebSocket-handshake failure.
 

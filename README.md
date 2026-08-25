@@ -252,7 +252,7 @@ Most action tools accept optional `waitFor` (CSS selector) and `timeout` (ms, de
 Other notable params:
 
 - `browser_snapshot` accepts `textOnly: true` for a reader-mode plain-text dump (no element refs) — useful for summarization or feeding the page to an LLM as context.
-- `browser_snapshot` accepts `showRefs: true|false` to override `~/.borz/settings.json` for one call; `browser_clear_refs` removes an existing overlay without invalidating refs.
+- `browser_snapshot` accepts `showRefs: true|false` to override `~/.borz/settings.json` for one call; agents should omit `showRefs: true` unless the user explicitly asks to see the live-page overlay. Refs are returned either way. `browser_clear_refs` removes an existing overlay without invalidating refs.
 - `browser_viewport` accepts `preset: "mobile"` for responsive/mobile layout checks, custom `width`/`height`/`dpr`, and `reset: true` to clear viewport emulation.
 - `browser_eval` auto-wraps top-level `await` in an async IIFE so `await fetch(...)` works without manual boilerplate. Pass `noAutoAwait: true` to opt out.
 - `browser_doctor` runs end-to-end stack diagnostics (binary PATH drift → daemon → CDP → tabs) and reports each layer with remediation hints. Pass `json: true` for structured output.
@@ -779,6 +779,11 @@ The daemon reloads this setting on each snapshot, so no restart is needed.
 Use `borz snapshot --show-refs` or `--hide-refs` to override it once. Use
 `borz clear-refs` to remove an existing overlay without taking another
 snapshot or invalidating the latest actionable refs.
+
+Agents and automation should omit `--show-refs` (and MCP/REST
+`showRefs: true`) unless the user explicitly asks to see the overlay. These
+options are only for human visual debugging; refs remain returned and
+actionable when nothing is drawn over the live page.
 
 #### `screenshot`
 
