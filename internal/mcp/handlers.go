@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"os"
 	"strings"
@@ -217,7 +218,7 @@ func handleFill(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult
 	if e := checkError(resp, err); e != nil {
 		return e, nil
 	}
-	return textResult(resp, fmt.Sprintf("Filled element @%s with %q", normalizeRef(ref), text)), nil
+	return textResult(resp, fmt.Sprintf("Filled element @%s", normalizeRef(ref))), nil
 }
 
 func handleType(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -236,7 +237,7 @@ func handleType(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult
 	if e := checkError(resp, err); e != nil {
 		return e, nil
 	}
-	return textResult(resp, fmt.Sprintf("Typed %q into element @%s", text, normalizeRef(ref))), nil
+	return textResult(resp, fmt.Sprintf("Typed into element @%s", normalizeRef(ref))), nil
 }
 
 func handleCheck(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1375,4 +1376,31 @@ func rawToolResult(raw json.RawMessage, err error) *mcp.CallToolResult {
 		}
 	}
 	return mcp.NewToolResultText(string(raw))
+}
+
+func handleMouse(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	kind := r.GetString("mouseType", "")
+	switch kind {
+	case "click", "move", "down", "up":
+	default:
+		return mcp.NewToolResultError("mouseType must be click, move, down, or up"), nil
+	}
+	x, y := r.GetFloat("x", -1), r.GetFloat("y", -1)
+	if x < 0 || y < 0 || math.IsNaN(x) || math.IsNaN(y) || math.IsInf(x, 0) || math.IsInf(y, 0) {
+		return mcp.NewToolResultError("x and y must be finite non-negative numbers"), nil
+	}
+	button := r.GetString("button", "")
+	switch button {
+	case "", "left", "right", "middle", "none":
+	default:
+		return mcp.NewToolResultError("invalid mouse button"), nil
+	}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionMouse, MouseType: kind, X: &x, Y: &y, Button: button}
+	setTab(req, r)
+	applyWaitFor(req, r)
+	resp, err := sendCommand(req)
+	if e := checkError(resp, err); e != nil {
+		return e, nil
+	}
+	return textResult(resp, "Mouse input sent"), nil
 }

@@ -17,11 +17,18 @@ const textSnapshotScript = `(() => {
     'script', 'style', 'noscript', 'template',
     'nav', 'header', 'footer', 'aside',
     '[role=navigation]', '[role=banner]', '[role=contentinfo]', '[role=complementary]',
-    '[aria-hidden=true]', '[hidden]'
+    '[aria-hidden=true]', '[hidden]',
+    '.monaco-editor' // virtualized editor internals are not document text
+
   ];
   const root = document.body ? document.body.cloneNode(true) : null;
   let text = '';
   if (root) {
+    for (const editor of root.querySelectorAll('.monaco-editor')) {
+      const note = document.createElement('p');
+      note.textContent = '[Monaco editor omitted from text-only snapshot]';
+      editor.replaceWith(note);
+    }
     for (const sel of stripSelectors) {
       for (const el of root.querySelectorAll(sel)) {
         el.remove();

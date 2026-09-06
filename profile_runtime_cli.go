@@ -37,6 +37,8 @@ type runtimeView struct {
 	DaemonAlive  bool
 	BrowserAlive bool
 	Status       string
+	CDPHost      string
+	CDPPort      int
 }
 
 func inspectRuntimeView(r borzprofile.Runtime, registry *borzprofile.File) runtimeView {
@@ -47,6 +49,13 @@ func inspectRuntimeView(r borzprofile.Runtime, registry *borzprofile.File) runti
 	view.DaemonAlive = r.DaemonPID > 0 && client.IsProcessAlive(r.DaemonPID)
 	if r.BrowserPort > 0 {
 		view.BrowserAlive = client.CheckCDPEndpoint("127.0.0.1", r.BrowserPort, livenessProbeTimeout) == nil
+	}
+	if view.Transport == string(borzprofile.TransportCDP) {
+		view.BrowserAlive = false
+		if target, err := borzprofile.ResolveEntry(r.Name, registry.Profiles[r.Name]); err == nil {
+			view.CDPHost, view.CDPPort = target.CDP.Host, target.CDP.Port
+			view.BrowserAlive = client.CheckCDPEndpoint(view.CDPHost, view.CDPPort, livenessProbeTimeout) == nil
+		}
 	}
 	view.Status = runtimeStatus(view)
 	return view
@@ -108,6 +117,11 @@ func runtimePayload(v runtimeView) map[string]interface{} {
 		"runtimeDir":   v.RuntimeDir,
 		"browserBytes": v.BrowserBytes,
 		"logBytes":     v.LogBytes,
+	}
+	if v.CDPPort > 0 {
+		payload["cdpHost"] = v.CDPHost
+		payload["cdpPort"] = v.CDPPort
+		payload["browserOwned"] = false
 	}
 	if v.DaemonPID > 0 {
 		payload["daemonPid"] = v.DaemonPID
@@ -307,7 +321,7 @@ func performPurge(view runtimeView, withLogs bool) []string {
 			client.CheckCDPEndpoint("127.0.0.1", view.BrowserPort, livenessProbeTimeout) == nil
 	}
 
-	if view.BrowserAlive {
+	if view.BrowserAlive && view.Transport != string(borzprofile.TransportCDP) && view.Transport != string(borzprofile.TransportRemote) {
 		if err := closeManagedBrowser(view); err != nil {
 			steps = append(steps, fmt.Sprintf("could not close managed browser on port %d: %v", view.BrowserPort, err))
 		} else {

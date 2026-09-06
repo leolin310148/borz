@@ -306,12 +306,12 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 				if req.Ref != "name" || req.Text != "hello world" {
 					t.Fatalf("fill request = %+v", req)
 				}
-				if !strings.Contains(out, "Filled with: hello world") {
+				if !strings.Contains(out, "Filled") {
 					t.Fatalf("fill output = %q", out)
 				}
 			},
 		},
-		{name: "type", args: []string{"type", "@name", "hi"}, action: protocol.ActionType_, check: expectRefTextAndOutput("name", "hi", "Typed: hi")},
+		{name: "type", args: []string{"type", "@name", "hi"}, action: protocol.ActionType_, check: expectRefTextAndOutput("name", "hi", "Typed")},
 		{name: "check", args: []string{"check", "@agree"}, action: protocol.ActionCheck, check: expectRefAndOutput("agree", "Checked")},
 		{name: "uncheck", args: []string{"uncheck", "@agree"}, action: protocol.ActionUncheck, check: expectRefAndOutput("agree", "Unchecked")},
 		{

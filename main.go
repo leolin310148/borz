@@ -59,7 +59,7 @@ var cliValueFlags = []string{
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
 	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--role",
 	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect", "--ref", "--scope",
-	"--annotate",
+	"--annotate", "--output", "--button",
 	"--protocol", "--transport", "--has-resident-key", "--has-user-verification",
 	"--is-user-verified", "--automatic-presence",
 }
@@ -132,6 +132,11 @@ func main() {
 	}
 	globalTabID := getArgValue(args, "--tab")
 	jqExpression = getArgValue(args, "--jq")
+	if _, present := getArgValueOK(args, "--jq"); present {
+		if err := jq.Validate(jqExpression); err != nil {
+			fatal(err.Error())
+		}
+	}
 	jsonOutput := hasFlag(args, "--json") || jqExpression != ""
 	unwrap := hasFlag(args, "--unwrap")
 	globalSince := getArgValue(args, "--since")
@@ -288,8 +293,10 @@ func main() {
 				}
 				return
 			}
-			if resp.Data.SnapshotData != nil {
+			if resp.Data.SnapshotData != nil && strings.TrimSpace(resp.Data.SnapshotData.Snapshot) != "" {
 				fmt.Println(resp.Data.SnapshotData.Snapshot)
+			} else {
+				fmt.Println("No matching accessible elements. The page may still be loading; retry snapshot without -i/--role/-s or inspect with screenshot.")
 			}
 		})
 
@@ -302,6 +309,15 @@ func main() {
 			fmt.Println("Clicked")
 		})
 
+	case "mouse":
+		req, err := mouseCLIRequest(cmdArgs, args)
+		if err != nil {
+			fatal(err.Error())
+		}
+		setTab(req, globalTabID)
+		applyCLIWaitFor(req, args)
+		sendAndPrint(req, jsonOutput, func(*protocol.Response) { fmt.Println("Mouse input sent") })
+
 	case "hover":
 		ref := getRef(cmdArgs)
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionHover, Ref: ref}
@@ -312,29 +328,31 @@ func main() {
 		})
 
 	case "fill":
-		if len(cmdArgs) < 2 {
-			fatal("Usage: borz fill <ref> <text>")
-		}
-		ref := normalizeRef(cmdArgs[0])
-		text := strings.Join(cmdArgs[1:], " ")
+		ref, text := readInputText("fill", cmdArgs, args)
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionFill, Ref: ref, Text: text}
 		setTab(req, globalTabID)
 		applyCLIWaitFor(req, args)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
-			fmt.Printf("Filled with: %s\n", text)
+		sendPrepareAndPrint(req, jsonOutput, func(resp *protocol.Response) error {
+			if resp.Data != nil {
+				resp.Data.Value = ""
+			}
+			return nil
+		}, func(resp *protocol.Response) {
+			fmt.Println("Filled")
 		})
 
 	case "type":
-		if len(cmdArgs) < 2 {
-			fatal("Usage: borz type <ref> <text>")
-		}
-		ref := normalizeRef(cmdArgs[0])
-		text := strings.Join(cmdArgs[1:], " ")
+		ref, text := readInputText("type", cmdArgs, args)
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionType_, Ref: ref, Text: text}
 		setTab(req, globalTabID)
 		applyCLIWaitFor(req, args)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
-			fmt.Printf("Typed: %s\n", text)
+		sendPrepareAndPrint(req, jsonOutput, func(resp *protocol.Response) error {
+			if resp.Data != nil {
+				resp.Data.Value = ""
+			}
+			return nil
+		}, func(resp *protocol.Response) {
+			fmt.Println("Typed")
 		})
 
 	case "check":
@@ -436,9 +454,15 @@ func main() {
 		})
 
 	case "screenshot":
-		var path string
-		if len(cmdArgs) > 0 {
+		path := getArgValue(args, "--output")
+		if len(cmdArgs) > 1 || (len(cmdArgs) == 1 && (strings.HasPrefix(cmdArgs[0], "-") || path != "")) {
+			fatal("Usage: borz screenshot [out.png] or screenshot --output <path>; --full-page is not supported")
+		}
+		if len(cmdArgs) == 1 {
 			path = cmdArgs[0]
+		}
+		if _, present := getArgValueOK(args, "--output"); present && path == "" {
+			fatal("--output requires a file path")
 		}
 		annotations, err := parseScreenshotAnnotations(getAllArgValues(args, "--annotate"))
 		if err != nil {
@@ -484,7 +508,7 @@ func main() {
 		applyCLIWaitFor(req, args)
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) { fmt.Println("Forward") })
 
-	case "refresh":
+	case "refresh", "reload":
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionRefresh}
 		setTab(req, globalTabID)
 		applyCLIWaitFor(req, args)
@@ -568,7 +592,7 @@ func main() {
 			if m, err := strconv.Atoi(strings.TrimSpace(cmdArgs[0])); err == nil && m >= 0 {
 				ms = m
 			} else {
-				fatal("wait requires a non-negative integer (ms)")
+				fatal("wait requires a non-negative integer (ms). Usage: borz wait [milliseconds], for example: borz wait 1000. For page readiness use --wait-for <selector> on the action; --load is not supported")
 			}
 		}
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionWait, Ms: &ms}
@@ -766,7 +790,14 @@ func main() {
 func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []string) {
 	if len(cmdArgs) == 0 || cmdArgs[0] == "list" {
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionTabList}
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		sendPrepareAndPrint(req, jsonOutput, func(resp *protocol.Response) error {
+			if resp.Data != nil {
+				for i := range resp.Data.Tabs {
+					resp.Data.Tabs[i].URL = redactDisplayURL(resp.Data.Tabs[i].URL)
+				}
+			}
+			return nil
+		}, func(resp *protocol.Response) {
 			if resp.Data != nil {
 				fmt.Printf("Tabs (%d total):\n", len(resp.Data.Tabs))
 				for _, tab := range resp.Data.Tabs {
@@ -1050,6 +1081,10 @@ func handleNetwork(cmdArgs []string, jsonOutput bool, globalTabID, globalSince s
 		subCmd = cmdArgs[0]
 	}
 
+	if subCmd == "list" {
+		subCmd = "requests"
+	}
+
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionNetwork}
 
 	switch subCmd {
@@ -1182,7 +1217,7 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 				body: isJson ? (text.trim() === '' ? null : JSON.parse(text)) : text
 			};
 		} catch(e) {
-			return { error: e.message };
+			return { error: e.message, hint: 'Page fetch uses credentials: include but remains subject to CORS, cookie scope and redirects. A previously loaded resource may have used different headers or a different frame session.' };
 		}
 	})()`, urlJSON, methodJSON, headersJSON, bodyOption)
 
@@ -2130,34 +2165,86 @@ func saveScreenshotDataURL(path string, resp *protocol.Response) error {
 	return nil
 }
 
+// printJSON is the common output boundary for local and extension commands.
 func printJSON(v interface{}) {
+	if jqExpression != "" {
+		printJQResults(applyJQTo(v, jqExpression))
+		return
+	}
+	if raw, ok := v.(json.RawMessage); ok {
+		fmt.Println(string(raw))
+		return
+	}
 	out, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Println(string(out))
+}
+
+func printJQResults(results []interface{}) {
+	for _, result := range results {
+		if value, ok := result.(string); ok {
+			fmt.Println(value)
+		} else {
+			out, err := json.Marshal(result)
+			if err != nil {
+				fatal("cannot encode jq result")
+			}
+			fmt.Println(string(out))
+		}
+	}
 }
 
 func applyJQExpression(resp *protocol.Response, expression string) []interface{} {
 	if resp == nil {
 		return nil
 	}
-	if resp.Data != nil {
-		results := applyJQTo(resp.Data, expression)
-		if len(results) > 0 {
-			return results
+	// Select the root by syntax, never by whether a filter matched. An empty
+	// select result must stay empty, rather than retrying against the envelope.
+	trimmed := strings.TrimLeft(strings.TrimSpace(expression), "[( \t\n")
+	for _, field := range []string{"data", "success", "error", "id"} {
+		for _, prefix := range []string{"." + field, `.["` + field + `"]`, `."` + field + `"`} {
+			if trimmed == prefix || (strings.HasPrefix(trimmed, prefix) && len(trimmed) > len(prefix) && strings.ContainsRune(".[]| \t\n)},", rune(trimmed[len(prefix)]))) {
+				return applyJQTo(resp, expression)
+			}
 		}
 	}
-	return applyJQTo(resp, expression)
+	return applyJQTo(resp.Data, expression)
 }
 
 func applyJQTo(target interface{}, expression string) []interface{} {
 	raw, err := json.Marshal(target)
 	if err != nil {
-		return nil
+		fatal("cannot encode jq input")
 	}
 	var generic interface{}
 	if err := json.Unmarshal(raw, &generic); err != nil {
-		return nil
+		fatal("cannot decode jq input")
 	}
-	return jq.Apply(generic, expression)
+	results, err := jq.Apply(generic, expression)
+	if err != nil {
+		fatal(err.Error())
+	}
+	return results
+}
+
+func readInputText(command string, positional, raw []string) (string, string) {
+	usage := "Usage: borz " + command + " <ref> <text> or " + command + " <ref> --file <path>"
+	if len(positional) == 0 {
+		fatal(usage)
+	}
+	if path, present := getArgValueOK(raw, "--file"); present {
+		if path == "" || len(positional) != 1 {
+			fatal(usage)
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			fatal("read input file: " + err.Error())
+		}
+		return normalizeRef(positional[0]), string(content)
+	}
+	if len(positional) < 2 {
+		fatal(usage)
+	}
+	return normalizeRef(positional[0]), strings.Join(positional[1:], " ")
 }
 
 // printEval handles eval (and adapter run) output: --jq > --json > --unwrap >
@@ -2280,7 +2367,7 @@ func setSince(req *protocol.Request, since string) {
 
 func getRef(args []string) string {
 	if len(args) == 0 {
-		fatal("Missing ref parameter")
+		fatal("Missing ref parameter. Usage: borz <action> <ref> (for example: borz click 12); refs are positional, not --ref")
 	}
 	return normalizeRef(args[0])
 }
@@ -2517,6 +2604,7 @@ Navigation:
 
 Interaction:
   click <ref>                   Click element
+  mouse click|move|down|up x y   Pointer input at viewport CSS pixels
   hover <ref>                   Hover element
   fill <ref> <text>             Clear and fill input
   type <ref> <text>             Type text (append)

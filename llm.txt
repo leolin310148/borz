@@ -40,7 +40,10 @@ borz snapshot --text-only                    # plain text; preserves latest tree
 borz snapshot --diff                         # only +/-/~ changes since last snapshot of this tab
 borz viewport [mobile|tablet|desktop|WxH|reset]  # responsive viewport emulation
 borz click <ref>                             # refs come from snapshot
-borz fill <ref> <text>                       # clear + fill
+borz mouse click|move|down|up <x> <y>          # viewport CSS pixels; move --button left for drag
+borz fill <ref> <text>                       # clear + fill; input is never echoed
+borz fill <ref> --file <path>                 # exact file contents, including empty/newlines
+borz type <ref> --file <path>                 # append file contents without argument exposure
 borz type <ref> <text>                       # append
 borz select <ref> <value-or-visible-text>    # native select or ARIA/component combobox; verifies change
 borz upload <ref> <file...>                  # file input or associated label ref (paths on daemon host)
@@ -57,6 +60,8 @@ borz eval --file <path>                      # read script from disk
 borz eval --file ./x.js --json-arg user='{"id":7}' --json-arg n=3   # inject JSON args as top-level consts
 borz eval "await fetch('/x').then(...)"      # top-level await auto-wraps in async IIFE
 borz screenshot [out.png]                    # PNG; snapshot ref highlights excluded
+borz screenshot --output out.png             # positional path alternative; no --full-page
+borz reload                                  # alias for refresh
 borz screenshot out.png --annotate '@12=Click here to save'  # frame current ref + callout; repeatable
 borz get <url|title|text|href|value|class> [ref]
 borz network [requests|clear] [--filter] [--method] [--status code|class] [--with-body] [--limit n]
@@ -313,3 +318,28 @@ borz eval "document.querySelector('.title').textContent"
 - Source: https://github.com/leolin310148/borz
 - Upstream (Node): https://github.com/nicepkg/bb-browser
 - Community site adapters: https://github.com/epiral/bb-sites
+
+Output behavior: `fill`/`type` never echo input in CLI or MCP confirmations or
+in daemon response values. `tab`/`tabs` CLI output redacts OAuth and signed-URL
+query/fragment credentials in both text and JSON; actual navigation URLs are
+unchanged. `get url` remains the explicit way to retrieve the current URL.
+`clipboard-write ''` and an empty `--file` clear the clipboard.
+
+`--jq` uses embedded gojq, including map/select/sort_by/reverse/slices and
+array collectors. Invalid filters fail before the command runs. Page-command
+filters start at response data (`.result.body` for fetch); explicit `.data`
+selects the envelope. Local/extension commands filter their native JSON shape
+(e.g. downloads is an array). Missing fields produce null (jq semantics);
+empty select streams stay empty. There is no fallback to unfiltered data.
+
+Snapshots read live form values; password values are redacted. Text-only mode
+omits virtualized Monaco internals with an explicit marker. `fill` rejects
+Monaco helper textboxes: focus the editor, press Meta+A (macOS) or Control+A,
+then type. Inert ARIA-only checkboxes now fail instead of having their
+aria-checked attribute fabricated. Component checked/fireChange APIs remain
+supported. Success still does not prove a server accepted a form submission.
+
+CDP profile `browser status` reports the configured host/port, endpointAlive,
+and owned=false. `profile list --all` probes the external endpoint and includes
+cdpHost/cdpPort; this is endpoint liveness, not a guarantee of the daemon's
+WebSocket session. Profile purge never closes external CDP browsers.

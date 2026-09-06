@@ -73,7 +73,7 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"back":    {Summary: "Go back in the current tab's history.", Usage: "borz back [--tab <id>]" + waitForUsageSuffix},
 	"forward": {Summary: "Go forward in the current tab's history.", Usage: "borz forward [--tab <id>]" + waitForUsageSuffix},
-	"refresh": {Summary: "Reload the current page.", Usage: "borz refresh [--tab <id>]" + waitForUsageSuffix},
+	"refresh": {Summary: "Reload the current page (alias: reload).", Usage: "borz refresh [--tab <id>]" + waitForUsageSuffix},
 	"close": {
 		Summary: "Close the current tab (or the tab named by --tab).",
 		Usage:   "borz close [--tab <id>]",
@@ -87,6 +87,12 @@ var commandHelp = map[string]cmdHelp{
 		Examples: []string{"  borz click 5"},
 		Notes:    refNote,
 	},
+	"mouse": {
+		Summary:  "Send pointer input at viewport CSS pixel coordinates (including canvas/SVG).",
+		Usage:    "borz mouse <click|move|down|up> <x> <y> [--button left|right|middle|none] [--tab <id>]" + waitForUsageSuffix,
+		Examples: []string{"  borz mouse click 120 240", "  borz mouse down 100 100", "  borz mouse move 200 200 --button left", "  borz mouse up 200 200"},
+		Notes:    "Use a screenshot to determine coordinates. Pin --tab throughout a drag. For a held-button move use --button left; always release with mouse up. This sends pointer events, not HTML5 DataTransfer drag-and-drop.",
+	},
 	"hover": {
 		Summary:  "Hover an element by ref.",
 		Usage:    "borz hover <ref> [--tab <id>]" + waitForUsageSuffix,
@@ -95,18 +101,18 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"fill": {
 		Summary: "Clear an input/textarea and fill it with <text>.",
-		Usage:   "borz fill <ref> <text> [--tab <id>]" + waitForUsageSuffix,
+		Usage:   "borz fill <ref> (<text> | --file <path>) [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{
 			"  borz fill 3 'hello world'",
 			"  borz fill 3 multi word text (remaining args are joined)",
 		},
-		Notes: refNote + "\nUse 'type' to append without clearing.",
+		Notes: refNote + "\nUse 'type' to append without clearing. Input is never echoed. --file reads exact contents, including newlines; an empty file clears the field. Monaco hidden textboxes are rejected: focus the editor, press Meta+A (macOS) or Control+A, then type.",
 	},
 	"type": {
 		Summary:  "Append <text> to an input/textarea without clearing it first.",
-		Usage:    "borz type <ref> <text> [--tab <id>]" + waitForUsageSuffix,
+		Usage:    "borz type <ref> (<text> | --file <path>) [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz type 3 ' and more'"},
-		Notes:    refNote + "\nUse 'fill' to clear the field before writing.",
+		Notes:    refNote + "\nUse 'fill' to clear the field before writing. Input is never echoed; --file avoids passing it in process arguments.",
 	},
 	"check": {
 		Summary:  "Check a checkbox or radio by ref.",
@@ -172,6 +178,7 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Examples: []string{
 			"  borz clipboard-write 'ls -la'",
+			"  borz clipboard-write ''    # clear the clipboard",
 			"  borz clipboard-write --file ./payload.b64 --paste --tab 2",
 		},
 		Notes: "Sets the clipboard via navigator.clipboard.writeText (the tab is brought\n" +
@@ -290,8 +297,9 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"screenshot": {
 		Summary: "Capture a PNG of the current page.",
-		Usage:   "borz screenshot [path] [--annotate <ref>=<text>]... [--tab <id>]",
+		Usage:   "borz screenshot [path | --output <path>] [--annotate <ref>=<text>]... [--tab <id>]",
 		Flags: []string{
+			"  --output <path>         Save to a local path (alternative to positional path)",
 			"  --annotate <ref>=<text>  Frame a snapshot ref and add a text callout (repeatable)",
 		},
 		Examples: []string{
@@ -946,6 +954,7 @@ var commandHelp = map[string]cmdHelp{
 			"Chrome means driving, and eventually closing, their session.",
 	},
 	"browser.status": {
+		Notes:   "Managed profiles report ownership identity. CDP profiles probe their configured endpoint and report owned=false; --port and browser adopt apply only to managed profiles. For remote profiles use daemon status.",
 		Summary: "Show the recorded managed-browser identity next to the one now on the port.",
 		Usage:   "borz browser status [--port <p>] [--json]",
 	},
@@ -1754,11 +1763,13 @@ var commandHelp = map[string]cmdHelp{
 
 // helpAliases maps synonyms to canonical commandHelp keys.
 var helpAliases = map[string]string{
-	"--help":    "help",
-	"-h":        "help",
-	"--version": "version",
-	"-v":        "version",
-	"tabs":      "tab",
+	"--help":       "help",
+	"-h":           "help",
+	"--version":    "version",
+	"-v":           "version",
+	"tabs":         "tab",
+	"reload":       "refresh",
+	"network list": "network requests",
 }
 
 // printCommandHelp renders the help for a single command to stdout. If the
@@ -1917,6 +1928,9 @@ func suggestCommands(input string, maxN int) []string {
 func commandUsageHint(command string) string {
 	if strings.EqualFold(strings.TrimSpace(command), "navigate") {
 		return "To navigate an existing tab, use: borz --tab <id> open <url> (or 'borz open <url>' to open/reuse a tab)."
+	}
+	if strings.EqualFold(strings.TrimSpace(command), "use") {
+		return "To select an existing tab, use: borz tab select --id <tab-id>."
 	}
 	return ""
 }

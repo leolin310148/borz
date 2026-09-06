@@ -1494,7 +1494,24 @@ borz network requests --json
 
 ### jq Filtering
 
-Built-in jq-compatible expression filtering (no external `jq` binary needed):
+Built-in jq filtering via [gojq](https://github.com/itchyny/gojq) (no external
+`jq` binary needed). Supports `map`, `select`, generators, `sort_by`, `reverse`,
+slices, and array collectors. Invalid syntax fails before running the command;
+evaluation errors never print unfiltered or partial results. Missing fields
+produce `null`, as in jq, rather than the old mini-filter's empty output.
+
+Page commands use response data as the default root (`.result.body` for
+`fetch`); prefix with `.data` to select the response envelope. Array collectors
+such as `[.data.networkRequests[] | select(.status >= 400)]` also work.
+Local and extension commands use their native JSON shape (downloads returns an
+array). An empty selection stays empty and does not retry with another root:
+
+```bash
+borz downloads list --jq 'sort_by(.startTime) | reverse | .[0:3] | map({id,filename,state})'
+borz fetch https://example.test/api --jq '.result.body | keys'
+```
+
+Examples:
 
 ```bash
 # Get just the snapshot text
@@ -1684,3 +1701,38 @@ endpoint; otherwise the normal managed-browser discovery flow is used.
 ## License
 
 MIT
+
+### Feedback fixes: input, snapshots and profile status
+
+- `fill` and `type` accept `--file <path>` as an alternative to inline text.
+  File contents are read exactly. Confirmations and response values never echo
+  the input. An empty file clears a field with `fill`.
+- `clipboard-write ''` or an empty input file clears the clipboard. REST still
+  requires an explicit `text` field; omitted/null text is rejected.
+- CLI `tab`/`tabs` redacts OAuth and signed-URL credentials in query strings and
+  fragments for both text and JSON output. This only changes presentation;
+  navigation and exact URL matching use the original URL. `get url` explicitly
+  retrieves the current URL.
+- Snapshots use current form values instead of initial HTML attributes and
+  redact password values. `snapshot --text-only` omits Monaco internals with a
+  marker. Monaco's hidden textarea is not its document model: `fill` rejects it
+  with instructions to focus, select all, then `type`.
+- `check` does not fabricate `aria-checked` on an inert custom checkbox. Native
+  inputs and explicit component `checked`/`fireChange` APIs remain supported.
+- `screenshot --output out.png` is equivalent to `screenshot out.png`.
+  Unsupported flags, including `--full-page`, fail before capture or file write.
+  `reload` is an alias for `refresh`; `wait` documents its millisecond argument.
+- `mouse click|move|down|up <x> <y>` exposes viewport CSS pixel input for canvas
+  and SVG (MCP: `browser_mouse`, REST: `/v1/mouse`). For pointer dragging, pin the
+  same `--tab`, send `down`, `move --button left`, then `up`. This does not
+  synthesize HTML5 DataTransfer drag-and-drop.
+- CDP profile `browser status` reports its configured endpoint and external
+  ownership. `profile list --all` probes that endpoint, independently of daemon
+  WebSocket liveness. Profile purge never closes external CDP browsers.
+- `site list/search` quietly skips malformed unrelated adapters. Use
+  `site lint <path>` to diagnose an adapter explicitly.
+
+`fetch` runs in the selected page with `credentials: include`. It remains
+subject to CORS, cookie scope and redirects, and does not replay the original
+resource's headers or iframe session. A resource appearing in performance
+entries does not prove a new request will have the same authentication.

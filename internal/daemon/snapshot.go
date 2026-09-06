@@ -133,7 +133,7 @@ func getName(el rawDomElementNode, nodeMap map[string]json.RawMessage) string {
 	if v := attrs["alt"]; v != "" {
 		return v
 	}
-	if v := attrs["value"]; v != "" {
+	if v, present := attrs["value"]; present && (v != "" || el.TagName == "input" || el.TagName == "textarea" || el.TagName == "select") {
 		return v
 	}
 	if v := attrs["borz-rendered-name"]; v != "" {

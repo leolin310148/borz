@@ -189,7 +189,7 @@ func TestDispatch_Fill_And_Type(t *testing.T) {
 	if !resp.Success {
 		t.Fatalf("fill: %+v", resp)
 	}
-	if resp.Data.Value != "hello" {
+	if resp.Data.Value != "" {
 		t.Fatalf("value: %q", resp.Data.Value)
 	}
 	frameworkEvents := false

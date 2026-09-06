@@ -497,3 +497,22 @@ func TestPerformPurgeStopsDaemonThenFallsBackToKill(t *testing.T) {
 		t.Fatalf("fallback steps = %v", steps)
 	}
 }
+
+func TestCDPRuntimeLivenessAndPurgeOwnership(t *testing.T) {
+	port := fakeBrowserEndpoint(t, "external")
+	registry := &borzprofile.File{Profiles: map[string]borzprofile.Entry{"external": {Transport: "cdp", CDPHost: "127.0.0.1", CDPPort: port}}}
+	view := inspectRuntimeView(borzprofile.Runtime{Name: "external", HasRuntimeDir: true}, registry)
+	if !view.BrowserAlive || view.CDPPort != port || view.BrowserPort != 0 {
+		t.Fatalf("external runtime: %+v", view)
+	}
+	payload := runtimePayload(view)
+	if payload["browserOwned"] != false || payload["cdpPort"] != port {
+		t.Fatalf("external payload: %+v", payload)
+	}
+	calls := stubCloseManagedBrowser(t, nil)
+	view.HasRuntimeDir = false
+	performPurge(view, false)
+	if *calls != 0 {
+		t.Fatal("purge attempted to close external browser")
+	}
+}

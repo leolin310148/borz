@@ -180,7 +180,8 @@ func ScanSites(dir, source string) []*SiteMeta {
 		}
 		meta, err := parseSiteMeta(path, source, dir)
 		if err != nil {
-			log.Printf("site: skip %s: %v", path, err)
+			// Catalog scans skip invalid unrelated adapters. site lint <path>
+			// remains the explicit diagnostic path.
 			return nil
 		}
 		sites = append(sites, meta)

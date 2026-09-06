@@ -37,7 +37,7 @@ The daemon is auto-spawned on first command. Browser auto-discovery + managed-la
 
 ### Snapshot → ref → act
 
-The core interaction model is: `snapshot` returns an accessibility tree with numeric `[ref=N]` ids, and interaction commands (`click`, `fill`, `type`, …) take those refs. The DOM-walking script that produces refs is `embed/buildDomTree.js` (embedded at build time). Snapshot logic: `internal/daemon/snapshot.go`, text-mode variant in `textsnapshot.go`.
+The core interaction model is: `snapshot` returns an accessibility tree with numeric `[ref=N]` ids, and interaction commands (`click`, `fill`, `type`, …) take those refs. The DOM-walking script that produces refs is `internal/daemon/embed/buildDomTree.js` (embedded at build time). Snapshot logic: `internal/daemon/snapshot.go`, text-mode variant in `textsnapshot.go`.
 
 ### Wire protocol
 
@@ -60,7 +60,7 @@ Keep these in sync; tests assert this (e.g. MCP handler tests, REST tests, OpenA
 - `internal/site/` — **site adapters**: user/community JS plugins (`~/.borz/sites`, `~/.borz/bb-sites`) that automate specific websites. CLI/MCP default to client scope (load + trust beside the process, then send built JS through any profile); server scope and direct `/v1/sites/*` load + trust on the selected daemon. Domain origin guards + `entry`/`timeoutMs`/`output` schema are validated here.
 - `internal/recorder/` + `record_cli.go` — `.borzrec` bundle capture (CDP mode or extension/client mode) and ffmpeg-based render with cursor/click/redaction overlays.
 - `internal/daemon/extbridge/` + `extension/` — optional Chrome extension that exposes browser-level APIs CDP can't reach (all-domain cookies, bookmarks, history, downloads, windows, event streams). Extension is downloaded by `borz extension download` and version-locked to the binary; `internal/extupdate/` handles fetch/verify/extract.
-- `internal/jq/` — built-in jq-compatible filter (no external `jq` binary). Used by `--jq` on every command.
+- `internal/jq/` — built-in jq-compatible filter (no external `jq` binary). Used by `--jq` on JSON commands. It embeds gojq rather than implementing a partial parser: unsupported syntax must fail before the command runs, never pass through unfiltered input. Filters run against response data by default; an explicit `.data`/`.success`/`.error`/`.id` prefix selects the envelope, including inside an array collector. Empty filter results never trigger a retry against another root. Runtime failures discard the result stream and do not echo input values.
 - `internal/jseval/` — `eval` script preprocessing: top-level-await auto-wrap (`wrap.go`) + `--json-arg` injection (`jsonarg.go`).
 - `internal/diagnostics/` — `borz doctor` end-to-end stack check, exposed via CLI, MCP (`browser_doctor`), and REST (`/v1/doctor`).
 - `internal/winservice/` + `borz service` — Windows Service Control Manager registration for `borz server`.

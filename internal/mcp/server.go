@@ -83,6 +83,7 @@ func newMCPServer(version string) *server.MCPServer {
 
 	// Interaction
 	s.AddTool(clickTool, handleClick)
+	s.AddTool(mouseTool, handleMouse)
 	s.AddTool(hoverTool, handleHover)
 	s.AddTool(fillTool, handleFill)
 	s.AddTool(typeTool, handleType)

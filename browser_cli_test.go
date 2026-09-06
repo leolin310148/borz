@@ -107,3 +107,18 @@ func TestManagedBrowserPortDefaultsToRecorded(t *testing.T) {
 		t.Fatalf("status without --port = %q", out)
 	}
 }
+
+func TestBrowserStatusCDPUsesConfiguredEndpoint(t *testing.T) {
+	setupProfileHome(t)
+	port := fakeBrowserEndpoint(t, "external")
+	runProfileCLI(t, "profile", "add", "external", "--cdp", "127.0.0.1:"+strconv.Itoa(port))
+	out := runProfileCLI(t, "--profile", "external", "browser", "status", "--json")
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["transport"] != "cdp" || result["port"] != float64(port) || result["endpointAlive"] != true || result["owned"] != false || result["stateFile"] != nil {
+		t.Fatalf("external status: %s", out)
+	}
+	captureStderr(t, func() { expectExit(t, 1, func() { runMainArgsForExit("--profile", "external", "browser", "adopt") }) })
+}

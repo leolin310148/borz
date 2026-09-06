@@ -1130,17 +1130,21 @@ func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, 
 			"functionDeclaration": `function(value) {
 			if (typeof this.scrollIntoView === 'function') this.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
 			if (typeof this.focus === 'function') this.focus();
+			if (this.closest && this.closest('.monaco-editor')) {
+				return { ok: false, error: 'fill cannot replace a Monaco model through its hidden textbox; focus the editor, use press Meta+A (macOS) or Control+A, then type' };
+			}
 			if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
 				const prototype = this instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
 				const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
 				if (descriptor && typeof descriptor.set === 'function') descriptor.set.call(this, value);
 				else this.value = value;
-				if (typeof this.setSelectionRange === 'function') this.setSelectionRange(value.length, value.length);
+				if (typeof this.setSelectionRange === 'function' && /^(text|search|tel|url|password)$/.test(this.type || 'text')) this.setSelectionRange(value.length, value.length);
 				const inputEvent = typeof InputEvent === 'function'
-					? new InputEvent('input', { bubbles: true, inputType: value ? 'insertText' : 'deleteContentBackward', data: value || null })
+					? new InputEvent('input', { bubbles: true, composed: true, inputType: value ? 'insertText' : 'deleteContentBackward', data: value || null })
 					: new Event('input', { bubbles: true });
 				this.dispatchEvent(inputEvent);
-				this.dispatchEvent(new Event('change', { bubbles: true }));
+				this.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+				if (this.value !== value) return { ok: false, error: 'input rejected the requested value; verify the format and take a fresh snapshot' };
 				return { ok: true };
 			}
 			if (this instanceof HTMLElement && this.isContentEditable) {
@@ -1264,10 +1268,12 @@ func setCheckedState(cdp *CdpConnection, targetID string, backendNodeID int, des
 				const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
 				if (descriptor && typeof descriptor.set === 'function') descriptor.set.call(control, desired);
 				else control.checked = desired;
-			} else if ('checked' in control) {
+			} else if ('checked' in control && typeof control.fireChange === 'function') {
+				// Preserve explicit component APIs; never synthesize state by
+				// editing an ARIA attribute on an otherwise inert element.
 				control.checked = desired;
 			} else {
-				control.setAttribute('aria-checked', String(desired));
+				return { ok: false, checked: read(), error: 'custom checkbox did not change after click; take a fresh snapshot and click its visible control' };
 			}
 			control.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
 			control.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
@@ -2205,7 +2211,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		if err := insertTextIntoNode(cdp, target.ID, backendID, req.Text, clearFirst); err != nil {
 			return failResp(req.ID, err)
 		}
-		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Value: req.Text, Tab: shortID, Seq: intPtr(seq)}))
+		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionCheck, protocol.ActionUncheck:
 		if req.Ref == "" {
@@ -2427,7 +2433,8 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 
 		switch mouseType {
 		case "move":
-			if err := send("mouseMoved", nil); err != nil {
+			buttons := map[string]int{"none": 0, "left": 1, "right": 2, "middle": 4}[button]
+			if err := send("mouseMoved", map[string]interface{}{"buttons": buttons}); err != nil {
 				return failResp(req.ID, err)
 			}
 		case "down":
@@ -2439,7 +2446,9 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 				return failResp(req.ID, err)
 			}
 		case "click":
-			send("mouseMoved", map[string]interface{}{"button": "none"})
+			if err := send("mouseMoved", map[string]interface{}{"button": "none"}); err != nil {
+				return failResp(req.ID, err)
+			}
 			if err := send("mousePressed", map[string]interface{}{"clickCount": clickCount}); err != nil {
 				return failResp(req.ID, err)
 			}
@@ -2460,7 +2469,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		default:
 			return failResp(req.ID, fmt.Sprintf("unknown mouseType: %s", mouseType))
 		}
-		return okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)})
+		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
 
 	case protocol.ActionClipboardRead:
 		// Best-effort permission grant; ignore errors (already granted or unsupported).
@@ -2479,9 +2488,6 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		return okResp(req.ID, &protocol.ResponseData{Value: val, Tab: shortID})
 
 	case protocol.ActionClipboardWrite:
-		if req.Text == "" {
-			return failResp(req.ID, "missing text parameter")
-		}
 		// Best-effort permission grant; ignore errors (already granted or unsupported).
 		cdp.BrowserCommand("Browser.grantPermissions", map[string]interface{}{
 			"permissions": []string{"clipboardReadWrite", "clipboardSanitizedWrite"},

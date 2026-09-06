@@ -38,7 +38,7 @@ Important locations:
 - `internal/mcp/`: MCP tools, handlers, response shaping
 - `internal/protocol/`: shared request/response envelope
 - `internal/client/`: browser discovery and managed launch
-- `embed/buildDomTree.js`: DOM walker that creates snapshot refs
+- `internal/daemon/embed/buildDomTree.js`: DOM walker that creates snapshot refs
 
 ## Public Surface Sync
 

@@ -82,7 +82,7 @@ func handleCookies(cmdArgs []string, jsonOutput bool) {
 			fatal(err.Error())
 		}
 		if jsonOutput {
-			fmt.Println(string(raw))
+			printJSON(raw)
 			return
 		}
 		var cookies []extCookie
@@ -235,7 +235,7 @@ func handleBookmarks(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 	case "tree":
 		raw := extGetJSON("/v1/bookmarks/tree")
 		if jsonOutput {
-			fmt.Println(string(raw))
+			printJSON(raw)
 			return
 		}
 		var roots []extBookmark
@@ -252,7 +252,7 @@ func handleBookmarks(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		q.Set("q", query)
 		raw := extGetJSON("/v1/bookmarks/search?" + q.Encode())
 		if jsonOutput {
-			fmt.Println(string(raw))
+			printJSON(raw)
 			return
 		}
 		var items []extBookmark
@@ -313,7 +313,7 @@ func handleBrowserHistory(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		}
 		raw := extGetJSON("/v1/browser-history/search?" + q.Encode())
 		if jsonOutput {
-			fmt.Println(string(raw))
+			printJSON(raw)
 			return
 		}
 		var items []extHistoryItem
@@ -356,7 +356,7 @@ func handleDownloads(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 		}
 		raw := extGetJSON(path)
 		if jsonOutput {
-			fmt.Println(string(raw))
+			printJSON(raw)
 			return
 		}
 		var items []extDownloadItem
@@ -413,7 +413,7 @@ func handleWindows(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 	case "list":
 		raw := extGetJSON("/v1/windows")
 		if jsonOutput {
-			fmt.Println(string(raw))
+			printJSON(raw)
 			return
 		}
 		var windows []extWindow
@@ -470,7 +470,7 @@ func extPostJSON(path string, body any) json.RawMessage {
 
 func emitRawOrMessage(raw json.RawMessage, jsonOutput bool, msg string) {
 	if jsonOutput {
-		fmt.Println(string(raw))
+		printJSON(raw)
 		return
 	}
 	fmt.Println(msg)

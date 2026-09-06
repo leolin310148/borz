@@ -6,6 +6,7 @@ import (
 
 	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/config"
+	borzprofile "github.com/leolin310148/borz/internal/profile"
 )
 
 // handleBrowser owns the managed browser's identity record: the file that says
@@ -40,6 +41,26 @@ func browserPortFromFlags(rawArgs []string) int {
 }
 
 func handleBrowserStatus(rawArgs []string, jsonOutput bool) {
+	target, err := borzprofile.ResolveTarget(config.Profile())
+	if err != nil {
+		fatal(err.Error())
+	}
+	if target.Kind != borzprofile.TransportManaged {
+		if _, present := getArgValueOK(rawArgs, "--port"); present {
+			fatal("--port applies only to managed profiles; this profile uses its configured endpoint")
+		}
+		if target.Kind == borzprofile.TransportRemote {
+			fatal("browser status inspects local browser ownership; for remote profiles use daemon status")
+		}
+		alive := client.CheckCDPEndpoint(target.CDP.Host, target.CDP.Port, livenessProbeTimeout) == nil
+		if jsonOutput {
+			printJSON(map[string]interface{}{"transport": "cdp", "host": target.CDP.Host, "port": target.CDP.Port, "endpointAlive": alive, "owned": false})
+		} else {
+			fmt.Printf("External CDP: %s:%d\nEndpoint alive: %v\nOwnership: external (never adopted or closed by borz)\n", target.CDP.Host, target.CDP.Port, alive)
+		}
+		return
+	}
+
 	port := browserPortFromFlags(rawArgs)
 	recordedID, liveID, recordedPort := client.ManagedBrowserIdentity(port)
 	matches := recordedID != "" && recordedID == liveID && recordedPort == port
@@ -82,6 +103,14 @@ func describeBrowserID(id, empty string) string {
 }
 
 func handleBrowserAdopt(rawArgs []string, jsonOutput bool) {
+	target, err := borzprofile.ResolveTarget(config.Profile())
+	if err != nil {
+		fatal(err.Error())
+	}
+	if target.Kind != borzprofile.TransportManaged {
+		fatal("browser adopt applies only to managed profiles; external browsers remain externally owned")
+	}
+
 	port := browserPortFromFlags(rawArgs)
 	adoptedPort, browserID, err := client.AdoptManagedBrowser(port)
 	if err != nil {

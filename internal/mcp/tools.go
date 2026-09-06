@@ -455,3 +455,12 @@ var siteRunTool = mcp.NewTool("browser_site_run",
 	mcp.WithString("scope", mcp.Description("Run the adapter from the client catalog (default) or selected daemon's server catalog."), mcp.Enum("client", "server")),
 	tabParam(),
 )
+
+var mouseTool = mcp.NewTool("browser_mouse",
+	mcp.WithDescription("Send pointer input at viewport CSS pixel coordinates for canvas/SVG. For dragging: down at source, move with button=left, up at target; pin tab throughout. No HTML5 DataTransfer synthesis."),
+	mcp.WithString("mouseType", mcp.Required(), mcp.Enum("click", "move", "down", "up")),
+	mcp.WithNumber("x", mcp.Required(), mcp.Min(0)),
+	mcp.WithNumber("y", mcp.Required(), mcp.Min(0)),
+	mcp.WithString("button", mcp.Enum("left", "right", "middle", "none")),
+	tabParam(), waitForParam(), timeoutParam(), preDelayParam(), postDelayParam(),
+)

@@ -208,8 +208,8 @@ func TestE2ECLIOutputShaping(t *testing.T) {
 	}
 
 	missing := runE2ECLI(t, env, "eval", script, "--tab", tab, "--jq", ".result.missing")
-	if strings.TrimSpace(missing) != "" {
-		t.Fatalf("jq missing path output = %q, want empty", missing)
+	if strings.TrimSpace(missing) != "null" {
+		t.Fatalf("jq missing path output = %q, want null", missing)
 	}
 
 	jqFailure := runE2ECLI(t, env, "eval", `(() => { throw new Error("e2e-output-shaping") })()`, "--tab", tab, "--jq", ".error")

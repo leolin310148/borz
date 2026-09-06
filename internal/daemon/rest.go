@@ -140,7 +140,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		return body.withActivate(req), nil
 	}))
 	mux.HandleFunc("/v1/mouse", s.restJSON(func(body restBody) *protocol.Request {
-		return body.withActivate(&protocol.Request{
+		return body.applyWait(&protocol.Request{
 			Action:     protocol.ActionMouse,
 			MouseType:  body.MouseType,
 			X:          body.X,
@@ -157,7 +157,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 		return body.withActivate(&protocol.Request{Action: protocol.ActionClipboardRead, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/clipboard-write", s.restJSONE(func(body restBody) (*protocol.Request, error) {
-		if body.Text == "" {
+		if !body.TextPresent {
 			return nil, fmt.Errorf("text is required")
 		}
 		return body.withActivate(&protocol.Request{
@@ -355,6 +355,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 type shotAnnotation = protocol.ScreenshotAnnotation
 
 type restBody struct {
+	TextPresent bool                      `json:"-"`
 	URL         string                    `json:"url,omitempty"`
 	New         bool                      `json:"new,omitempty"`
 	Ref         string                    `json:"ref,omitempty"`
@@ -828,4 +829,22 @@ func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 		"ok":     !failed,
 		"checks": checks,
 	})
+}
+
+// Preserve explicit empty text for clipboard clearing without treating an
+// omitted or null field as authorization to clear the clipboard.
+func (b *restBody) UnmarshalJSON(raw []byte) error {
+	type plain restBody
+	var decoded plain
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	text, present := fields["text"]
+	decoded.TextPresent = present && string(text) != "null"
+	*b = restBody(decoded)
+	return nil
 }

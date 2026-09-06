@@ -285,3 +285,30 @@ func TestDispatchPasteShortcut(t *testing.T) {
 		t.Errorf("keyDown commands = %#v want PasteAndMatchStyle", events[0]["commands"])
 	}
 }
+
+func TestClipboardWriteExplicitEmptyClears(t *testing.T) {
+	s, f := serverWithFakeCDP(t)
+	var expression string
+	f.On("Runtime.evaluate", func(params json.RawMessage) (interface{}, error) {
+		var p struct {
+			Expression string `json:"expression"`
+		}
+		json.Unmarshal(params, &p)
+		if strings.Contains(p.Expression, "writeText(") {
+			expression = p.Expression
+		}
+		return map[string]interface{}{"result": map[string]interface{}{"type": "string", "value": "ok"}}, nil
+	})
+	mux := http.NewServeMux()
+	s.registerRESTRoutes(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/clipboard-write", strings.NewReader(`{"text":""}`)))
+	if rec.Code != 200 || !strings.Contains(expression, `writeText("")`) {
+		t.Fatalf("empty clipboard: %d %s %s", rec.Code, rec.Body.String(), expression)
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/clipboard-write", strings.NewReader(`{"text":null}`)))
+	if rec.Code != 400 {
+		t.Fatal("null text must not clear the clipboard")
+	}
+}

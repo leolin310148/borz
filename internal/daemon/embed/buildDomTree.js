@@ -1416,6 +1416,11 @@ window.buildDomTree = (
       }
     }
 
+    // Form values are live properties; HTML attributes retain initial values.
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName)) {
+      nodeData.attributes.value = node.type === 'password' ? '[redacted]' : node.value;
+    }
+
     let nodeWasHighlighted = false;
     // Perform visibility, interactivity, and highlighting checks
     if (node.nodeType === Node.ELEMENT_NODE) {
@@ -1507,6 +1512,7 @@ window.buildDomTree = (
         }
         // Handle regular elements
         for (const child of Array.from(node.childNodes)) {
+          if (tagName === 'textarea') continue; // initial child text is not the live value
           // Pass the highlighted status of the *current* node to its children
           const passHighlightStatusToChild = nodeWasHighlighted || isParentHighlighted;
           const domElement = buildDomTree(child, parentIframe, passHighlightStatusToChild, depth + 1);

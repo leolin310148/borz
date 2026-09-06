@@ -45,7 +45,7 @@ func handleExtension(cmdArgs []string, jsonOutput bool, rawArgSets ...[]string) 
 			fatal(err.Error())
 		}
 		if jsonOutput {
-			fmt.Println(string(raw))
+			printJSON(raw)
 			return
 		}
 		var caps struct {
@@ -89,7 +89,7 @@ func runExtensionCall(method string, params map[string]any, jsonOutput bool) {
 		fatal(err.Error())
 	}
 	if jsonOutput {
-		fmt.Println(string(raw))
+		printJSON(raw)
 		return
 	}
 	var pretty any
