@@ -720,7 +720,7 @@ func main() {
 		var pretty json.RawMessage
 		json.Unmarshal(raw, &pretty)
 		out, _ := json.MarshalIndent(pretty, "", "  ")
-		fmt.Println(string(out))
+		printJSON(json.RawMessage(out))
 
 	// --- Doctor ---
 	case "doctor":
@@ -1319,7 +1319,7 @@ func handleDaemon(cmdArgs []string, rawArgs []string) {
 			fatal(fmt.Sprintf("check daemon status: %v", err))
 		}
 		out, _ := json.MarshalIndent(json.RawMessage(raw), "", "  ")
-		fmt.Println(string(out))
+		printJSON(json.RawMessage(out))
 	case "token":
 		handleDaemonToken(rawArgs)
 	case "shutdown", "stop":
@@ -1515,7 +1515,7 @@ func handleServer(cmdArgs []string, rawArgs []string) {
 				return
 			}
 			out, _ := json.MarshalIndent(json.RawMessage(raw), "", "  ")
-			fmt.Println(string(out))
+			printJSON(json.RawMessage(out))
 			return
 		case "shutdown", "stop":
 			if url, isRemote := remoteProfileURL(); isRemote {

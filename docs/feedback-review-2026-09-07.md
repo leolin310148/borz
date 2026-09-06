@@ -186,3 +186,8 @@ CDP profile status 使用 managed identity/port。
 
 Tests use local synthetic pages, not the user's customer sites. No existing
 shared daemon was restarted and no installed global binary was replaced.
+
+Deployment follow-up: the installed-binary smoke check found that `status`,
+`daemon status`, and `server status` still used direct JSON formatting.
+These now route the formatted payload through the shared jq output boundary;
+`TestFeedbackStatusCommandsHonorJQ` covers all three entry points.

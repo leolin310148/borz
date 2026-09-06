@@ -141,3 +141,15 @@ func TestFeedbackInvalidJQHasNoSideEffects(t *testing.T) {
 		t.Fatal("invalid jq still performed action")
 	}
 }
+
+func TestFeedbackStatusCommandsHonorJQ(t *testing.T) {
+	for _, command := range [][]string{{"status"}, {"daemon", "status"}, {"server", "status"}} {
+		t.Run(strings.Join(command, "_"), func(t *testing.T) {
+			args := append(append([]string{}, command...), "--json", "--jq", "{running}")
+			out, _ := runMainWithFakeDaemon(t, args...)
+			if strings.TrimSpace(out) != `{"running":true}` {
+				t.Fatalf("status filter ignored: %q", out)
+			}
+		})
+	}
+}
