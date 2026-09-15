@@ -20,10 +20,11 @@ import (
 
 // CdpTargetInfo describes a CDP target (browser tab).
 type CdpTargetInfo struct {
-	ID    string `json:"targetId"`
-	Type  string `json:"type"`
-	Title string `json:"title"`
-	URL   string `json:"url"`
+	ID       string `json:"targetId"`
+	Type     string `json:"type"`
+	Title    string `json:"title"`
+	URL      string `json:"url"`
+	OpenerID string `json:"openerId,omitempty"`
 }
 
 type pendingCommand struct {
@@ -1023,10 +1024,11 @@ func (c *CdpConnection) GetTargets() ([]CdpTargetInfo, error) {
 	var pages []CdpTargetInfo
 	for _, t := range data.TargetInfos {
 		pages = append(pages, CdpTargetInfo{
-			ID:    t.ID,
-			Type:  t.Type,
-			Title: t.Title,
-			URL:   t.URL,
+			ID:       t.ID,
+			Type:     t.Type,
+			Title:    t.Title,
+			URL:      t.URL,
+			OpenerID: t.OpenerID,
 		})
 	}
 	return pages, nil

@@ -57,6 +57,11 @@ Read `llm.txt` before changing commands, endpoints, tools, or documented behavio
 
 - `borz open <url>` reuses an existing tab with the exact same URL; `--new` forces a new tab.
 - Snapshot refs are regenerated from the accessibility tree; re-snapshot after navigation or DOM-changing actions.
+- A ref whose absolute XPath disappears or still resolves to an old dynamic
+  portal generation may rebind only to one exact visible/actionable tag, role,
+  and accessible-name match. Ambiguous matches stay stale, and ref recovery
+  must never bypass the physical click hit-target check. A newly opened tab
+  reconciles a click error only when CDP identifies the source tab as its opener.
 - `--wait-for <selector>` and `--timeout <ms>` apply to every page-changing action, not just `open`.
 - CLI and MCP `eval` auto-wrap top-level `await`; REST `/v1/eval` does not.
 - `borz server` must not bind non-loopback without a token.

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/leolin310148/borz/internal/protocol"
@@ -551,6 +552,241 @@ func TestDispatch_ResolveByXPath_NoResults(t *testing.T) {
 	}
 	if !strings.Contains(resp.Error, "stale because the page or DOM changed") || !strings.Contains(resp.Error, "run snapshot again") {
 		t.Fatalf("stale ref error is not actionable: %q", resp.Error)
+	}
+}
+
+func TestDispatch_ResolveByXPath_RebindsUniqueDynamicPortalRef(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	f.On("Runtime.evaluate", fakeBuildDomTreeSequence(&buildDomTreeResult{
+		RootID: "root",
+		Map: map[string]json.RawMessage{
+			"root": mustRaw(t, rawDomElementNode{TagName: "body", XPath: "/html/body", Children: []string{"upload"}}),
+			"upload": mustRaw(t, rawDomElementNode{
+				TagName: "button", XPath: "/html/body/div[4]/ul/li[2]/button", HighlightIndex: intPtr(19),
+				Attributes: map[string]string{"role": "menuitem", "borz-rendered-name": "檔案上傳"},
+			}),
+		},
+	}))
+	var searched []string
+	f.On("DOM.performSearch", func(params json.RawMessage) (interface{}, error) {
+		var request struct {
+			Query string `json:"query"`
+		}
+		_ = json.Unmarshal(params, &request)
+		searched = append(searched, request.Query)
+		if strings.Contains(request.Query, "li[3]") {
+			return map[string]interface{}{"searchId": "OLD", "resultCount": 0}, nil
+		}
+		return map[string]interface{}{"searchId": "NEW", "resultCount": 1}, nil
+	})
+	f.On("DOM.getSearchResults", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"nodeIds": []int{99}}, nil
+	})
+	f.On("DOM.describeNode", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"node": map[string]interface{}{"backendNodeId": 321}}, nil
+	})
+	f.On("DOM.discardSearchResults", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{}, nil
+	})
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "19", &protocol.RefInfo{
+		XPath: "/html/body/div[4]/ul/li[3]/button", Role: "menuitem", Name: "檔案上傳", TagName: "button",
+	})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "click", Action: protocol.ActionClick, Ref: "19"})
+	if !resp.Success {
+		t.Fatalf("dynamic portal click should rebind its fresh semantic ref: %+v", resp)
+	}
+	if got := c.TabManager.GetTab("T1").Refs["19"].BackendDOMNodeID; got != 321 {
+		t.Fatalf("rebound backend node id = %d, want 321", got)
+	}
+	if len(searched) != 2 || !strings.Contains(searched[0], "li[3]") || !strings.Contains(searched[1], "li[2]") {
+		t.Fatalf("XPath searches = %#v, want stale absolute path then relocated semantic path", searched)
+	}
+}
+
+func TestDispatch_ResolveByXPath_RejectsAmbiguousSemanticFallback(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	f.On("Runtime.evaluate", fakeBuildDomTreeSequence(&buildDomTreeResult{
+		RootID: "root",
+		Map: map[string]json.RawMessage{
+			"root": mustRaw(t, rawDomElementNode{TagName: "body", XPath: "/html/body", Children: []string{"a", "b"}}),
+			"a":    mustRaw(t, rawDomElementNode{TagName: "button", XPath: "/html/body/div[1]/button", HighlightIndex: intPtr(1), Attributes: map[string]string{"role": "menuitem", "aria-label": "Upload"}}),
+			"b":    mustRaw(t, rawDomElementNode{TagName: "button", XPath: "/html/body/div[2]/button", HighlightIndex: intPtr(2), Attributes: map[string]string{"role": "menuitem", "aria-label": "Upload"}}),
+		},
+	}))
+	f.On("DOM.performSearch", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"searchId": "OLD", "resultCount": 0}, nil
+	})
+	f.On("DOM.discardSearchResults", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{}, nil
+	})
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	tab := c.TabManager.GetTab("T1")
+	seedRef(c, "T1", "7", &protocol.RefInfo{XPath: "/gone", Role: "menuitem", Name: "Upload", TagName: "button"})
+
+	_, err := parseRef(c, "T1", tab, "7")
+	if err == nil || !strings.Contains(err.Error(), "semantic fallback found 2 exact matches") {
+		t.Fatalf("ambiguous semantic fallback error = %v", err)
+	}
+}
+
+func TestDispatch_Click_NewChildTabReconcilesHitTargetRace(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+
+	var targetReads atomic.Int32
+	f.On("Target.getTargets", func(json.RawMessage) (interface{}, error) {
+		targets := []interface{}{map[string]interface{}{"targetId": "T1", "type": "page", "url": "https://a", "title": "A"}}
+		// dispatchAction resolves the source target first, then captures the
+		// click baseline; expose the child only on the post-error read.
+		if targetReads.Add(1) >= 3 {
+			targets = append(targets, map[string]interface{}{"targetId": "WORD", "type": "page", "url": "https://word.example/doc", "title": "Word", "openerId": "T1"})
+		}
+		return map[string]interface{}{"targetInfos": targets}, nil
+	})
+	f.On("Runtime.callFunctionOn", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{
+			"result": map[string]interface{}{},
+			"exceptionDetails": map[string]interface{}{
+				"text":      "Uncaught",
+				"exception": map[string]interface{}{"description": "Error: Element is not clickable at its center; hit span instead of button"},
+			},
+		}, nil
+	})
+	seedRef(c, "T1", "1", &protocol.RefInfo{BackendDOMNodeID: 42, Role: "menuitem", Name: "Open in browser", TagName: "button"})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "click", Action: protocol.ActionClick, Ref: "1"})
+	if !resp.Success {
+		t.Fatalf("new child page should reconcile click hit-target race: %+v", resp)
+	}
+	for _, call := range f.Calls() {
+		if call.Method == "Input.dispatchMouseEvent" {
+			t.Fatalf("click dispatched duplicate mouse input after new-tab outcome: %+v", f.Calls())
+		}
+	}
+}
+
+func TestDispatch_Click_RebindsOnceWhenResolvedPortalNodeMovedUnderOverlay(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	f.On("Runtime.evaluate", fakeBuildDomTreeSequence(&buildDomTreeResult{
+		RootID: "root",
+		Map: map[string]json.RawMessage{
+			"root": mustRaw(t, rawDomElementNode{TagName: "body", XPath: "/html/body", Children: []string{"current"}}),
+			"current": mustRaw(t, rawDomElementNode{
+				TagName: "button", XPath: "/html/body/div[5]/button", HighlightIndex: intPtr(9),
+				Attributes: map[string]string{"role": "menuitem", "aria-label": "Open in browser"},
+			}),
+		},
+	}))
+	f.On("DOM.performSearch", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"searchId": "CURRENT", "resultCount": 1}, nil
+	})
+	f.On("DOM.getSearchResults", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"nodeIds": []int{99}}, nil
+	})
+	f.On("DOM.describeNode", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"node": map[string]interface{}{"backendNodeId": 321}}, nil
+	})
+	f.On("DOM.discardSearchResults", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{}, nil
+	})
+	var pointCalls atomic.Int32
+	f.On("Runtime.callFunctionOn", func(params json.RawMessage) (interface{}, error) {
+		var call struct {
+			FunctionDeclaration string `json:"functionDeclaration"`
+		}
+		_ = json.Unmarshal(params, &call)
+		if strings.Contains(call.FunctionDeclaration, "semanticIdentity") {
+			if pointCalls.Add(1) == 1 {
+				return map[string]interface{}{
+					"result": map[string]interface{}{},
+					"exceptionDetails": map[string]interface{}{
+						"text":      "Uncaught",
+						"exception": map[string]interface{}{"description": "Error: Element is not clickable at its center; hit a#header instead of button"},
+					},
+				}, nil
+			}
+			return map[string]interface{}{"result": map[string]interface{}{"value": map[string]interface{}{"x": 40.0, "y": 60.0}}}, nil
+		}
+		// Do not start the optional element-level fallback probe in this test.
+		return map[string]interface{}{"result": map[string]interface{}{"value": false}}, nil
+	})
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "9", &protocol.RefInfo{
+		BackendDOMNodeID: 111, XPath: "/html/body/div[3]/ul/li[3]/button",
+		Role: "menuitem", Name: "Open in browser", TagName: "button",
+	})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "click", Action: protocol.ActionClick, Ref: "9"})
+	if !resp.Success {
+		t.Fatalf("moved portal generation should be rebound and hit-tested once more: %+v", resp)
+	}
+	if pointCalls.Load() != 2 {
+		t.Fatalf("interactable point calls = %d, want initial failure plus one retry", pointCalls.Load())
+	}
+	if got := c.TabManager.GetTab("T1").Refs["9"].BackendDOMNodeID; got != 321 {
+		t.Fatalf("recovered backend node id = %d, want 321", got)
+	}
+}
+
+func TestClickTargetBaseline_IgnoresUnrelatedNewPage(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	c := connectCdp(t, f)
+	baseline := captureClickTargetBaseline(c, "T1")
+	f.On("Target.getTargets", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{"targetInfos": []interface{}{
+			map[string]interface{}{"targetId": "T1", "type": "page"},
+			map[string]interface{}{"targetId": "OTHER", "type": "page", "openerId": "T2"},
+		}}, nil
+	})
+	if baseline.openedChildPage(c, 0) {
+		t.Fatal("unrelated new page must not mask a click failure")
+	}
+}
+
+func TestDispatch_Click_RetargetedControlSkipsDetachedNodeProbe(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	setupRefHandlers(f)
+	f.On("Runtime.callFunctionOn", func(params json.RawMessage) (interface{}, error) {
+		var call struct {
+			FunctionDeclaration string `json:"functionDeclaration"`
+		}
+		_ = json.Unmarshal(params, &call)
+		if !strings.Contains(call.FunctionDeclaration, "semanticIdentity") || !strings.Contains(call.FunctionDeclaration, "sameGeometry") {
+			t.Fatalf("interactable-point check lacks exact-semantic, same-geometry retargeting: %s", call.FunctionDeclaration)
+		}
+		return map[string]interface{}{"result": map[string]interface{}{"value": map[string]interface{}{"x": 12.5, "y": 20.0, "retargeted": true}}}, nil
+	})
+	c := connectCdp(t, f)
+	DispatchRequest(c, &protocol.Request{ID: "prime", Action: protocol.ActionBack})
+	seedRef(c, "T1", "1", &protocol.RefInfo{BackendDOMNodeID: 42, Role: "menuitem", Name: "Upload", TagName: "button"})
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "click", Action: protocol.ActionClick, Ref: "1"})
+	if !resp.Success {
+		t.Fatalf("retargeted exact-semantic control click: %+v", resp)
+	}
+	var runtimeCalls int
+	for _, call := range f.Calls() {
+		if call.Method == "Runtime.callFunctionOn" {
+			runtimeCalls++
+		}
+	}
+	if runtimeCalls != 1 {
+		t.Fatalf("detached-node probe/fallback should be skipped; Runtime.callFunctionOn calls = %d", runtimeCalls)
 	}
 }
 

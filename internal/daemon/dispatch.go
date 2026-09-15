@@ -808,6 +808,76 @@ func resolveBackendNodeIDByXPath(cdp *CdpConnection, targetID, xpath string) (in
 	return 0, fmt.Errorf("XPath resolved but no backend node id found: %s", xpath)
 }
 
+// resolveBackendNodeIDBySemantics rebuilds an unhighlighted accessibility
+// snapshot and relocates a ref by the exact tag/role/name identity captured by
+// the caller's last snapshot. Dynamic portal menus commonly replace their DOM
+// nodes between adjacent commands, invalidating an absolute XPath even though
+// the same logical control is still present. Rebinding is intentionally limited
+// to one exact visible/actionable match; an unnamed or ambiguous match remains
+// stale so ref recovery cannot silently target the wrong control.
+func resolveBackendNodeIDBySemantics(cdp *CdpConnection, targetID string, found *protocol.RefInfo) (int, error) {
+	if found == nil || found.TagName == "" || found.Role == "" || strings.TrimSpace(found.Name) == "" {
+		return 0, fmt.Errorf("semantic fallback requires a named tag and role")
+	}
+
+	script := loadBuildDomTreeScript()
+	buildArgsRaw, err := json.Marshal(map[string]interface{}{
+		"showHighlightElements": false,
+		"focusHighlightIndex":   -1,
+		"viewportExpansion":     -1,
+		"debugMode":             false,
+		"startId":               0,
+		"startHighlightIndex":   0,
+		"rootSelector":          "",
+	})
+	if err != nil {
+		return 0, fmt.Errorf("encode ref recovery snapshot options: %w", err)
+	}
+	expression := fmt.Sprintf(`(() => { %s; const fn = globalThis.buildDomTree ?? (typeof window !== 'undefined' ? window.buildDomTree : undefined); if (typeof fn !== 'function') { throw new Error('buildDomTree is not available after script injection'); } return fn(%s); })()`, script, string(buildArgsRaw))
+
+	var result buildDomTreeResult
+	raw, primaryErr := cdp.Evaluate(targetID, expression, true)
+	if primaryErr == nil && raw != nil && string(raw) != "null" {
+		if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil || result.RootID == "" {
+			if decodeErr != nil {
+				primaryErr = fmt.Errorf("decode ref recovery DOM tree: %w", decodeErr)
+			} else {
+				primaryErr = fmt.Errorf("ref recovery DOM tree returned no root")
+			}
+		}
+	} else if primaryErr == nil {
+		primaryErr = fmt.Errorf("ref recovery DOM tree returned no value")
+	}
+	if primaryErr != nil {
+		fallback, fallbackErr := evaluateFallbackDOMTree(cdp, targetID, "")
+		if fallbackErr != nil {
+			return 0, fmt.Errorf("rebuild ref recovery snapshot: %v; fallback failed: %w", primaryErr, fallbackErr)
+		}
+		result = *fallback
+	}
+
+	wantTag := strings.ToLower(found.TagName)
+	wantRole := strings.ToLower(found.Role)
+	wantName := strings.Join(strings.Fields(found.Name), " ")
+	var xpaths []string
+	for _, rawNode := range result.Map {
+		isText, _, element := parseNode(rawNode)
+		if isText || element.HighlightIndex == nil || isAccessibilityHidden(element) || element.XPath == "" {
+			continue
+		}
+		if strings.ToLower(element.TagName) != wantTag || strings.ToLower(getRole(element)) != wantRole {
+			continue
+		}
+		if strings.Join(strings.Fields(getName(element, result.Map)), " ") == wantName {
+			xpaths = append(xpaths, element.XPath)
+		}
+	}
+	if len(xpaths) != 1 {
+		return 0, fmt.Errorf("semantic fallback found %d exact matches for <%s> %s %q", len(xpaths), wantTag, wantRole, found.Name)
+	}
+	return resolveBackendNodeIDByXPath(cdp, targetID, xpaths[0])
+}
+
 func parseRef(cdp *CdpConnection, targetID string, tab *TabState, ref string) (int, error) {
 	found, ok := tab.Refs[ref]
 	if !ok {
@@ -822,7 +892,11 @@ func parseRef(cdp *CdpConnection, targetID string, tab *TabState, ref string) (i
 	if found.XPath != "" {
 		backendID, err := resolveBackendNodeIDByXPath(cdp, targetID, found.XPath)
 		if err != nil {
-			return 0, fmt.Errorf("ref %s is stale because the page or DOM changed; run snapshot again (%v)", ref, err)
+			semanticID, semanticErr := resolveBackendNodeIDBySemantics(cdp, targetID, found)
+			if semanticErr != nil {
+				return 0, fmt.Errorf("ref %s is stale because the page or DOM changed; run snapshot again (XPath: %v; semantic fallback: %v)", ref, err, semanticErr)
+			}
+			backendID = semanticID
 		}
 		found.BackendDOMNodeID = backendID
 		return backendID, nil
@@ -830,14 +904,62 @@ func parseRef(cdp *CdpConnection, targetID string, tab *TabState, ref string) (i
 	return 0, fmt.Errorf("unknown ref: %s. Run snapshot first", ref)
 }
 
+type clickTargetBaseline struct {
+	sourceTargetID string
+	knownPages     map[string]struct{}
+}
+
+func captureClickTargetBaseline(cdp *CdpConnection, sourceTargetID string) *clickTargetBaseline {
+	targets, err := cdp.GetTargets()
+	if err != nil {
+		return nil
+	}
+	baseline := &clickTargetBaseline{sourceTargetID: sourceTargetID, knownPages: make(map[string]struct{})}
+	for _, target := range targets {
+		if target.Type == "page" {
+			baseline.knownPages[target.ID] = struct{}{}
+		}
+	}
+	return baseline
+}
+
+// openedChildPage reports a page target created by the source tab after the
+// click started. The opener constraint prevents an unrelated concurrently
+// opened tab from hiding a genuine obstruction/stale-ref failure. A short grace
+// period is used only while reconciling an error, because targetCreated can lag
+// the renderer action that opened the tab.
+func (baseline *clickTargetBaseline) openedChildPage(cdp *CdpConnection, grace time.Duration) bool {
+	if baseline == nil {
+		return false
+	}
+	deadline := time.Now().Add(grace)
+	for {
+		targets, err := cdp.GetTargets()
+		if err == nil {
+			for _, target := range targets {
+				if target.Type != "page" || target.OpenerID != baseline.sourceTargetID {
+					continue
+				}
+				if _, existed := baseline.knownPages[target.ID]; !existed {
+					return true
+				}
+			}
+		}
+		if grace <= 0 || !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(min(20*time.Millisecond, time.Until(deadline)))
+	}
+}
+
 // --- Input helpers ---
 
-func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int) (x, y float64, focusOnly bool, err error) {
+func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int) (x, y float64, focusOnly, retargeted bool, err error) {
 	resolvedRaw, err := cdp.SessionCommand(targetID, "DOM.resolveNode", map[string]interface{}{
 		"backendNodeId": backendNodeID,
 	})
 	if err != nil {
-		return 0, 0, false, err
+		return 0, 0, false, false, err
 	}
 	var resolved struct {
 		Object struct {
@@ -846,7 +968,7 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 	}
 	json.Unmarshal(resolvedRaw, &resolved)
 	if resolved.Object.ObjectID == "" {
-		return 0, 0, false, fmt.Errorf("DOM.resolveNode returned no object for backend node %d", backendNodeID)
+		return 0, 0, false, false, fmt.Errorf("DOM.resolveNode returned no object for backend node %d", backendNodeID)
 	}
 
 	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
@@ -856,7 +978,26 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			const isTerminalInput = this instanceof HTMLTextAreaElement &&
 				(this.classList.contains('xterm-helper-textarea') || Boolean(this.closest('.xterm')));
 			const actionableSelector = 'button,a[href],input,select,textarea,summary,ui5-button,ui5-link,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"]';
+			const normalizedText = value => String(value || '').replace(/\s+/g, ' ').trim();
+			const semanticIdentity = element => {
+				if (!element || element.nodeType !== 1) return '';
+				const tag = element.tagName.toLowerCase();
+				let role = element.getAttribute('role') || '';
+				if (!role) {
+					if (tag === 'button' || tag === 'summary') role = 'button';
+					else if (tag === 'a' && element.hasAttribute('href')) role = 'link';
+					else if (tag === 'select') role = 'combobox';
+					else if (tag === 'textarea') role = 'textbox';
+					else if (tag === 'input') {
+						const type = String(element.type || 'text').toLowerCase();
+						role = ({ checkbox: 'checkbox', radio: 'radio', button: 'button', submit: 'button', reset: 'button', file: 'button', range: 'slider', number: 'spinbutton', search: 'searchbox' })[type] || 'textbox';
+					}
+				}
+				const name = normalizedText(element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('placeholder') || element.getAttribute('alt') || element.innerText || element.textContent || element.getAttribute('name'));
+				return name ? tag + '\n' + role.toLowerCase() + '\n' + name : '';
+			};
 			let expected = this;
+			let retargeted = false;
 			if (!expected.matches(actionableSelector)) {
 				const descendants = Array.from(expected.querySelectorAll(actionableSelector)).filter((element) => {
 					const candidateRect = element.getBoundingClientRect();
@@ -865,8 +1006,18 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 				});
 				if (descendants.length === 1) expected = descendants[0];
 			}
-			expected.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-			const rect = expected.getBoundingClientRect();
+			let rect = expected.getBoundingClientRect();
+			const expectedView = expected.ownerDocument.defaultView;
+			const outsideViewport = !rect || rect.width <= 0 || rect.height <= 0 ||
+				rect.bottom <= 0 || rect.right <= 0 || rect.top >= expectedView.innerHeight || rect.left >= expectedView.innerWidth;
+			// A visible portal/menu must not be scrolled: doing so can move its
+			// scroll container while a fixed header stays put, turning a fresh ref
+			// into an artificial obstruction. Scroll only when no part of the
+			// current box is usable.
+			if (outsideViewport) {
+				expected.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+				rect = expected.getBoundingClientRect();
+			}
 			if (!rect || rect.width <= 0 || rect.height <= 0) {
 				if (isTerminalInput) return { x: 0, y: 0, focusOnly: true };
 				throw new Error('Element is not visible');
@@ -885,6 +1036,27 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 				if (hit === expected || expected.contains(hit)) return true;
 				const label = expected.closest('label');
 				if (label && label.contains(hit)) return true;
+				// React/Fluent portals can replace a menu button after snapshot or
+				// during scrollIntoView while briefly leaving both generations marked
+				// connected. Accept only an actionable control with the same non-empty
+				// exact semantic identity and nearly identical geometry. An unrelated
+				// popup/overlay or a same-named control elsewhere still fails.
+				const replacement = hit.closest(actionableSelector);
+				const expectedIdentity = semanticIdentity(expected);
+				if (replacement && replacement !== expected && expectedIdentity && semanticIdentity(replacement) === expectedIdentity) {
+					const replacementRect = replacement.getBoundingClientRect();
+					const centerDeltaX = Math.abs((rect.left + rect.width / 2) - (replacementRect.left + replacementRect.width / 2));
+					const centerDeltaY = Math.abs((rect.top + rect.height / 2) - (replacementRect.top + replacementRect.height / 2));
+					const widthRatio = replacementRect.width / rect.width;
+					const heightRatio = replacementRect.height / rect.height;
+					const sameGeometry = replacementRect.width > 0 && replacementRect.height > 0 &&
+						centerDeltaX <= Math.max(4, rect.width * 0.1) && centerDeltaY <= Math.max(4, rect.height * 0.1) &&
+						widthRatio >= 0.8 && widthRatio <= 1.25 && heightRatio >= 0.8 && heightRatio <= 1.25;
+					if (sameGeometry) {
+						retargeted = true;
+						return true;
+					}
+				}
 				// Component libraries commonly expose the inner input as the
 				// accessible combobox while rendering tags/placeholders as sibling
 				// elements above it. Treat a nearby sibling inside the same control
@@ -917,7 +1089,8 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			}
 			if (!foundPoint) {
 				initialHit = expected.ownerDocument.elementFromPoint(x, y);
-				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' instead of ' + describe(expected) + ". Close the blocking popup/overlay (try 'borz press Escape') and take a fresh snapshot.");
+				const hitControl = initialHit?.closest?.(actionableSelector);
+				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' (parent ' + describe(initialHit?.parentElement) + ', control ' + describe(hitControl) + ') instead of ' + describe(expected) + ' (connected ' + expected.isConnected + "). Close the blocking popup/overlay (try 'borz press Escape') and take a fresh snapshot.");
 			}
 			const initialView = expected.ownerDocument.defaultView;
 			let view = initialView;
@@ -934,20 +1107,21 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 				expected = frame;
 				view = frame.ownerDocument.defaultView;
 			}
-			return { x, y };
+			return { x, y, retargeted };
 		}`,
 		"returnByValue": true,
 	})
 	if err != nil {
-		return 0, 0, false, err
+		return 0, 0, false, false, err
 	}
 
 	var call struct {
 		Result struct {
 			Value struct {
-				X         float64 `json:"x"`
-				Y         float64 `json:"y"`
-				FocusOnly bool    `json:"focusOnly"`
+				X          float64 `json:"x"`
+				Y          float64 `json:"y"`
+				FocusOnly  bool    `json:"focusOnly"`
+				Retargeted bool    `json:"retargeted"`
 			} `json:"value"`
 		} `json:"result"`
 		ExceptionDetails *struct {
@@ -967,9 +1141,9 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 		if message == "" {
 			message = "failed to calculate an interactable point"
 		}
-		return 0, 0, false, fmt.Errorf("%s", message)
+		return 0, 0, false, false, fmt.Errorf("%s", message)
 	}
-	return call.Result.Value.X, call.Result.Value.Y, call.Result.Value.FocusOnly, nil
+	return call.Result.Value.X, call.Result.Value.Y, call.Result.Value.FocusOnly, call.Result.Value.Retargeted, nil
 }
 
 func mouseClick(cdp *CdpConnection, targetID string, x, y float64) error {
@@ -2162,31 +2336,67 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			return failResp(req.ID, "missing ref parameter")
 		}
 		seq := tab.RecordAction()
+		var targetBaseline *clickTargetBaseline
+		if req.Action == protocol.ActionClick {
+			targetBaseline = captureClickTargetBaseline(cdp, target.ID)
+		}
+		clickSuccess := func() *protocol.Response {
+			return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
+		}
+		clickFailure := func(err error) *protocol.Response {
+			if req.Action == protocol.ActionClick && targetBaseline.openedChildPage(cdp, 250*time.Millisecond) {
+				return clickSuccess()
+			}
+			return failResp(req.ID, err)
+		}
 		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
 		if err != nil {
-			return failResp(req.ID, err)
+			return clickFailure(err)
 		}
-		x, y, focusOnly, err := getInteractablePoint(cdp, target.ID, backendID)
+		x, y, focusOnly, retargeted, err := getInteractablePoint(cdp, target.ID, backendID)
+		if err != nil && req.Action == protocol.ActionClick && strings.Contains(err.Error(), "Element is not clickable at its center") {
+			// An absolute XPath can still resolve while a portal is swapping DOM
+			// generations, leaving us with an old same-shaped node at a different
+			// box. Rebuild once from the snapshotted semantic identity, then repeat
+			// the same physical hit test. Ambiguous/no-match recovery is ignored so
+			// the original obstruction remains the reported failure.
+			if found := tab.Refs[req.Ref]; found != nil {
+				if recoveredID, recoverErr := resolveBackendNodeIDBySemantics(cdp, target.ID, found); recoverErr == nil {
+					found.BackendDOMNodeID = recoveredID
+					backendID = recoveredID
+					x, y, focusOnly, retargeted, err = getInteractablePoint(cdp, target.ID, backendID)
+				}
+			}
+		}
 		if err != nil {
-			return failResp(req.ID, err)
+			return clickFailure(err)
 		}
 		if req.Action == protocol.ActionClick {
+			// A menu action may synchronously open a page while its portal is
+			// rebuilding. Do not dispatch a second physical click after the intended
+			// new-tab outcome is already observable.
+			if targetBaseline.openedChildPage(cdp, 0) {
+				return clickSuccess()
+			}
 			if focusOnly {
 				if _, err := cdp.SessionCommand(target.ID, "DOM.focus", map[string]interface{}{"backendNodeId": backendID}); err != nil {
-					return failResp(req.ID, fmt.Errorf("focus hidden terminal input: %w", err))
+					return clickFailure(fmt.Errorf("focus hidden terminal input: %w", err))
 				}
-				return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
+				return clickSuccess()
 			}
-			probeStarted := beginClickProbe(cdp, target.ID, backendID)
+			// When hit testing safely retargeted a detached control to its exact
+			// semantic replacement, a probe on the old node cannot observe the
+			// physical click and would incorrectly invoke element.click() again.
+			probeStarted := !retargeted && beginClickProbe(cdp, target.ID, backendID)
 			if err := mouseClick(cdp, target.ID, x, y); err != nil {
 				if probeStarted {
 					_, _ = finalizeClickProbe(cdp, target.ID, backendID, false)
 				}
-				return failResp(req.ID, err)
+				return clickFailure(err)
 			}
 			if probeStarted {
 				if _, err := finalizeClickProbe(cdp, target.ID, backendID, true); err != nil {
-					return failResp(req.ID, err)
+					return clickFailure(err)
 				}
 			}
 		} else if focusOnly {
@@ -2196,7 +2406,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		}); err != nil {
 			return failResp(req.ID, fmt.Errorf("move pointer for hover: %w", err))
 		}
-		return withWaitFor(req, cdp, target.ID, okResp(req.ID, &protocol.ResponseData{Tab: shortID, Seq: intPtr(seq)}))
+		return clickSuccess()
 
 	case protocol.ActionFill, protocol.ActionType_:
 		if req.Ref == "" {
