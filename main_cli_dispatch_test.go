@@ -558,7 +558,7 @@ func TestMainDispatchesBrowserCommands(t *testing.T) {
 			if !strings.Contains(req.Script, `[["Content-Type","application/json"],["X-Test","value"]]`) || !strings.Contains(req.Script, `body: "{\"ok\":true}"`) {
 				t.Fatalf("fetch script headers/body = %q", req.Script)
 			}
-			if !strings.Contains(req.Script, `(?:[\w.-]+\+)?json`) || !strings.Contains(req.Script, `text.trim() === '' ? null`) {
+			if !strings.Contains(req.Script, `(?:[\w.-]+\+)?json`) || !strings.Contains(req.Script, `isJson && text.trim() === ''`) || !strings.Contains(req.Script, `parseError`) {
 				t.Fatalf("fetch script does not handle +json or empty JSON bodies: %q", req.Script)
 			}
 			if !strings.Contains(out, `"ok": true`) {

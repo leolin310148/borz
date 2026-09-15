@@ -431,7 +431,7 @@ func TestRESTRoutes_RequestBuilders(t *testing.T) {
 		{"/v1/eval", `{"script":"1+1"}`},
 		{"/v1/wait", `{"ms":1,"activate":true}`},
 		{"/v1/viewport", `{"preset":"mobile"}`},
-		{"/v1/snapshot", `{"interactive":true,"compact":true,"maxDepth":2,"selector":"main","role":"button","mode":"text","activate":true}`},
+		{"/v1/snapshot", `{"interactive":true,"compact":true,"maxDepth":2,"limit":20,"selector":"main","role":"button","mode":"text","activate":true}`},
 		{"/v1/snapshot", `{"diff":true,"showRefs":false}`},
 		{"/v1/refs/clear", `{}`},
 		{"/v1/screenshot", `{"path":"/tmp/shot.png","activate":true}`},

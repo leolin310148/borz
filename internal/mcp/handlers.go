@@ -661,6 +661,9 @@ func handleSnapshot(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 	if depth := r.GetInt("maxDepth", 0); depth > 0 {
 		req.MaxDepth = intPtr(depth)
 	}
+	if limit := r.GetInt("limit", 0); limit > 0 {
+		req.Limit = intPtr(limit)
+	}
 	if r.GetBool("textOnly", false) {
 		req.Mode = "text"
 	} else if mode := r.GetString("mode", ""); mode != "" {

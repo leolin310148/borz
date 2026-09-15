@@ -43,6 +43,69 @@ func TestFeedbackScreenshotOutputAndReload(t *testing.T) {
 	}
 }
 
+func TestFeedbackNavigateExtractAndSnapshotLimitCLI(t *testing.T) {
+	out, reqs := runMainWithFakeDaemon(t, "navigate", "https://next.example.test", "--tab", "tab-a")
+	if len(reqs) != 1 || reqs[0].Action != protocol.ActionOpen || reqs[0].TabID != "tab-a" || !strings.Contains(out, "Navigated:") {
+		t.Fatalf("navigate request/output: %+v / %q", reqs, out)
+	}
+	out, reqs = runMainWithFakeDaemon(t, "navigate", "https://current.example.test")
+	if len(reqs) != 2 || reqs[0].Action != protocol.ActionTabList || reqs[1].Action != protocol.ActionOpen || reqs[1].TabID != "tab-1" {
+		t.Fatalf("current navigate requests: %+v", reqs)
+	}
+	out, reqs = runMainWithFakeDaemon(t, "extract", "--text")
+	if len(reqs) != 1 || reqs[0].Action != protocol.ActionSnapshot || reqs[0].Mode != "text" || !strings.Contains(out, "Page snapshot") {
+		t.Fatalf("extract request/output: %+v / %q", reqs, out)
+	}
+	_, reqs = runMainWithFakeDaemon(t, "snapshot", "-i", "--limit", "25")
+	if len(reqs) != 1 || reqs[0].Limit == nil || *reqs[0].Limit != 25 {
+		t.Fatalf("snapshot limit request: %+v", reqs)
+	}
+}
+
+func TestFeedbackFetchPreservesRawBodyAndWritesLocally(t *testing.T) {
+	_, reqs := runMainWithFakeDaemon(t, "fetch", "https://example.test/bad.json", "--raw")
+	if len(reqs) != 1 || !strings.Contains(reqs[0].Script, "parseError") || !strings.Contains(reqs[0].Script, "if (!true && isJson") {
+		t.Fatalf("raw fetch script: %+v", reqs)
+	}
+
+	path := filepath.Join(t.TempDir(), "nested", "response.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resp := &protocol.Response{Success: true, Data: &protocol.ResponseData{Result: map[string]interface{}{
+		"status": float64(200), "body": map[string]interface{}{"ok": true},
+	}}}
+	if err := saveFetchBody(path, resp); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(data), `"ok": true`) {
+		t.Fatalf("saved fetch body: %q / %v", data, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("fetch output permissions: %v / %v", info, err)
+	}
+	result := resp.Data.Result.(map[string]interface{})
+	if _, exists := result["body"]; exists || result["output"] != path {
+		t.Fatalf("fetch metadata after save: %+v", result)
+	}
+}
+
+func TestFeedbackRemoteDownloadAnnotation(t *testing.T) {
+	raw := annotateRemoteDownloads(json.RawMessage(`[{"id":7,"filename":"/Users/remote/Downloads/a.zip","exists":true}]`), "mini")
+	var items []map[string]interface{}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0]["filesystem"] != "remote" || items[0]["profile"] != "mini" {
+		t.Fatalf("annotated downloads: %s", raw)
+	}
+}
+
 func TestFeedbackJQRootsAndEmptySelection(t *testing.T) {
 	defer func() { jqExpression = "" }()
 	resp := &protocol.Response{Success: true, Data: &protocol.ResponseData{Result: map[string]interface{}{"body": map[string]interface{}{"name": "a"}}}}

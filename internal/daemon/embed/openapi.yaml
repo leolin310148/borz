@@ -719,6 +719,7 @@ paths:
                     interactive: { type: boolean }
                     compact: { type: boolean }
                     maxDepth: { type: integer }
+                    limit: { type: integer, minimum: 1, description: Maximum snapshot content lines; omitted refs are not returned }
                     selector: { type: string, description: CSS selector subtree root }
                     role: { type: string, description: ARIA role filter }
                     showRefs:
@@ -1697,6 +1698,8 @@ components:
         elements:
           type: array
           items: { $ref: "#/components/schemas/ElementInfo" }
+        truncated: { type: boolean }
+        totalLines: { type: integer }
 
     AttrDelta:
       type: object

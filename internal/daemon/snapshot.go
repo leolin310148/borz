@@ -375,6 +375,50 @@ func ConvertBuildDomTreeResult(result *buildDomTreeResult, interactiveOnly, comp
 	return &protocol.SnapshotData{Snapshot: strings.Join(lines, "\n"), Refs: refs, Elements: elements}
 }
 
+// limitSnapshotData bounds both the human-readable output and the actionable
+// refs returned with it. Limiting after conversion keeps filtering/depth
+// semantics unchanged while ensuring omitted refs cannot be acted on by
+// accident. A final marker makes truncation explicit without consuming one of
+// the requested content lines.
+func limitSnapshotData(snapshot *protocol.SnapshotData, limit *int) {
+	if snapshot == nil || limit == nil || *limit <= 0 || snapshot.Snapshot == "" {
+		return
+	}
+	lines := strings.Split(snapshot.Snapshot, "\n")
+	if len(lines) <= *limit {
+		return
+	}
+	snapshot.Truncated = true
+	snapshot.TotalLines = len(lines)
+	kept := lines[:*limit]
+	snapshot.Snapshot = strings.Join(kept, "\n") + fmt.Sprintf("\n… truncated: showing %d of %d lines (raise --limit or narrow with --selector/--role)", *limit, len(lines))
+
+	keptRefs := make(map[string]*protocol.RefInfo)
+	for _, line := range kept {
+		start := strings.Index(line, "[ref=")
+		if start < 0 {
+			continue
+		}
+		start += len("[ref=")
+		end := strings.IndexByte(line[start:], ']')
+		if end < 0 {
+			continue
+		}
+		ref := line[start : start+end]
+		if info, ok := snapshot.Refs[ref]; ok {
+			keptRefs[ref] = info
+		}
+	}
+	keptElements := make([]*protocol.ElementInfo, 0, len(keptRefs))
+	for _, element := range snapshot.Elements {
+		if _, ok := keptRefs[element.Ref]; ok {
+			keptElements = append(keptElements, element)
+		}
+	}
+	snapshot.Refs = keptRefs
+	snapshot.Elements = keptElements
+}
+
 func el2xpath(el rawDomElementNode) string {
 	if el.XPath != "" {
 		return el.XPath

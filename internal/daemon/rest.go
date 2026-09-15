@@ -198,6 +198,7 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 			Interactive: body.Interactive,
 			Compact:     body.Compact,
 			MaxDepth:    body.MaxDepth,
+			Limit:       body.Limit,
 			Selector:    body.Selector,
 			Role:        body.Role,
 			ShowRefs:    body.ShowRefs,

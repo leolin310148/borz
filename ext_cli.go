@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/leolin310148/borz/internal/client"
+	"github.com/leolin310148/borz/internal/config"
 )
 
 type extBookmark struct {
@@ -355,13 +356,25 @@ func handleDownloads(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 			path += "?" + q.Encode()
 		}
 		raw := extGetJSON(path)
+		remoteProfile := ""
+		if client.RemoteRoutingEnabled() {
+			remoteProfile = config.Profile()
+			if remoteProfile == "" {
+				remoteProfile = "remote"
+			}
+			raw = annotateRemoteDownloads(raw, remoteProfile)
+		}
 		if jsonOutput {
 			printJSON(raw)
 			return
 		}
 		var items []extDownloadItem
 		_ = json.Unmarshal(raw, &items)
-		fmt.Printf("Downloads (%d results):\n", len(items))
+		if remoteProfile != "" {
+			fmt.Printf("Downloads (%d results; filesystem=remote profile=%s — paths are on that daemon host):\n", len(items), remoteProfile)
+		} else {
+			fmt.Printf("Downloads (%d results):\n", len(items))
+		}
 		for _, item := range items {
 			fmt.Printf("  [%d] %s %s %d/%d %s\n", item.ID, item.State, item.Filename, item.BytesReceived, item.TotalBytes, item.URL)
 		}
@@ -402,6 +415,22 @@ func handleDownloads(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 	default:
 		fatal(unknownSubcommandHint("downloads", sub))
 	}
+}
+
+func annotateRemoteDownloads(raw json.RawMessage, profileName string) json.RawMessage {
+	var items []map[string]interface{}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return raw
+	}
+	for _, item := range items {
+		item["filesystem"] = "remote"
+		item["profile"] = profileName
+	}
+	out, err := json.Marshal(items)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 func handleWindows(cmdArgs []string, jsonOutput bool, rawArgs []string) {

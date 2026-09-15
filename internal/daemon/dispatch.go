@@ -493,6 +493,7 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 		if err != nil {
 			return nil, nil, err
 		}
+		limitSnapshotData(snap, req.Limit)
 		// Text mode is observation-only and does not replace the actionable
 		// ref map established by the latest tree snapshot. It may clear the
 		// diff baseline, but callers can still act on the previous refs.
@@ -554,6 +555,7 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 		selectorFilter = ""
 	}
 	snapshot := ConvertBuildDomTreeResult(&result, req.Interactive, req.Compact, req.MaxDepth, selectorFilter, req.Role)
+	limitSnapshotData(snapshot, req.Limit)
 	tab.Refs = snapshot.Refs
 	tab.RefInvalidationReason = ""
 
@@ -975,6 +977,24 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 		"objectId": resolved.Object.ObjectID,
 		"functionDeclaration": `function() {
 			if (!(this instanceof Element)) throw new Error('Ref does not resolve to an element');
+			const compositeSelector = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="combobox"]';
+			const compositeRoot = (element) => {
+				if (!element.matches(compositeSelector)) return null;
+				const label = element.closest('label');
+				if (label) return label;
+				const base = element.getBoundingClientRect();
+				let root = element;
+				for (let depth = 0; root.parentElement && depth < 3; depth += 1) {
+					const parent = root.parentElement;
+					const peers = parent.querySelectorAll(compositeSelector);
+					const rect = parent.getBoundingClientRect();
+					const maxWidth = Math.max(base.width * 3, base.width + 48, 64);
+					const maxHeight = Math.max(base.height * 3, base.height + 48, 64);
+					if (peers.length !== 1 || rect.width <= 0 || rect.height <= 0 || rect.width > maxWidth || rect.height > maxHeight) break;
+					root = parent;
+				}
+				return root === element ? null : root;
+			};
 			const isTerminalInput = this instanceof HTMLTextAreaElement &&
 				(this.classList.contains('xterm-helper-textarea') || Boolean(this.closest('.xterm')));
 			const actionableSelector = 'button,a[href],input,select,textarea,summary,ui5-button,ui5-link,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"]';
@@ -1018,6 +1038,12 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 				expected.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
 				rect = expected.getBoundingClientRect();
 			}
+			const relatedRoot = compositeRoot(expected);
+			if ((!rect || rect.width <= 0 || rect.height <= 0) && relatedRoot) {
+				expected = relatedRoot;
+				expected.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+				rect = expected.getBoundingClientRect();
+			}
 			if (!rect || rect.width <= 0 || rect.height <= 0) {
 				if (isTerminalInput) return { x: 0, y: 0, focusOnly: true };
 				throw new Error('Element is not visible');
@@ -1036,6 +1062,8 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 				if (hit === expected || expected.contains(hit)) return true;
 				const label = expected.closest('label');
 				if (label && label.contains(hit)) return true;
+				const composite = compositeRoot(expected);
+				if (composite && composite.contains(hit)) return true;
 				// React/Fluent portals can replace a menu button after snapshot or
 				// during scrollIntoView while briefly leaving both generations marked
 				// connected. Accept only an actionable control with the same non-empty
@@ -1189,14 +1217,38 @@ func beginClickProbe(cdp *CdpConnection, targetID string, backendNodeID int) boo
 			const key = '__borzClickProbe';
 			const previous = this[key];
 			if (previous && previous.cleanup) previous.cleanup();
-			const state = { click: false, press: false };
+			const readChecked = element => {
+				if (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio')) return element.checked;
+				const aria = element.getAttribute?.('aria-checked');
+				return aria === 'true' ? true : aria === 'false' ? false : null;
+			};
+			const state = { click: false, press: false, beforeChecked: readChecked(this) };
+			const compositeSelector = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="combobox"]';
+			let probeTarget = this;
+			if (this.matches?.(compositeSelector)) {
+				const label = this.closest?.('label');
+				if (label) probeTarget = label;
+				else {
+					const base = this.getBoundingClientRect();
+					let root = this;
+					for (let depth = 0; root.parentElement && depth < 3; depth += 1) {
+						const parent = root.parentElement;
+						const rect = parent.getBoundingClientRect();
+						const maxWidth = Math.max(base.width * 3, base.width + 48, 64);
+						const maxHeight = Math.max(base.height * 3, base.height + 48, 64);
+						if (parent.querySelectorAll(compositeSelector).length !== 1 || rect.width <= 0 || rect.height <= 0 || rect.width > maxWidth || rect.height > maxHeight) break;
+						root = parent;
+					}
+					probeTarget = root;
+				}
+			}
 			const onClick = () => { state.click = true; };
 			const onPress = () => { state.press = true; };
-			this.addEventListener('click', onClick, true);
-			this.addEventListener('press', onPress, true);
+			probeTarget.addEventListener('click', onClick, true);
+			probeTarget.addEventListener('press', onPress, true);
 			state.cleanup = () => {
-				this.removeEventListener('click', onClick, true);
-				this.removeEventListener('press', onPress, true);
+				probeTarget.removeEventListener('click', onClick, true);
+				probeTarget.removeEventListener('press', onPress, true);
 			};
 			this[key] = state;
 			return true;
@@ -1231,11 +1283,12 @@ func finalizeClickProbe(cdp *CdpConnection, targetID string, backendNodeID int, 
 	}
 	callRaw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
 		"objectId": resolved.Object.ObjectID,
-		"functionDeclaration": `function(allowFallback) {
+		"functionDeclaration": `async function(allowFallback) {
 			const key = '__borzClickProbe';
 			const state = this[key] || { click: false, press: false };
 			if (state.cleanup) state.cleanup();
 			delete this[key];
+			await new Promise(resolve => setTimeout(resolve, 0));
 			const actionableSelector = 'button,a[href],input,select,textarea,summary,ui5-button,ui5-link,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"]';
 			let target = this;
 			if (!target.matches(actionableSelector)) {
@@ -1245,11 +1298,18 @@ func finalizeClickProbe(cdp *CdpConnection, targetID string, backendNodeID int, 
 				});
 				if (candidates.length === 1) target = candidates[0];
 			}
+			const readChecked = element => {
+				if (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio')) return element.checked;
+				const aria = element.getAttribute?.('aria-checked');
+				return aria === 'true' ? true : aria === 'false' ? false : null;
+			};
+			const checkedNow = readChecked(target);
+			const checkboxUnchanged = state.beforeChecked !== null && state.beforeChecked !== undefined && checkedNow === state.beforeChecked;
 			if (allowFallback && !state.press && typeof target.firePress === 'function') {
 				target.firePress();
 				return { fallback: 'firePress', observedClick: state.click, observedPress: state.press };
 			}
-			if (allowFallback && !state.click && typeof target.click === 'function') {
+			if (allowFallback && (!state.click || checkboxUnchanged) && typeof target.click === 'function') {
 				target.click();
 				return { fallback: 'element.click', observedClick: false, observedPress: state.press };
 			}
@@ -1257,6 +1317,7 @@ func finalizeClickProbe(cdp *CdpConnection, targetID string, backendNodeID int, 
 		}`,
 		"arguments":     []map[string]interface{}{{"value": allowFallback}},
 		"returnByValue": true,
+		"awaitPromise":  true,
 	})
 	if err != nil {
 		return "", err

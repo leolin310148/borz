@@ -71,7 +71,7 @@ var cliBoolFlags = []string{
 	"--all", "--all-profiles", "--baked", "--check", "--clear", "--close-owned-browser", "--compact", "--copy", "--diff", "--ensure-browser", "--focused",
 	"--force", "--help", "--interactive", "--json", "--lossless", "--managed",
 	"--mask-by-default", "--mobile", "--new", "--no-auto-await", "--no-check",
-	"--no-touch", "--paste", "--recover", "--recursive", "--remote", "--reset", "--save-as",
+	"--no-touch", "--paste", "--raw", "--recover", "--recursive", "--remote", "--reset", "--save-as",
 	"--smooth", "--tail", "--text", "--text-only", "--touch", "--unwrap",
 	"--version", "--with-body", "--hide-refs", "--show-refs",
 }
@@ -229,6 +229,26 @@ func main() {
 			}
 		})
 
+	case "navigate":
+		if len(cmdArgs) == 0 {
+			fatal("Usage: borz navigate <url> [--tab <tabId>] [--wait-for <selector>] [--timeout <ms>]")
+		}
+		if hasFlag(args, "--new") {
+			fatal("navigate targets the current/selected tab and does not accept --new; use 'borz open <url> --new' instead")
+		}
+		tabID := globalTabID
+		if tabID == "" {
+			tabID = currentTabRef()
+		}
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionOpen, URL: cmdArgs[0], TabID: tabID}
+		applyCLIViewport(req, args)
+		applyCLIWaitFor(req, args)
+		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+			if resp.Data != nil {
+				fmt.Printf("Navigated: %s (tab: %s)\n", resp.Data.URL, resp.Data.Tab)
+			}
+		})
+
 	case "snapshot":
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionSnapshot}
 		if hasFlag(args, "--text-only") || hasFlag(args, "--text") {
@@ -271,6 +291,13 @@ func main() {
 		if v := getArgValue(args, "--role"); v != "" {
 			req.Role = v
 		}
+		if v, ok := getArgValueOK(args, "--limit"); ok {
+			limit, err := strconv.Atoi(strings.TrimSpace(v))
+			if err != nil || limit <= 0 {
+				fatal("--limit must be a positive integer")
+			}
+			req.Limit = &limit
+		}
 		if globalTabID != "" {
 			req.TabID = globalTabID
 		}
@@ -297,6 +324,18 @@ func main() {
 				fmt.Println(resp.Data.SnapshotData.Snapshot)
 			} else {
 				fmt.Println("No matching accessible elements. The page may still be loading; retry snapshot without -i/--role/-s or inspect with screenshot.")
+			}
+		})
+
+	case "extract":
+		if len(cmdArgs) > 0 {
+			fatal("Usage: borz extract [--text] [--tab <id>]")
+		}
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionSnapshot, Mode: "text"}
+		setTab(req, globalTabID)
+		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+			if resp.Data != nil && resp.Data.SnapshotData != nil {
+				fmt.Println(resp.Data.SnapshotData.Snapshot)
 			}
 		})
 
@@ -1176,6 +1215,11 @@ func handleErrors(jsonOutput bool, globalTabID, globalSince string, rawArgs []st
 
 func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []string) {
 	url := cmdArgs[0]
+	rawBody := hasFlag(rawArgs, "--raw")
+	outputPath, outputSet := getArgValueOK(rawArgs, "--output")
+	if outputSet && strings.TrimSpace(outputPath) == "" {
+		fatal("--output requires a local file path")
+	}
 	method := "GET"
 	if v := getArgValue(rawArgs, "--method"); v != "" {
 		method = strings.ToUpper(strings.TrimSpace(v))
@@ -1197,6 +1241,7 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 	methodJSON, _ := json.Marshal(method)
 	headersJSON, _ := json.Marshal(headers)
 	bodyJSON, _ := json.Marshal(body)
+	rawBodyJSON, _ := json.Marshal(rawBody)
 	bodyOption := ""
 	if bodySet {
 		bodyOption = ", body: " + string(bodyJSON)
@@ -1210,25 +1255,87 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 			const contentType = resp.headers.get('content-type') || '';
 			const isJson = /\bapplication\/(?:[\w.-]+\+)?json\b/i.test(contentType);
 			const text = await resp.text();
+			let body = text;
+			let parseError = '';
+			if (!%s && isJson && text.trim() !== '') {
+				try { body = JSON.parse(text); }
+				catch (e) { parseError = e.message; }
+			} else if (!%s && isJson && text.trim() === '') {
+				body = null;
+			}
 			return {
 				status: resp.status,
 				statusText: resp.statusText,
 				contentType: contentType,
-				body: isJson ? (text.trim() === '' ? null : JSON.parse(text)) : text
+				body: body,
+				...(parseError ? { parseError: parseError } : {})
 			};
 		} catch(e) {
 			return { error: e.message, hint: 'Page fetch uses credentials: include but remains subject to CORS, cookie scope and redirects. A previously loaded resource may have used different headers or a different frame session.' };
 		}
-	})()`, urlJSON, methodJSON, headersJSON, bodyOption)
+	})()`, urlJSON, methodJSON, headersJSON, bodyOption, rawBodyJSON, rawBodyJSON)
 
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionEval, Script: script}
 	setTab(req, globalTabID)
-	sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+	prepare := func(resp *protocol.Response) error { return nil }
+	if outputSet {
+		prepare = func(resp *protocol.Response) error {
+			return saveFetchBody(outputPath, resp)
+		}
+	}
+	sendPrepareAndPrint(req, jsonOutput, prepare, func(resp *protocol.Response) {
+		if outputSet {
+			fmt.Printf("Saved fetch response body: %s\n", outputPath)
+			return
+		}
 		if resp.Data != nil && resp.Data.Result != nil {
 			out, _ := json.MarshalIndent(resp.Data.Result, "", "  ")
 			fmt.Println(string(out))
 		}
 	})
+}
+
+func saveFetchBody(path string, resp *protocol.Response) error {
+	if resp == nil || resp.Data == nil {
+		return fmt.Errorf("fetch response did not include result data")
+	}
+	result, ok := resp.Data.Result.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("fetch response result has unexpected type %T", resp.Data.Result)
+	}
+	body, ok := result["body"]
+	if !ok {
+		if message, _ := result["error"].(string); message != "" {
+			return fmt.Errorf("fetch failed: %s", message)
+		}
+		return fmt.Errorf("fetch response did not include a body")
+	}
+	var data []byte
+	if text, ok := body.(string); ok {
+		data = []byte(text)
+	} else {
+		var err error
+		data, err = json.MarshalIndent(body, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode fetch response body: %w", err)
+		}
+		data = append(data, '\n')
+	}
+	if dir := filepath.Dir(path); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create fetch output directory: %w", err)
+		}
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return fmt.Errorf("write fetch output: %w", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("secure fetch output permissions: %w", err)
+	}
+	delete(result, "body")
+	result["output"] = path
+	result["bytes"] = len(data)
+	return nil
 }
 
 // resolveIdleTabTimeout returns the idle-tab-close threshold in minutes.
@@ -2007,7 +2114,7 @@ func confirmCommunityAdapter(meta *site.SiteMeta) error {
 	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	answer = strings.TrimSpace(strings.ToLower(answer))
 	if answer != "y" && answer != "yes" {
-		return fmt.Errorf("adapter not trusted")
+		return fmt.Errorf("adapter not trusted; inspect it with 'borz site info %s', trust this hash with 'borz site trust %s', or pass --force to run once", meta.Name, meta.Name)
 	}
 	return site.TrustAdapter(meta)
 }
@@ -2332,6 +2439,37 @@ func setTab(req *protocol.Request, tabID string) {
 	}
 }
 
+// currentTabRef resolves the daemon's selected tab without changing it. The
+// navigate CLI alias uses the resolved short ID so ActionOpen takes its
+// existing-tab path instead of open's default create/reuse-by-URL path.
+func currentTabRef() string {
+	resp, err := client.SendCommand(&protocol.Request{ID: newID(), Action: protocol.ActionTabList})
+	if err != nil {
+		fatal(err.Error())
+	}
+	if resp == nil || !resp.Success || resp.Data == nil || len(resp.Data.Tabs) == 0 {
+		if resp != nil && resp.Error != "" {
+			fatal(resp.Error)
+		}
+		fatal("no current browser tab; use 'borz open <url>' to create one")
+	}
+	selected := resp.Data.Tabs[0]
+	for _, tab := range resp.Data.Tabs {
+		if tab.Active {
+			selected = tab
+			break
+		}
+	}
+	if selected.Tab != "" {
+		return selected.Tab
+	}
+	if selected.TabID != nil {
+		return fmt.Sprintf("%v", selected.TabID)
+	}
+	fatal("current browser tab has no usable identifier")
+	return ""
+}
+
 // applyCLIWaitFor pulls --wait-for / --timeout out of rawArgs and onto req.
 // Called by every action that benefits from waiting for a post-action DOM
 // change (click, fill, press, ..., open). Read-only commands like snapshot
@@ -2599,6 +2737,7 @@ Navigation:
   open <url> [--new] [--wait-for <sel>] [--timeout <ms>]
                                 Open URL (reuses same-URL tab unless --new;
                                 --wait-for blocks until the selector appears)
+  navigate <url>                Navigate the current/--tab-selected tab
   back / forward / refresh      History navigation
   close                         Close current tab
 
@@ -2625,7 +2764,7 @@ Interaction:
                                 consts, repeatable)
 
 Observation:
-  snapshot [-i] [-c] [-d N] [-s <sel>] [--role <role>] [--show-refs|--hide-refs] [--text-only] [--diff]
+  snapshot [-i] [-c] [-d N] [-s <sel>] [--role <role>] [--limit N] [--show-refs|--hide-refs] [--text-only] [--diff]
                                 Get accessibility tree (or reader-mode
                                 plain text with --text-only; --diff shows
                                 changes). Refs are always returned; --show-refs
@@ -2638,6 +2777,7 @@ Observation:
   term-text                     Read xterm.js terminal text incl. scrollback
                                 (replaces screenshot OCR; reads same-origin
                                 iframes like JumpServer Luna)
+  extract [--text]              Reader-mode page text (snapshot --text-only)
   network [requests|clear] [--tail]
                                 Network traffic; --tail streams new
                                 requests live (Ctrl+C to stop)

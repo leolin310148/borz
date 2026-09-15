@@ -284,10 +284,10 @@ func TestPrintCommandHelpUnknownFallsBack(t *testing.T) {
 // commandHelp["foo"] entry too.
 func TestCommandHelpCoversDispatch(t *testing.T) {
 	expected := []string{
-		"open", "back", "forward", "refresh", "close",
+		"open", "navigate", "back", "forward", "refresh", "close",
 		"click", "hover", "fill", "type", "check", "uncheck", "select",
 		"eval", "get", "screenshot", "viewport", "press", "clipboard-write", "term-text", "scroll", "wait",
-		"snapshot", "clear-refs", "tab", "frame", "dialog", "network", "console", "errors", "trace",
+		"snapshot", "extract", "clear-refs", "tab", "frame", "dialog", "network", "console", "errors", "trace",
 		"fetch", "mcp", "daemon", "server", "service", "client", "profile", "status", "doctor", "logs", "feedback", "site", "update", "record", "history",
 		"cookies", "bookmarks", "browser-history", "downloads", "window", "windows", "extension",
 		"help", "version",

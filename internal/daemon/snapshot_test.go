@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/leolin310148/borz/internal/protocol"
 )
 
 func mustRaw(t *testing.T, v interface{}) json.RawMessage {
@@ -294,6 +296,24 @@ func TestConvertBuildDomTreeResult_InteractiveOnly(t *testing.T) {
 	out = ConvertBuildDomTreeResult(res, true, false, nil, "zzz", "")
 	if out.Snapshot != "" {
 		t.Fatalf("selector no match: got %q", out.Snapshot)
+	}
+}
+
+func TestLimitSnapshotDataBoundsTextAndRefs(t *testing.T) {
+	snapshot := &protocol.SnapshotData{
+		Snapshot: "button [ref=1] \"One\"\nbutton [ref=2] \"Two\"\nbutton [ref=3] \"Three\"",
+		Refs: map[string]*protocol.RefInfo{
+			"1": {Role: "button"}, "2": {Role: "button"}, "3": {Role: "button"},
+		},
+		Elements: []*protocol.ElementInfo{{Ref: "1"}, {Ref: "2"}, {Ref: "3"}},
+	}
+	limit := 2
+	limitSnapshotData(snapshot, &limit)
+	if !snapshot.Truncated || snapshot.TotalLines != 3 || !strings.Contains(snapshot.Snapshot, "showing 2 of 3") {
+		t.Fatalf("limit metadata/text: %+v", snapshot)
+	}
+	if len(snapshot.Refs) != 2 || snapshot.Refs["3"] != nil || len(snapshot.Elements) != 2 {
+		t.Fatalf("limit refs/elements: %+v", snapshot)
 	}
 }
 

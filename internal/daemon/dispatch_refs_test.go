@@ -125,6 +125,9 @@ func TestDispatch_Click_ReportsCoveredElement(t *testing.T) {
 	if !strings.Contains(pointScript, "borz press Escape") || !strings.Contains(pointScript, "fresh snapshot") {
 		t.Fatalf("covered click script lacks an actionable overlay hint: %s", pointScript)
 	}
+	if !strings.Contains(pointScript, "compositeRoot") || !strings.Contains(pointScript, "input[type=\"checkbox\"]") {
+		t.Fatalf("click script lacks composite checkbox hit handling: %s", pointScript)
+	}
 }
 
 func TestDispatch_Click_FocusesHiddenXtermInput(t *testing.T) {

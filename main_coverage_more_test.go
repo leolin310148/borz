@@ -209,8 +209,8 @@ return {ok:true, q: args.q};`
 		t.Fatalf("site default run = %q", out)
 	}
 	meta := siteMetaForConfirmTest(t, home)
-	if err := confirmCommunityAdapter(&meta); err == nil || !strings.Contains(err.Error(), "not trusted") {
-		t.Fatalf("confirm community error = %v", err)
+	if err := confirmCommunityAdapter(&meta); err == nil || !strings.Contains(err.Error(), "not trusted") || !strings.Contains(err.Error(), "borz site trust") || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("confirm community error lacks non-interactive recovery commands = %v", err)
 	}
 }
 

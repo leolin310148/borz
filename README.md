@@ -176,6 +176,10 @@ borz window list|new|focus|close   # browser windows (alias: windows)
 borz tab events --tail             # tabs/windows/bookmarks/history/download event stream
 ```
 
+When a remote profile is selected, `downloads list/search --json` adds
+`filesystem: "remote"` and the profile name to each item. Any absolute
+`filename` is on that daemon host and should not be passed to local `cp`.
+
 ## How It Works
 
 ```
@@ -683,6 +687,7 @@ borz snapshot --jq ".snapshotData.refs | keys | length"
 | Command | Description |
 |---------|-------------|
 | `open <url>` | Open a URL. Reuses an existing tab when one has the exact same URL (focus only, no reload); otherwise opens a new tab. Pass `--new` to force a fresh tab, or `--tab <id>` to target a specific tab. |
+| `navigate <url>` | Navigate the current or `--tab`-selected tab without creating another tab. |
 | `back` | Navigate back in history |
 | `forward` | Navigate forward in history |
 | `refresh` | Reload the current page |
@@ -698,6 +703,9 @@ borz open https://github.com --new
 
 # Navigate a specific existing tab by ID
 borz open https://github.com --tab ab1c
+
+# Navigate whichever tab is currently selected
+borz navigate https://github.com/issues
 
 # Navigate back
 borz back
@@ -741,12 +749,18 @@ borz snapshot -s "search"
 # Filter by exact accessibility role
 borz snapshot --role button
 
+# Bound large interactive snapshots to the first 50 content lines/refs
+borz snapshot -i --limit 50
+
 # Combine flags
 borz snapshot -i -c
 
 # Reader-mode text — produces no new refs and preserves the latest tree refs.
 # Good for "summarize this page" or feeding the page to an LLM as context.
 borz snapshot --text-only
+
+# Equivalent reader-mode alias
+borz extract --text
 ```
 
 Example output:
@@ -1292,9 +1306,15 @@ borz fetch https://api.example.com/me
 
 # POST request
 borz fetch https://api.example.com/data --method POST
+
+# Preserve even malformed JSON as raw text and write it on the CLI host
+borz fetch https://api.example.com/data.json --raw --output ./data.json
 ```
 
 This is useful for accessing authenticated APIs without extracting cookies manually.
+JSON parse failures preserve the original body and report `parseError` instead
+of replacing it with a generic parser failure. `--output` writes mode `0600`
+on the CLI host, including when the selected browser profile is remote.
 
 ### Trace (Record User Actions)
 

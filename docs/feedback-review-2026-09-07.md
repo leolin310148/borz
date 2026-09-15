@@ -2,8 +2,9 @@
 
 Scope: the first 146 local feedback entries, through 2026-09-05, reviewed
 against baseline `e192418` on the existing branch. IDs are original 1-based
-log line numbers, not issue numbers. No original records were removed or
-marked resolved. Session IDs and raw private URLs are not copied here.
+log line numbers, not issue numbers. Session IDs and raw private URLs are not
+copied here. Proven-resolved entries were later archived out of the active log;
+see [the 2026-09-14 follow-up](feedback-review-2026-09-14.md).
 The additional local verification record #147 (missing mouse CLI help) was
 recorded during this review and is covered by the mouse CLI/MCP change.
 

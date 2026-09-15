@@ -339,9 +339,11 @@ type ViewportInfo struct {
 // data as an array in snapshot order, easier to iterate/filter in REST
 // consumers like n8n.
 type SnapshotData struct {
-	Snapshot string              `json:"snapshot"`
-	Refs     map[string]*RefInfo `json:"refs"`
-	Elements []*ElementInfo      `json:"elements"`
+	Snapshot   string              `json:"snapshot"`
+	Refs       map[string]*RefInfo `json:"refs"`
+	Elements   []*ElementInfo      `json:"elements"`
+	Truncated  bool                `json:"truncated,omitempty"`
+	TotalLines int                 `json:"totalLines,omitempty"`
 }
 
 // AttrDelta is one attribute's old→new transition inside SnapshotDiffData.

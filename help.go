@@ -71,6 +71,15 @@ var commandHelp = map[string]cmdHelp{
 			"  borz open https://slow.example --wait-for '#root' --timeout 30000",
 		},
 	},
+	"navigate": {
+		Summary: "Navigate the current or selected tab without creating another tab.",
+		Usage:   "borz navigate <url> [--tab <id>] [--wait-for <selector>] [--timeout <ms>]",
+		Examples: []string{
+			"  borz navigate https://example.com/next",
+			"  borz --tab ab1c navigate https://example.com/next",
+		},
+		Notes: "Unlike 'open', navigate always targets the daemon's current tab or the tab selected by --tab. Use 'open --new' to create a fresh tab.",
+	},
 	"back":    {Summary: "Go back in the current tab's history.", Usage: "borz back [--tab <id>]" + waitForUsageSuffix},
 	"forward": {Summary: "Go forward in the current tab's history.", Usage: "borz forward [--tab <id>]" + waitForUsageSuffix},
 	"refresh": {Summary: "Reload the current page (alias: reload).", Usage: "borz refresh [--tab <id>]" + waitForUsageSuffix},
@@ -252,13 +261,14 @@ var commandHelp = map[string]cmdHelp{
 	// --- Observation ---
 	"snapshot": {
 		Summary: "Emit the accessibility tree of the page with [ref=N] handles.",
-		Usage:   "borz snapshot [-i] [-c] [-d N] [-s <selector>] [--role <role>] [--show-refs|--hide-refs] [--text-only] [--diff] [--tab <id>]",
+		Usage:   "borz snapshot [-i] [-c] [-d N] [-s <selector>] [--role <role>] [--limit N] [--show-refs|--hide-refs] [--text-only] [--diff] [--tab <id>]",
 		Flags: []string{
 			"  -i, --interactive   Include only clickable/fillable elements (much shorter)",
 			"  -c, --compact       Collapse whitespace and redundant nesting",
 			"  -d, --depth N       Limit tree depth to N levels",
 			"  -s, --selector <s>  Scope to a CSS subtree; unmatched/invalid CSS falls back to keyword filtering",
 			"  --role <role>       Keep only nodes with this exact accessibility role",
+			"  --limit N           Return at most N content lines and their refs",
 			"  --show-refs         Draw ref boxes/numbers for human visual debugging; overrides settings.json",
 			"  --hide-refs         Force ref boxes and numbers off, overriding settings.json",
 			"  --text-only         Reader-mode plain text (no refs, no tree); good for LLM context",
@@ -268,6 +278,7 @@ var commandHelp = map[string]cmdHelp{
 			"  borz snapshot -i -c",
 			"  borz snapshot -d 4 -s '#app'",
 			"  borz snapshot --role button",
+			"  borz snapshot -i --limit 50",
 			"  borz snapshot --show-refs",
 			"  borz snapshot --hide-refs",
 			"  borz snapshot --text-only",
@@ -288,6 +299,12 @@ var commandHelp = map[string]cmdHelp{
 			"last snapshot of this tab. The very first call (or the first after the URL changes) " +
 			"is a baseline reset: everything is reported as added. Refs in the diff are CURRENT " +
 			"refs — safe to act on. Not supported with --text-only.",
+	},
+	"extract": {
+		Summary:  "Extract reader-mode text from the current page (alias for snapshot --text-only).",
+		Usage:    "borz extract [--text] [--tab <id>]",
+		Examples: []string{"  borz extract --text", "  borz --tab ab1c extract"},
+		Notes:    "Returns visible reader-mode text without generating new refs. The latest tree snapshot refs remain actionable unless the page or DOM changed.",
 	},
 	"clear-refs": {
 		Summary:  "Remove snapshot ref boxes and numbers from the live page.",
@@ -532,7 +549,7 @@ var commandHelp = map[string]cmdHelp{
 			"  borz downloads search report",
 			"  borz downloads start https://example.com/file.zip --filename file.zip",
 		},
-		Notes: "Requires the Chrome extension. It uses chrome.downloads, which exposes browser download manager state outside CDP.",
+		Notes: "Requires the Chrome extension. It uses chrome.downloads, which exposes browser download manager state outside CDP. For remote profiles, list/search JSON items include filesystem=remote and profile=<name>; filename paths live on that daemon host, not the CLI host.",
 	},
 	"window": {
 		Summary: "List and control Chrome browser windows through the extension.",
@@ -761,19 +778,24 @@ var commandHelp = map[string]cmdHelp{
 	// --- Utility / infra ---
 	"fetch": {
 		Summary: "Issue an authenticated HTTP request from inside the page (inherits cookies).",
-		Usage:   "borz fetch <url> [--method <M>] [--header 'Name: value'] [--body <data>] [--tab <id>]",
+		Usage:   "borz fetch <url> [--method <M>] [--header 'Name: value'] [--body <data>] [--raw] [--output <path>] [--tab <id>]",
 		Flags: []string{
 			"  --method <M>          HTTP method (default: GET)",
 			"  --header <N: V>       Request header; repeat for multiple headers",
 			"  --body <data>         Raw request body (including an empty body via --body=)",
+			"  --raw                 Keep JSON responses as text instead of parsing them",
+			"  --output <path>       Write the response body to a local file (mode 0600)",
 		},
 		Examples: []string{
 			"  borz fetch https://api.github.com/user",
+			"  borz fetch https://example.com/data.json --raw --output ./data.json",
 			"  borz fetch https://example.com/api/x --method POST --header 'Content-Type: application/json' --body '{\"ok\":true}'",
 		},
 		Notes: "Runs as fetch(url, {credentials:'include'}) in the tab, so session cookies, " +
 			"auth headers, and CORS policy all apply. Body is returned as parsed JSON when the " +
-			"response content-type is application/json, else as raw text.",
+			"response content-type is application/json, else as raw text. Invalid JSON is " +
+			"returned as raw text with parseError instead of discarding the body. --output is " +
+			"always written on the CLI host, including when the selected profile is remote.",
 	},
 	"status": {
 		Summary: "Print the daemon status as JSON (uptime, tabs, CDP connection).",

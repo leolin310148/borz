@@ -477,13 +477,16 @@ func TestHandleSnapshot(t *testing.T) {
 		SnapshotData: &protocol.SnapshotData{Snapshot: "tree"},
 	}})
 	_, _ = handleSnapshot(context.Background(), mkReq(map[string]any{
-		"interactive": true, "compact": true, "maxDepth": float64(3), "selector": "body",
+		"interactive": true, "compact": true, "maxDepth": float64(3), "limit": float64(20), "selector": "body",
 	}))
 	if !cap.req.Interactive || !cap.req.Compact || cap.req.Selector != "body" {
 		t.Errorf("req = %+v", cap.req)
 	}
 	if cap.req.MaxDepth == nil || *cap.req.MaxDepth != 3 {
 		t.Errorf("maxDepth = %v", cap.req.MaxDepth)
+	}
+	if cap.req.Limit == nil || *cap.req.Limit != 20 {
+		t.Errorf("limit = %v", cap.req.Limit)
 	}
 }
 

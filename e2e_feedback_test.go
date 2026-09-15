@@ -21,6 +21,7 @@ func TestE2EFeedbackRegressions(t *testing.T) {
 <input id="password" type="password" value="private-initial" aria-label="Password">
 <textarea id="description">initial description</textarea>
 <div role="checkbox" tabindex="0" aria-label="Inert checkbox" aria-checked="false">Inert</div>
+<div id="wrapped-check" style="position:relative;width:32px;height:32px"><input id="wrapped-input" type="checkbox" aria-label="Wrapped checkbox" style="position:absolute;inset:6px;width:20px;height:20px"><span id="wrapped-hit" style="position:absolute;inset:0"></span></div>
 <div class="monaco-editor"><textarea aria-label="Editor">model text</textarea><span>MEASUREMENT_JUNK</span></div>
 <button id="pointer" style="position:fixed;left:10px;top:250px;width:150px;height:100px">Pointer</button>
 <script>live.value='current value';description.value='current description';window.moves=[];pointer.onpointermove=e=>moves.push(e.buttons);pointer.onclick=()=>window.pointerClicked=true;</script>`))
@@ -57,6 +58,10 @@ func TestE2EFeedbackRegressions(t *testing.T) {
 		t.Fatalf("inert checkbox: %s", out)
 	}
 	requireEvalString(t, env, `document.querySelector('[role=checkbox]').getAttribute('aria-checked')`, "false")
+	snapshot = runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json").Data.SnapshotData
+	wrapped := refByName(t, snapshot, "Wrapped checkbox")
+	runE2EJSON(t, env, "click", wrapped, "--tab", tab, "--json")
+	requireEvalString(t, env, `String(document.querySelector('#wrapped-input').checked)`, "true")
 	text := runE2EJSON(t, env, "snapshot", "--text-only", "--tab", tab, "--json").Data.SnapshotData.Snapshot
 	if strings.Contains(text, "MEASUREMENT_JUNK") || !strings.Contains(text, "Monaco editor omitted") {
 		t.Fatalf("text snapshot: %s", text)

@@ -29,14 +29,16 @@ Every response carries a short `tab` id (e.g. `ab1c`); pass it as `--tab <id>` (
 
 ```bash
 borz open <url>                              # reuses tab with same URL; --new forces fresh
+borz navigate <url>                          # navigate current/--tab-selected tab; never creates a tab
 borz open <url> --wait-for '<selector>' [--timeout <ms>]  # block until selector found (10s default)
 borz <any-cmd> --pre-delay <ms>              # sleep N ms before the action (replaces 'sleep N && borz ...')
 borz <any-cmd> --post-delay <ms>             # sleep N ms after a successful action (use --wait-for when a selector exists)
-borz snapshot [-i] [-c] [-d N] [--role role] # accessibility tree; ref overlay follows settings
+borz snapshot [-i] [-c] [-d N] [--role role] [--limit N] # accessibility tree; optionally cap content lines
 borz snapshot --show-refs                     # force visible ref boxes/numbers once
 borz snapshot --hide-refs                     # force no page overlay once; refs still returned
 borz clear-refs                               # clear overlay without invalidating refs
 borz snapshot --text-only                    # plain text; preserves latest tree refs
+borz extract --text                          # reader-mode alias for snapshot --text-only
 borz snapshot --diff                         # only +/-/~ changes since last snapshot of this tab
 borz viewport [mobile|tablet|desktop|WxH|reset]  # responsive viewport emulation
 borz click <ref>                             # refs come from snapshot
@@ -68,7 +70,7 @@ borz network [requests|clear] [--filter] [--method] [--status code|class] [--wit
 borz network requests --tail [--interval duration|ms]   # live stream of new requests (Ctrl+C to stop)
 borz console [--clear] [--filter] [--tail]  # --tail streams new messages
 borz errors [--clear] [--filter] [--tail]   # --tail streams new JS errors
-borz fetch <url> [--method POST] [--header 'Name: value'] [--body data]  # authenticated HTTP via page
+borz fetch <url> [--method POST] [--header 'Name: value'] [--body data] [--raw] [--output path]  # authenticated HTTP via page; output is local
 borz tab | borz tabs                         # list; "tab new", "tab 2", "tab close 1"
 borz tab front                               # bring the tab to the real OS foreground (unminimize + focus)
 borz page visibility visible|hidden|reset    # override document.visibilityState without moving a window
