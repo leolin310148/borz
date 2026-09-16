@@ -455,7 +455,7 @@ var commandHelp = map[string]cmdHelp{
 
 	// --- Tabs / frames / dialogs ---
 	"tab": {
-		Summary: "List, create, switch between, foreground, or close Chrome tabs.",
+		Summary: "List, create, switch between, foreground, pin, or close Chrome tabs.",
 		Usage:   "borz tab [subcommand]",
 		Flags: []string{
 			"  (no subcommand)       List all tabs (default)",
@@ -465,6 +465,8 @@ var commandHelp = map[string]cmdHelp{
 			"  select --id <id>      Switch to the tab with the given short id",
 			"  select <n>            Switch to the tab at index <n>",
 			"  front [n|--id <id>]   Bring a tab to the real OS foreground (default: active)",
+			"  pin [n|--id <id>]     Pin a tab so Chrome keeps it (default: active)",
+			"  unpin [n|--id <id>]   Unpin a tab (default: active)",
 			"  close [n|--id <id>]   Close a tab by index or short id (default: active)",
 			"  events [--tail]       Browser-level tab events (created/removed/updated/activated)",
 		},
@@ -474,11 +476,14 @@ var commandHelp = map[string]cmdHelp{
 			"  borz tab 2",
 			"  borz tab select --id abc123",
 			"  borz tab front",
+			"  borz tab pin --id abc123",
 			"  borz tab close 3",
 			"  borz tab events --tail",
 		},
-		Notes: "'events' requires the borz Chrome extension to be installed and connected. " +
-			"It surfaces browser-level events (Chrome tab/window lifecycle) that CDP cannot observe.",
+		Notes: "'events', 'pin', and 'unpin' require the borz Chrome extension to be " +
+			"installed and connected. 'events' surfaces browser-level events (Chrome " +
+			"tab/window lifecycle) that CDP cannot observe; pinning lives in chrome.tabs, " +
+			"which CDP cannot reach at all.",
 	},
 	"cookies": {
 		Summary: "Read cookies the browser has stored, across every domain.",
@@ -1340,6 +1345,32 @@ var commandHelp = map[string]cmdHelp{
 			"The response reports the resulting visibilityState so scripts can verify.\n" +
 			"If the page must merely BELIEVE it is visible (headless-ish automation),\n" +
 			"see 'borz page visibility'.",
+	},
+	"tab.pin": {
+		Summary: "Pin a tab (default: the currently active tab).",
+		Usage:   "borz tab pin [n|--id <short-id>]",
+		Examples: []string{
+			"  borz tab pin",
+			"  borz tab pin 2",
+			"  borz tab pin --id abc123",
+		},
+		Notes: "Requires the borz Chrome extension: pinning is a chrome.tabs capability\n" +
+			"that CDP cannot reach. A pinned tab shrinks to its favicon, sticks to the\n" +
+			"left of the tab strip, and Chrome will not reap it — useful for a long-lived\n" +
+			"tab you never want closed by accident. borz resolves the tab reference on the\n" +
+			"CDP side and matches it to the extension's tab list by URL, so when several\n" +
+			"tabs share one URL and none is active the command fails rather than guessing;\n" +
+			"select the tab first, or use 'borz extension call tabs.update' with the\n" +
+			"extension's own numeric tab id.",
+	},
+	"tab.unpin": {
+		Summary: "Unpin a tab (default: the currently active tab).",
+		Usage:   "borz tab unpin [n|--id <short-id>]",
+		Examples: []string{
+			"  borz tab unpin",
+			"  borz tab unpin --id abc123",
+		},
+		Notes: "Requires the borz Chrome extension; see 'borz help tab pin'.",
 	},
 	"tab.events": {
 		Summary: "Stream or list browser-level tab/window events from the Chrome extension.",

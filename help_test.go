@@ -306,7 +306,7 @@ func TestCommandHelpCoversDispatch(t *testing.T) {
 func TestCommandHelpCoversSubcommands(t *testing.T) {
 	expected := []string{
 		// tab (handleTab)
-		"tab.list", "tab.new", "tab.select", "tab.close", "tab.events",
+		"tab.list", "tab.new", "tab.select", "tab.close", "tab.front", "tab.pin", "tab.unpin", "tab.events",
 		// site (handleSite)
 		"site.list", "site.search", "site.info", "site.update", "site.new", "site.lint", "site.trust", "site.run",
 		// daemon (handleDaemon)

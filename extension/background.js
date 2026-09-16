@@ -48,6 +48,7 @@ const SUPPORTED_METHODS = [
   "windows.update",
   "windows.remove",
   "tabs.query",
+  "tabs.update",
   "tabs.captureVisibleTab",
   "tabs.duplicate",
   "tabs.discard",
@@ -206,6 +207,11 @@ async function dispatch(method, params) {
 
     case "tabs.query":
       return await chrome.tabs.query(params.queryInfo || params);
+    case "tabs.update":
+      return await chrome.tabs.update(
+        params.id === undefined ? undefined : requireNumber(params.id, "id"),
+        params.updateProperties || pick(params, ["pinned", "muted", "active", "highlighted", "url", "autoDiscardable", "openerTabId"]),
+      );
     case "tabs.captureVisibleTab":
       return await chrome.tabs.captureVisibleTab(params.windowId, params.options || { format: "png" });
     case "tabs.duplicate":

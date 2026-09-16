@@ -901,6 +901,36 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
 			fmt.Println("Tab closed")
 		})
+	case "pin", "unpin":
+		// Pinning is a chrome.tabs capability, so this one goes through the
+		// extension bridge instead of the CDP dispatch path.
+		tabID := getArgValue(rawArgs, "--id")
+		if tabID == "" && len(cmdArgs) > 1 {
+			tabID = cmdArgs[1]
+		}
+		if tabID == "" && globalTabID != "" {
+			tabID = globalTabID
+		}
+		pinned := sub == "pin"
+		raw := extPostJSON("/v1/ext/tabs/pin", map[string]any{"tab": tabID, "pinned": pinned})
+		if jsonOutput {
+			printJSON(raw)
+			return
+		}
+		var result struct {
+			URL   string `json:"url"`
+			Title string `json:"title"`
+			Tab   string `json:"tab"`
+		}
+		verb := "Pinned"
+		if !pinned {
+			verb = "Unpinned"
+		}
+		if json.Unmarshal(raw, &result) != nil || result.URL == "" {
+			fmt.Println(verb + " tab")
+			return
+		}
+		fmt.Printf("%s: %s - %s (tab: %s)\n", verb, result.URL, nonEmpty(result.Title, "(untitled)"), result.Tab)
 	case "front":
 		tabID := getArgValue(rawArgs, "--id")
 		if tabID == "" && len(cmdArgs) > 1 {

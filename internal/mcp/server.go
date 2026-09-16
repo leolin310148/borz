@@ -114,6 +114,7 @@ func newMCPServer(version string) *server.MCPServer {
 	s.AddTool(tabNewTool, handleTabNew)
 	s.AddTool(tabSelectTool, handleTabSelect)
 	s.AddTool(tabFrontTool, handleTabFront)
+	s.AddTool(tabPinTool, handleTabPin)
 	s.AddTool(tabCloseTool, handleTabClose)
 
 	// Diagnostics

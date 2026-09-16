@@ -157,11 +157,107 @@ func (s *Server) registerExtRoutes(mux *http.ServeMux) {
 		copyQueryInt(params, q, "windowId")
 		return params
 	}))
+	mux.HandleFunc("/v1/ext/tabs/update", s.extPost("tabs.update"))
+	mux.HandleFunc("/v1/ext/tabs/pin", s.extTabPin)
 	mux.HandleFunc("/v1/ext/tabs/capture-visible", s.extPost("tabs.captureVisibleTab"))
 	mux.HandleFunc("/v1/ext/tabs/duplicate", s.extPost("tabs.duplicate"))
 	mux.HandleFunc("/v1/ext/tabs/discard", s.extPost("tabs.discard"))
 	mux.HandleFunc("/v1/ext/tabs/reload", s.extPost("tabs.reload"))
 	mux.HandleFunc("/v1/ext/tab-groups/query", s.extGet("tabGroups.query", nil))
+}
+
+// extTabPin pins or unpins a tab. Pinning lives in chrome.tabs, which CDP
+// cannot reach, so the CDP-side tab reference (short id, full target id,
+// numeric index, or empty for the daemon's current tab) is resolved here and
+// then matched against the extension's own tab list by URL — the only key the
+// two views share.
+func (s *Server) extTabPin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	body, err := readExtBody(r)
+	if err != nil {
+		sendJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	pinned := true
+	if v, ok := body["pinned"].(bool); ok {
+		pinned = v
+	}
+	tabRef := ""
+	if v, ok := body["tab"].(string); ok {
+		tabRef = strings.TrimSpace(v)
+	}
+
+	target, err := s.cdp.EnsurePageTarget(tabRef)
+	if err != nil {
+		sendJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+
+	raw, err := s.extHub.Request("tabs.query", map[string]any{"queryInfo": map[string]any{}}, 10*time.Second)
+	if err != nil {
+		sendJSON(w, extErrStatus(err), map[string]string{"error": err.Error()})
+		return
+	}
+	var extTabs []struct {
+		ID     int    `json:"id"`
+		URL    string `json:"url"`
+		Title  string `json:"title"`
+		Active bool   `json:"active"`
+		Pinned bool   `json:"pinned"`
+	}
+	if err := json.Unmarshal(raw, &extTabs); err != nil {
+		sendJSON(w, http.StatusBadGateway, map[string]string{"error": "cannot read the extension tab list: " + err.Error()})
+		return
+	}
+
+	matchIdx := -1
+	dupes := 0
+	for i, t := range extTabs {
+		if t.URL != target.URL {
+			continue
+		}
+		dupes++
+		// Several tabs can share a URL; the active one is the best guess at
+		// the tab the CDP target refers to.
+		if matchIdx < 0 || (t.Active && !extTabs[matchIdx].Active) {
+			matchIdx = i
+		}
+	}
+	if matchIdx < 0 {
+		sendJSON(w, http.StatusNotFound, map[string]string{
+			"error": "the extension sees no tab at " + target.URL,
+		})
+		return
+	}
+	if dupes > 1 && !extTabs[matchIdx].Active {
+		sendJSON(w, http.StatusConflict, map[string]any{
+			"error":      "several tabs share this URL and none is active; select the tab first, or pin it by extension tab id via 'borz extension call tabs.update'",
+			"url":        target.URL,
+			"candidates": extTabs,
+		})
+		return
+	}
+
+	match := extTabs[matchIdx]
+	if _, err := s.extHub.Request("tabs.update", map[string]any{
+		"id":               match.ID,
+		"updateProperties": map[string]any{"pinned": pinned},
+	}, 10*time.Second); err != nil {
+		sendJSON(w, extErrStatus(err), map[string]string{"error": err.Error()})
+		return
+	}
+
+	sendJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"pinned": pinned,
+		"id":     match.ID,
+		"url":    target.URL,
+		"title":  target.Title,
+		"tab":    s.cdp.TabManager.GetShortID(target.ID),
+	})
 }
 
 func (s *Server) validateExtensionProfile(w http.ResponseWriter, r *http.Request) bool {

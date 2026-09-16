@@ -1233,3 +1233,48 @@ func TestRawToolResult_ErrorAndRawFallback(t *testing.T) {
 		t.Fatalf("raw fallback = %+v text=%q", res, firstText(t, res))
 	}
 }
+
+func TestHandleTabPin_ForwardsToExtEndpoint(t *testing.T) {
+	var bodies []map[string]any
+	extBridgeDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			w.Write([]byte(`{"running":true}`))
+			return
+		}
+		if r.URL.Path != "/v1/ext/tabs/pin" || r.Method != http.MethodPost {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies = append(bodies, body)
+		w.Write([]byte(`{"ok":true,"pinned":true}`))
+	})
+
+	// Defaults: active tab, pinned=true.
+	res, err := handleTabPin(context.Background(), mkReq(nil))
+	if err != nil || res.IsError {
+		t.Fatalf("err=%v res=%v", err, res)
+	}
+	if !strings.Contains(firstText(t, res), `"pinned": true`) {
+		t.Fatalf("result = %q", firstText(t, res))
+	}
+
+	// An explicit tab id wins; a numeric index is stringified for the daemon.
+	_, _ = handleTabPin(context.Background(), mkReq(map[string]any{"tab": "ab1c", "pinned": false}))
+	_, _ = handleTabPin(context.Background(), mkReq(map[string]any{"index": 2}))
+
+	if len(bodies) != 3 {
+		t.Fatalf("bodies = %+v", bodies)
+	}
+	if bodies[0]["tab"] != "" || bodies[0]["pinned"] != true {
+		t.Errorf("default body = %+v", bodies[0])
+	}
+	if bodies[1]["tab"] != "ab1c" || bodies[1]["pinned"] != false {
+		t.Errorf("explicit body = %+v", bodies[1])
+	}
+	if bodies[2]["tab"] != "2" {
+		t.Errorf("index body = %+v, want tab \"2\"", bodies[2])
+	}
+}

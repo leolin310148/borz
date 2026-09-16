@@ -130,7 +130,7 @@ export BORZ_CDP_URL=http://127.0.0.1:19825
 
 ## Browser Extension (optional)
 
-A Chrome extension extends `borz` with browser-level capabilities CDP cannot provide on its own — cross-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, raw extension RPC, and browser event streams. Install it once per Chrome profile:
+A Chrome extension extends `borz` with browser-level capabilities CDP cannot provide on its own — cross-domain cookies, bookmarks, browsing history, downloads, windows, tab groups, tab pinning, raw extension RPC, and browser event streams. Install it once per Chrome profile:
 
 ```bash
 # Download the extension that matches your installed borz binary
@@ -1177,7 +1177,19 @@ borz tab close --id ab1c
 # Bring a tab to the real OS foreground (see below)
 borz tab front
 borz tab front --id ab1c
+
+# Pin a tab so Chrome keeps it out of the way and never reaps it
+# (needs the Chrome extension — pinning lives in chrome.tabs, not CDP)
+borz tab pin
+borz tab pin --id ab1c
+borz tab unpin --id ab1c
 ```
+
+`tab pin` resolves the tab on the CDP side and matches it against the
+extension's own tab list by URL, the only key the two views share. When several
+tabs share one URL and none of them is active, the command fails instead of
+pinning the wrong one — select the tab first, or pin it by the extension's
+numeric id with `borz extension call tabs.update '{"id":123,"updateProperties":{"pinned":true}}'`.
 
 Every response includes a short `tab` ID (e.g., `ab1c`) that you can use to target specific tabs:
 

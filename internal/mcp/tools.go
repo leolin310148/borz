@@ -342,6 +342,13 @@ var tabSelectTool = mcp.NewTool("browser_tab_select",
 	mcp.WithNumber("index", mcp.Description("Tab index to select (0-based)")),
 )
 
+var tabPinTool = mcp.NewTool("browser_tab_pin",
+	mcp.WithDescription("Pin or unpin a browser tab through the borz extension. A pinned tab shrinks to its favicon, sticks to the left of the tab strip, and survives tab cleanup — use it for a long-lived tab that must not be closed by accident. Pinning is a chrome.tabs capability CDP cannot reach, so the borz Chrome extension must be connected."),
+	mcp.WithString("tab", mcp.Description("Tab ID to pin (default: the active tab)")),
+	mcp.WithNumber("index", mcp.Description("Tab index to pin (0-based)")),
+	mcp.WithBoolean("pinned", mcp.Description("true to pin (default), false to unpin")),
+)
+
 var tabCloseTool = mcp.NewTool("browser_tab_close",
 	mcp.WithDescription("Close a browser tab by index or ID"),
 	mcp.WithString("tab", mcp.Description("Tab ID to close")),

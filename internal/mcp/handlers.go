@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -1194,6 +1195,24 @@ func handleExtensionCall(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallT
 	}
 	raw, callErr := client.PostJSON("/v1/ext/call", map[string]interface{}{"method": method, "params": params}, 15*time.Second)
 	return rawToolResult(raw, callErr), nil
+}
+
+// handleTabPin pins or unpins a tab. Unlike the other tab tools this one goes
+// through the extension bridge, since chrome.tabs owns pinning and CDP has no
+// equivalent.
+func handleTabPin(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	tab := r.GetString("tab", "")
+	if tab == "" {
+		if idx := r.GetInt("index", -1); idx >= 0 {
+			tab = strconv.Itoa(idx)
+		}
+	}
+	body := map[string]interface{}{
+		"tab":    tab,
+		"pinned": r.GetBool("pinned", true),
+	}
+	raw, err := client.PostJSON("/v1/ext/tabs/pin", body, 15*time.Second)
+	return rawToolResult(raw, err), nil
 }
 
 func handleBookmarks(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
