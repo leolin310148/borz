@@ -67,6 +67,10 @@ type Request struct {
 	ID     string     `json:"id"`
 	Action ActionType `json:"action"`
 
+	// SessionID is the caller's session (X-Borz-Session header), set by the
+	// daemon's HTTP layer. Never read from or written to the wire body.
+	SessionID string `json:"-"`
+
 	// Navigation
 	URL string `json:"url,omitempty"`
 	// New forces `open` to always create a fresh tab, bypassing reuse-by-URL.

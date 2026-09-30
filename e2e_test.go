@@ -329,6 +329,23 @@ func refByName(t *testing.T, snapshot *protocol.SnapshotData, name string) strin
 	return ""
 }
 
+// refByRoleName is refByName restricted to one role, for fixtures where a
+// <label> and its control share the same accessible name.
+func refByRoleName(t *testing.T, snapshot *protocol.SnapshotData, role, name string) string {
+	t.Helper()
+	for _, el := range snapshot.Elements {
+		if el.Role == role && el.Name == name {
+			return el.Ref
+		}
+	}
+	var got []string
+	for _, el := range snapshot.Elements {
+		got = append(got, fmt.Sprintf("%s:%s:%s", el.Ref, el.Role, el.Name))
+	}
+	t.Fatalf("ref %s %q not found in snapshot elements: %s", role, name, strings.Join(got, ", "))
+	return ""
+}
+
 func requireEvalString(t *testing.T, env e2eDaemonEnv, script, want string) {
 	t.Helper()
 	requireEvalStringWithPrefix(t, env, nil, script, want)

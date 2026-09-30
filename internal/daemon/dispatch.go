@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -88,6 +89,14 @@ const fallbackDOMTreeScript = `(function borzFallbackSnapshot(rootSelector) {
 		if (isInteractive && !attributes['aria-label'] && !attributes.title) {
 			const renderedName = String(node.innerText || '').replace(/\s+/g, ' ').trim();
 			if (renderedName) attributes['borz-rendered-name'] = renderedName.slice(0, 500);
+		}
+		if (!attributes['aria-label']) {
+			const root = typeof node.getRootNode === 'function' ? node.getRootNode() : document;
+			const labelledBy = (attributes['aria-labelledby'] || '').split(/\s+/).filter(Boolean)
+				.map(id => (typeof root.getElementById === 'function' ? root.getElementById(id) : null)).filter(Boolean);
+			const labels = labelledBy.length ? labelledBy : Array.from(node.labels || []);
+			const labelName = labels.map(el => el.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+			if (labelName) attributes['borz-label-name'] = labelName.slice(0, 500);
 		}
 		const data = { tagName, xpath: xpath(node), attributes, children: [], isVisible: true, isTopElement: true, isInteractive };
 		if (isInteractive) data.highlightIndex = nextRef++;
@@ -519,6 +528,7 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 		"startId":               0,
 		"startHighlightIndex":   0,
 		"rootSelector":          req.Selector,
+		"refRegistryKey":        refRegistryKey,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("encode snapshot options: %w", err)
@@ -544,10 +554,12 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 		if fallbackErr != nil {
 			tab.Refs = map[string]*protocol.RefInfo{}
 			tab.RefInvalidationReason = "the snapshot could not be rebuilt"
+			tab.RefToken = ""
 			tab.PrevDiffSnapshot = nil
 			return nil, nil, fmt.Errorf("build DOM snapshot: %v; fallback failed: %w", primaryErr, fallbackErr)
 		}
 		result = *fallback
+		result.RefToken = ""
 	}
 
 	selectorFilter := req.Selector
@@ -558,6 +570,9 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 	limitSnapshotData(snapshot, req.Limit)
 	tab.Refs = snapshot.Refs
 	tab.RefInvalidationReason = ""
+	tab.RefToken = result.RefToken
+	tab.RefSnapshotAt = time.Now()
+	tab.RefSnapshotSession = req.SessionID
 
 	// Always build the structural DiffSnapshot — it's cheap and being
 	// always-on means whether or not the *current* call asked for --diff,
@@ -594,7 +609,7 @@ func clearSnapshotRefs(cdp *CdpConnection, targetID string) error {
 // capture so concurrent screenshots of the same tab cannot unmask each other.
 // Masking is best-effort: a page without an execution context should still be
 // screenshot-able through CDP.
-func captureScreenshot(cdp *CdpConnection, targetID string, tab *TabState, annotations []protocol.ScreenshotAnnotation) (json.RawMessage, error) {
+func captureScreenshot(cdp *CdpConnection, targetID string, tab *TabState, annotations []protocol.ScreenshotAnnotation, sessionID string) (json.RawMessage, error) {
 	token := strconv.FormatUint(screenshotMaskSequence.Add(1), 10)
 	tokenJSON, _ := json.Marshal(token)
 	hideScript := fmt.Sprintf(`((token) => {
@@ -642,7 +657,7 @@ func captureScreenshot(cdp *CdpConnection, targetID string, tab *TabState, annot
 		if strings.TrimSpace(annotation.Text) == "" {
 			return nil, fmt.Errorf("screenshot annotation text is required for ref %s", ref)
 		}
-		backendNodeID, err := parseRef(cdp, targetID, tab, ref)
+		backendNodeID, err := parseRef(cdp, targetID, tab, ref, sessionID)
 		if err != nil {
 			return nil, fmt.Errorf("screenshot annotation %s: %w", ref, err)
 		}
@@ -831,6 +846,7 @@ func resolveBackendNodeIDBySemantics(cdp *CdpConnection, targetID string, found 
 		"startId":               0,
 		"startHighlightIndex":   0,
 		"rootSelector":          "",
+		"refRegistryKey":        refRecoveryRegistryKey,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("encode ref recovery snapshot options: %w", err)
@@ -856,54 +872,169 @@ func resolveBackendNodeIDBySemantics(cdp *CdpConnection, targetID string, found 
 			return 0, fmt.Errorf("rebuild ref recovery snapshot: %v; fallback failed: %w", primaryErr, fallbackErr)
 		}
 		result = *fallback
+		result.RefToken = ""
 	}
 
 	wantTag := strings.ToLower(found.TagName)
 	wantRole := strings.ToLower(found.Role)
 	wantName := strings.Join(strings.Fields(found.Name), " ")
-	var xpaths []string
+	var matches []rawDomElementNode
 	for _, rawNode := range result.Map {
 		isText, _, element := parseNode(rawNode)
-		if isText || element.HighlightIndex == nil || isAccessibilityHidden(element) || element.XPath == "" {
+		if isText || element.HighlightIndex == nil || isAccessibilityHidden(element) {
 			continue
 		}
 		if strings.ToLower(element.TagName) != wantTag || strings.ToLower(getRole(element)) != wantRole {
 			continue
 		}
 		if strings.Join(strings.Fields(getName(element, result.Map)), " ") == wantName {
-			xpaths = append(xpaths, element.XPath)
+			matches = append(matches, element)
 		}
 	}
-	if len(xpaths) != 1 {
-		return 0, fmt.Errorf("semantic fallback found %d exact matches for <%s> %s %q", len(xpaths), wantTag, wantRole, found.Name)
+	if len(matches) != 1 {
+		return 0, fmt.Errorf("semantic fallback found %d exact matches for <%s> %s %q", len(matches), wantTag, wantRole, found.Name)
 	}
-	return resolveBackendNodeIDByXPath(cdp, targetID, xpaths[0])
+	match := matches[0]
+	if result.RefToken != "" {
+		backendID, err := resolveBackendNodeIDByRegistry(cdp, targetID, refRecoveryRegistryKey, result.RefToken, *match.HighlightIndex)
+		if err == nil {
+			return backendID, nil
+		}
+	}
+	if !isDocumentXPath(match.XPath) {
+		return 0, fmt.Errorf("semantic fallback matched <%s> %s %q but it has no document-level XPath (inside a shadow root or frame)", wantTag, wantRole, found.Name)
+	}
+	return resolveBackendNodeIDByXPath(cdp, targetID, match.XPath)
 }
 
-func parseRef(cdp *CdpConnection, targetID string, tab *TabState, ref string) (int, error) {
+// Element registries written by buildDomTree (see refRegistryKey in
+// buildDomTree.js). The snapshot registry backs the caller's refs; the
+// recovery registry is scratch space for semantic fallback so it never
+// replaces the refs the caller is holding.
+const (
+	refRegistryKey         = "__borzRefs"
+	refRecoveryRegistryKey = "__borzRefRecovery"
+)
+
+// errRefDetached reports that the snapshotted element still exists in the
+// registry but was removed from the document.
+var errRefDetached = errors.New("the snapshotted element was removed from the page")
+
+// resolveBackendNodeIDByRegistry resolves a ref to the exact element the
+// snapshot saw, as long as that element is still attached. This survives
+// sibling churn, shadow roots, and duplicate accessible names, none of which
+// a positional XPath or a name match can handle.
+func resolveBackendNodeIDByRegistry(cdp *CdpConnection, targetID, key, token string, index int) (int, error) {
+	keyJSON, _ := json.Marshal(key)
+	tokenJSON, _ := json.Marshal(token)
+	expression := fmt.Sprintf(`(() => {
+		const registry = globalThis[%s];
+		if (!registry || registry.token !== %s) return 'missing';
+		const element = registry.elements.get(%d);
+		if (!element) return 'missing';
+		return element.isConnected ? element : 'detached';
+	})()`, keyJSON, tokenJSON, index)
+	sessionTargetID, object, err := cdp.EvaluateObject(targetID, expression)
+	if err != nil {
+		return 0, err
+	}
+	if object.ObjectID == "" {
+		var status string
+		json.Unmarshal(object.Value, &status)
+		if status == "detached" {
+			return 0, errRefDetached
+		}
+		return 0, fmt.Errorf("the page no longer holds this snapshot's element registry")
+	}
+	defer cdp.SessionCommand(sessionTargetID, "Runtime.releaseObject", map[string]interface{}{"objectId": object.ObjectID})
+	descRaw, err := cdp.SessionCommand(sessionTargetID, "DOM.describeNode", map[string]interface{}{"objectId": object.ObjectID})
+	if err != nil {
+		return 0, err
+	}
+	var desc struct {
+		Node struct {
+			BackendNodeID int `json:"backendNodeId"`
+		} `json:"node"`
+	}
+	if err := json.Unmarshal(descRaw, &desc); err != nil {
+		return 0, fmt.Errorf("decode ref registry node: %w", err)
+	}
+	if desc.Node.BackendNodeID <= 0 {
+		return 0, fmt.Errorf("ref registry element has no backend node id")
+	}
+	return desc.Node.BackendNodeID, nil
+}
+
+// isDocumentXPath reports whether buildDomTree produced an XPath from the
+// document root. Elements inside shadow roots or frames get a path relative
+// to that boundary (for example "li[2]/a"), which DOM.performSearch evaluates
+// against the top document: it matches nothing or, worse, an unrelated node.
+func isDocumentXPath(xpath string) bool {
+	xpath = strings.TrimPrefix(xpath, "/")
+	return xpath == "html" || strings.HasPrefix(xpath, "html/")
+}
+
+func parseRef(cdp *CdpConnection, targetID string, tab *TabState, ref, sessionID string) (int, error) {
 	found, ok := tab.Refs[ref]
 	if !ok {
-		if tab.RefInvalidationReason != "" {
-			return 0, fmt.Errorf("unknown ref: %s. Snapshot refs were invalidated because %s. Run snapshot again", ref, tab.RefInvalidationReason)
-		}
-		return 0, fmt.Errorf("unknown ref: %s. Element arguments accept snapshot refs only (for example @12), not CSS selectors; Run snapshot first or use eval/document.querySelector", ref)
+		return 0, unknownRefError(tab, ref, sessionID)
 	}
 	if found.BackendDOMNodeID > 0 {
 		return found.BackendDOMNodeID, nil
 	}
-	if found.XPath != "" {
-		backendID, err := resolveBackendNodeIDByXPath(cdp, targetID, found.XPath)
-		if err != nil {
-			semanticID, semanticErr := resolveBackendNodeIDBySemantics(cdp, targetID, found)
-			if semanticErr != nil {
-				return 0, fmt.Errorf("ref %s is stale because the page or DOM changed; run snapshot again (XPath: %v; semantic fallback: %v)", ref, err, semanticErr)
+	// Exact node first. Not cached: the element can still be detached later,
+	// and the lookup is one evaluate + describeNode.
+	var registryErr error
+	if tab.RefToken != "" {
+		if index, err := strconv.Atoi(ref); err == nil {
+			backendID, err := resolveBackendNodeIDByRegistry(cdp, targetID, refRegistryKey, tab.RefToken, index)
+			if err == nil {
+				return backendID, nil
 			}
-			backendID = semanticID
+			registryErr = err
 		}
-		found.BackendDOMNodeID = backendID
-		return backendID, nil
 	}
-	return 0, fmt.Errorf("unknown ref: %s. Run snapshot first", ref)
+	detached := errors.Is(registryErr, errRefDetached)
+	if found.XPath == "" && registryErr == nil {
+		return 0, fmt.Errorf("unknown ref: %s. Run snapshot first", ref)
+	}
+	var xpathErr error
+	switch {
+	case detached:
+		// The exact node was removed. Whatever now sits at its old position
+		// may be an unrelated sibling, so only a semantic identity match may
+		// rebind this ref.
+	case isDocumentXPath(found.XPath):
+		backendID, err := resolveBackendNodeIDByXPath(cdp, targetID, found.XPath)
+		if err == nil {
+			if registryErr == nil {
+				found.BackendDOMNodeID = backendID
+			}
+			return backendID, nil
+		}
+		xpathErr = err
+	case found.XPath != "":
+		xpathErr = fmt.Errorf("%q is relative to a shadow root or frame", found.XPath)
+	}
+	semanticID, semanticErr := resolveBackendNodeIDBySemantics(cdp, targetID, found)
+	if semanticErr == nil {
+		// The snapshotted node is gone; the rebound node becomes the ref.
+		found.BackendDOMNodeID = semanticID
+		return semanticID, nil
+	}
+	reason := "the page or DOM changed"
+	if detached {
+		reason = registryErr.Error()
+	}
+	details := []string{}
+	if registryErr != nil && !detached {
+		details = append(details, "element handle: "+registryErr.Error())
+	}
+	if xpathErr != nil {
+		details = append(details, "XPath: "+xpathErr.Error())
+	}
+	details = append(details, "semantic fallback: "+semanticErr.Error())
+	return 0, fmt.Errorf("ref %s is stale because %s; run snapshot again (%s)", ref, reason, strings.Join(details, "; "))
 }
 
 type clickTargetBaseline struct {
@@ -1057,9 +1188,28 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 				else if (element.classList.length) out += '.' + Array.from(element.classList).slice(0, 2).join('.');
 				return out;
 			};
+			// document.elementFromPoint retargets to the outermost shadow host,
+			// so a control inside a shadow root (LWC, Office, chrome://) always
+			// looked covered by its own host. Descend open shadow roots to the
+			// real hit, and compare containment across shadow boundaries.
+			const deepElementFromPoint = (doc, px, py) => {
+				let hit = doc.elementFromPoint(px, py);
+				for (let depth = 0; hit && hit.shadowRoot && depth < 32; depth += 1) {
+					const inner = hit.shadowRoot.elementFromPoint(px, py);
+					if (!inner || inner === hit) break;
+					hit = inner;
+				}
+				return hit;
+			};
+			const composedContains = (ancestor, node) => {
+				for (let current = node; current; current = current.parentNode || current.host) {
+					if (current === ancestor) return true;
+				}
+				return false;
+			};
 			const hitBelongsToControl = (expected, hit) => {
 				if (!hit || hit.nodeType !== 1) return false;
-				if (hit === expected || expected.contains(hit)) return true;
+				if (hit === expected || composedContains(expected, hit)) return true;
 				const label = expected.closest('label');
 				if (label && label.contains(hit)) return true;
 				const composite = compositeRoot(expected);
@@ -1106,7 +1256,7 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			for (const [rx, ry] of candidates) {
 				const candidateX = rect.left + rect.width * rx;
 				const candidateY = rect.top + rect.height * ry;
-				const hit = expected.ownerDocument.elementFromPoint(candidateX, candidateY);
+				const hit = deepElementFromPoint(expected.ownerDocument, candidateX, candidateY);
 				if (hitBelongsToControl(expected, hit)) {
 					x = candidateX;
 					y = candidateY;
@@ -1116,14 +1266,14 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 				}
 			}
 			if (!foundPoint) {
-				initialHit = expected.ownerDocument.elementFromPoint(x, y);
+				initialHit = deepElementFromPoint(expected.ownerDocument, x, y);
 				const hitControl = initialHit?.closest?.(actionableSelector);
 				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' (parent ' + describe(initialHit?.parentElement) + ', control ' + describe(hitControl) + ') instead of ' + describe(expected) + ' (connected ' + expected.isConnected + "). Close the blocking popup/overlay (try 'borz press Escape') and take a fresh snapshot.");
 			}
 			const initialView = expected.ownerDocument.defaultView;
 			let view = initialView;
 			while (view) {
-				const hit = view === initialView ? initialHit : view.document.elementFromPoint(x, y);
+				const hit = view === initialView ? initialHit : deepElementFromPoint(view.document, x, y);
 				if (!hitBelongsToControl(expected, hit)) {
 					throw new Error('Element is not clickable at its center; hit ' + describe(hit) + ' instead of ' + describe(expected) + ". Close the blocking popup/overlay (try 'borz press Escape') and take a fresh snapshot.");
 				}
@@ -2422,7 +2572,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		return okResp(req.ID, &protocol.ResponseData{Result: true, Tab: shortID})
 
 	case protocol.ActionScreenshot:
-		result, err := captureScreenshot(cdp, target.ID, tab, req.Annotations)
+		result, err := captureScreenshot(cdp, target.ID, tab, req.Annotations, req.SessionID)
 		if err != nil {
 			return failResp(req.ID, err)
 		}
@@ -2484,7 +2634,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			}
 			return failResp(req.ID, err)
 		}
-		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
+		backendID, err := parseRef(cdp, target.ID, tab, req.Ref, req.SessionID)
 		if err != nil {
 			return clickFailure(err)
 		}
@@ -2548,7 +2698,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			return failResp(req.ID, "missing ref parameter")
 		}
 		seq := tab.RecordAction()
-		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
+		backendID, err := parseRef(cdp, target.ID, tab, req.Ref, req.SessionID)
 		if err != nil {
 			return failResp(req.ID, err)
 		}
@@ -2564,7 +2714,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		}
 		seq := tab.RecordAction()
 		desired := req.Action == protocol.ActionCheck
-		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
+		backendID, err := parseRef(cdp, target.ID, tab, req.Ref, req.SessionID)
 		if err != nil {
 			return failResp(req.ID, err)
 		}
@@ -2578,7 +2728,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			return failResp(req.ID, "missing ref or value parameter")
 		}
 		seq := tab.RecordAction()
-		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
+		backendID, err := parseRef(cdp, target.ID, tab, req.Ref, req.SessionID)
 		if err != nil {
 			return failResp(req.ID, err)
 		}
@@ -2599,7 +2749,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			return failResp(req.ID, err)
 		}
 		seq := tab.RecordAction()
-		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
+		backendID, err := parseRef(cdp, target.ID, tab, req.Ref, req.SessionID)
 		if err != nil {
 			return failResp(req.ID, err)
 		}
@@ -2634,7 +2784,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		if req.Ref == "" {
 			return failResp(req.ID, "missing ref parameter")
 		}
-		backendID, err := parseRef(cdp, target.ID, tab, req.Ref)
+		backendID, err := parseRef(cdp, target.ID, tab, req.Ref, req.SessionID)
 		if err != nil {
 			return failResp(req.ID, err)
 		}
@@ -3470,4 +3620,50 @@ func derefInt(p *int) int {
 		return 0
 	}
 	return *p
+}
+
+// unknownRefError explains why ref is not in the tab's current ref map. Refs
+// are per tab and shared by every caller of the daemon, so the most common
+// silent cause is another agent's snapshot (or a scoped/limited snapshot)
+// replacing the map between this caller's snapshot and its action.
+func unknownRefError(tab *TabState, ref, sessionID string) error {
+	if tab.RefInvalidationReason != "" {
+		return fmt.Errorf("unknown ref: %s. Snapshot refs were invalidated because %s. Run snapshot again", ref, tab.RefInvalidationReason)
+	}
+	if _, err := strconv.Atoi(ref); err != nil {
+		return fmt.Errorf("unknown ref: %s. Element arguments accept snapshot refs only (for example @12), not CSS selectors; Run snapshot first or use eval/document.querySelector", ref)
+	}
+	if tab.RefSnapshotAt.IsZero() {
+		return fmt.Errorf("unknown ref: %s. This daemon has no snapshot for this tab (the daemon may have restarted since your snapshot, or it was taken on another tab or profile). Run snapshot again", ref)
+	}
+	low, high := -1, -1
+	for key := range tab.Refs {
+		n, err := strconv.Atoi(key)
+		if err != nil {
+			continue
+		}
+		if low < 0 || n < low {
+			low = n
+		}
+		if n > high {
+			high = n
+		}
+	}
+	current := "no refs"
+	if low >= 0 {
+		current = fmt.Sprintf("refs %d-%d (%d total)", low, high, len(tab.Refs))
+	}
+	age := time.Since(tab.RefSnapshotAt).Round(time.Second)
+	by := "this session"
+	switch {
+	case tab.RefSnapshotSession == "" && sessionID == "":
+		by = "a caller without a session id"
+	case tab.RefSnapshotSession != sessionID:
+		who := tab.RefSnapshotSession
+		if who == "" {
+			who = "a caller without a session id"
+		}
+		return fmt.Errorf("unknown ref: %s. The tab's refs were replaced %s ago by a snapshot from another session (%s), which now holds %s; refs are shared per tab, so concurrent agents overwrite each other. Run snapshot again right before acting", ref, age, who, current)
+	}
+	return fmt.Errorf("unknown ref: %s. The latest snapshot of this tab (%s ago, by %s) holds %s; a --selector, --role, or --limit snapshot only keeps the refs it prints. Run snapshot again", ref, age, by, current)
 }

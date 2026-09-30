@@ -55,7 +55,7 @@ func TestE2ECLIShadowDOMBoundary(t *testing.T) {
 	requireContains(t, snapshot.Snapshot, "Shadow action button", "shadow DOM snapshot")
 	requireContains(t, snapshot.Snapshot, "Shadow text input", "shadow DOM snapshot")
 	buttonRef := refByName(t, snapshot, "Shadow action button")
-	inputRef := refByName(t, snapshot, "Shadow text input")
+	inputRef := refByRoleName(t, snapshot, "textbox", "Shadow text input")
 
 	runE2EJSON(t, env, "click", buttonRef, "--tab", tab, "--json")
 	requireEvalStringWithPrefix(t, env, []string{"--tab", tab}, `document.querySelector("#shadow-host").shadowRoot.querySelector("#shadow-result").textContent`, "clicked 1")

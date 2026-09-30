@@ -44,6 +44,14 @@ type TabState struct {
 	// Element refs from the most recent snapshot.
 	Refs                  map[string]*protocol.RefInfo
 	RefInvalidationReason string
+	// RefToken identifies the in-page element registry written by the
+	// snapshot that produced Refs (see refRegistryKey). Empty when that
+	// snapshot came from the fallback tree, which keeps no element handles.
+	RefToken string
+	// When and by which caller session Refs were produced, so an unknown-ref
+	// error can say that another agent's snapshot replaced them.
+	RefSnapshotAt      time.Time
+	RefSnapshotSession string
 
 	// PrevDiffSnapshot is the baseline used by `snapshot --diff`. It is
 	// rewritten after every successful tree-mode snapshot so the next

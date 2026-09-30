@@ -21,7 +21,7 @@ chmod +x borz-darwin-arm64 && sudo mv borz-darwin-arm64 /usr/local/bin/borz
 
 Everything is a request → dispatched over CDP → JSON response `{id, success, data?, error?}`.
 
-Interactive elements are identified by numeric refs returned from `snapshot`. The workflow is always: **snapshot → act on refs → snapshot again**.
+Interactive elements are identified by numeric refs returned from `snapshot`. The workflow is always: **snapshot → act on refs → snapshot again**. A ref is bound to the exact element the snapshot saw (open shadow roots and same-origin frames included), so background DOM churn does not invalidate it; navigation, reload, and viewport changes do. Refs are per tab and shared across callers — another agent's snapshot of the same tab replaces them, and the `unknown ref` error names that session. Form controls take their accessible name from `<label>`/`aria-labelledby`, so a label and its textbox can share a name: pick the ref by role.
 
 Every response carries a short `tab` id (e.g. `ab1c`); pass it as `--tab <id>` (CLI), `tab` (MCP), or `tab`/`tabId` (REST) to target a specific tab.
 

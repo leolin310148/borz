@@ -1408,6 +1408,30 @@ func (c *CdpConnection) Evaluate(targetID, expression string, returnByValue bool
 
 // EvaluateWithTimeout executes JavaScript on a target and returns the result.
 func (c *CdpConnection) EvaluateWithTimeout(targetID, expression string, returnByValue bool, timeout time.Duration) (json.RawMessage, error) {
+	_, result, err := c.evaluateRemote(targetID, expression, returnByValue, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return result.Value, nil
+}
+
+// evaluatedObject is the Runtime.evaluate result for a non-by-value call.
+type evaluatedObject struct {
+	Type     string          `json:"type"`
+	Value    json.RawMessage `json:"value"`
+	ObjectID string          `json:"objectId"`
+}
+
+// EvaluateObject evaluates expression in the same execution context as
+// Evaluate (honoring the tab's active frame) without returnByValue, so DOM
+// nodes come back as remote objects. sessionTargetID is the session that owns
+// the returned objectId: an OOPIF frame's target, not the page, when the active
+// frame is site-isolated. Callers release the object with Runtime.releaseObject.
+func (c *CdpConnection) EvaluateObject(targetID, expression string) (sessionTargetID string, object evaluatedObject, err error) {
+	return c.evaluateRemote(targetID, expression, false, 30*time.Second)
+}
+
+func (c *CdpConnection) evaluateRemote(targetID, expression string, returnByValue bool, timeout time.Duration) (string, evaluatedObject, error) {
 	started := time.Now()
 	evalTargetID := targetID
 	params := map[string]interface{}{
@@ -1425,7 +1449,7 @@ func (c *CdpConnection) EvaluateWithTimeout(targetID, expression string, returnB
 			var err error
 			oopif, err = c.attachOOPIFForFrame(activeFrameID)
 			if err != nil {
-				return nil, fmt.Errorf("attach site-isolated frame %s: %w", activeFrameID, err)
+				return "", evaluatedObject{}, fmt.Errorf("attach site-isolated frame %s: %w", activeFrameID, err)
 			}
 		}
 		if oopif {
@@ -1445,13 +1469,13 @@ func (c *CdpConnection) EvaluateWithTimeout(targetID, expression string, returnB
 					"worldName": "__borz_eval__",
 				}, worldTimeout)
 				if err != nil {
-					return nil, fmt.Errorf("resolve execution context for active frame %s: %w", activeFrameID, err)
+					return "", evaluatedObject{}, fmt.Errorf("resolve execution context for active frame %s: %w", activeFrameID, err)
 				}
 				var world struct {
 					ExecutionContextID int64 `json:"executionContextId"`
 				}
 				if json.Unmarshal(worldRaw, &world) != nil || world.ExecutionContextID == 0 {
-					return nil, fmt.Errorf("resolve execution context for active frame %s: Page.createIsolatedWorld returned no context", activeFrameID)
+					return "", evaluatedObject{}, fmt.Errorf("resolve execution context for active frame %s: Page.createIsolatedWorld returned no context", activeFrameID)
 				}
 				contextID = world.ExecutionContextID
 				tab.SetFrameExecutionContext(activeFrameID, contextID)
@@ -1463,18 +1487,15 @@ func (c *CdpConnection) EvaluateWithTimeout(targetID, expression string, returnB
 	if timeout <= 0 {
 		remaining = timeout
 	} else if remaining <= 0 {
-		return nil, fmt.Errorf("timeout resolving Runtime.evaluate execution context")
+		return "", evaluatedObject{}, fmt.Errorf("timeout resolving Runtime.evaluate execution context")
 	}
 	result, err := c.SessionCommandWithTimeout(evalTargetID, "Runtime.evaluate", params, remaining)
 	if err != nil {
-		return nil, err
+		return "", evaluatedObject{}, err
 	}
 
 	var evalResult struct {
-		Result struct {
-			Type  string          `json:"type"`
-			Value json.RawMessage `json:"value"`
-		} `json:"result"`
+		Result           evaluatedObject `json:"result"`
 		ExceptionDetails *struct {
 			Text      string `json:"text"`
 			Exception struct {
@@ -1483,7 +1504,7 @@ func (c *CdpConnection) EvaluateWithTimeout(targetID, expression string, returnB
 		} `json:"exceptionDetails"`
 	}
 	if err := json.Unmarshal(result, &evalResult); err != nil {
-		return nil, err
+		return "", evaluatedObject{}, err
 	}
 
 	if evalResult.ExceptionDetails != nil {
@@ -1494,8 +1515,8 @@ func (c *CdpConnection) EvaluateWithTimeout(targetID, expression string, returnB
 		if msg == "" {
 			msg = "Runtime.evaluate failed"
 		}
-		return nil, fmt.Errorf("%s", msg)
+		return "", evaluatedObject{}, fmt.Errorf("%s", msg)
 	}
 
-	return evalResult.Result.Value, nil
+	return evalTargetID, evalResult.Result, nil
 }

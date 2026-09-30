@@ -1797,3 +1797,21 @@ MIT
 subject to CORS, cookie scope and redirects, and does not replay the original
 resource's headers or iframe session. A resource appearing in performance
 entries does not prove a new request will have the same authentication.
+
+### Feedback fixes: stable refs on shadow-DOM and churning pages
+
+- Snapshot refs now bind to the exact element the snapshot saw, held in the
+  page. They keep working while background widgets insert and remove
+  siblings, and for controls inside open shadow roots (Salesforce Lightning,
+  Office ribbons, `chrome://` pages), where the old positional XPath was
+  relative to the shadow root (`li[2]/a`) and could never resolve. If that
+  element is removed, borz rebinds only to one exact tag+role+name match and
+  never to whatever now occupies the old XPath position.
+- Click hit-testing descends into open shadow roots, so a control no longer
+  looks covered by its own shadow host.
+- Form controls take their accessible name from `<label>` and
+  `aria-labelledby`, including inside shadow roots, instead of their current
+  value.
+- `unknown ref` errors explain why: navigation or reload, no snapshot in this
+  daemon (restarted), a scoped/limited snapshot, or another session's snapshot
+  of the same tab replacing the shared refs (named, with the current range).

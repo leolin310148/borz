@@ -290,7 +290,13 @@ var commandHelp = map[string]cmdHelp{
 			"  borz snapshot --diff",
 		},
 		Notes: "Snapshot before calling interaction commands — tree refs are regenerated " +
-			"on every snapshot and go stale across navigations or DOM updates.\n" +
+			"on every snapshot and are cleared by navigation, reload, and viewport changes.\n" +
+			"A ref points at the exact element the snapshot saw (including inside open shadow " +
+			"roots and same-origin frames), so sibling churn from background widgets does not " +
+			"invalidate it. Only when that element is removed does borz try to rebind by " +
+			"tag+role+accessible name, and only to a single exact match.\n" +
+			"Refs are per tab and shared by every caller: another agent's snapshot of the same " +
+			"tab replaces them, and 'unknown ref' errors say which session did so.\n" +
 			"Refs are drawn in the live browser by default. Set snapshot.showRefs=false in " +
 			"~/.borz/settings.json to hide them persistently. --show-refs and --hide-refs " +
 			"override that setting for one snapshot; refs remain in the response either way.\n" +

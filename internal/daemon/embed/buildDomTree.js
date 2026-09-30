@@ -8,8 +8,13 @@ window.buildDomTree = (
     startHighlightIndex: 0,
   },
 ) => {
-  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId, debugMode, rootSelector } =
+  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId, debugMode, rootSelector, refRegistryKey } =
     args;
+  // When refRegistryKey is set, every element that receives a highlightIndex
+  // (== snapshot ref) is kept in globalThis[refRegistryKey] so the daemon can
+  // resolve a ref to the exact snapshotted node later. Positional XPaths go
+  // wrong as soon as a sibling is inserted and cannot cross shadow roots.
+  const refRegistry = refRegistryKey ? new Map() : null;
   // Make sure to do highlight elements always, but we can hide the highlights if needed
   const doHighlightElements = true;
 
@@ -1230,6 +1235,7 @@ window.buildDomTree = (
       // regardless of viewport status
       if (nodeData.isInViewport || viewportExpansion === -1) {
         nodeData.highlightIndex = highlightIndex++;
+        if (refRegistry) refRegistry.set(nodeData.highlightIndex, node);
 
         if (doHighlightElements) {
           if (focusHighlightIndex >= 0) {
@@ -1416,6 +1422,28 @@ window.buildDomTree = (
       }
     }
 
+    // Label-derived accessible names (aria-labelledby, <label for>/wrapping
+    // label). Resolved against the element's own root so controls inside
+    // shadow roots (LWC, Fluent) get their visible label instead of falling
+    // back to their current value. Snapshot-only attribute.
+    if (node.nodeType === Node.ELEMENT_NODE && !nodeData.attributes['aria-label']) {
+      let labelName = '';
+      const labelledBy = (node.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+      if (labelledBy.length) {
+        const root = typeof node.getRootNode === 'function' ? node.getRootNode() : document;
+        labelName = labelledBy
+          .map(id => (typeof root.getElementById === 'function' ? root.getElementById(id) : document.getElementById(id)))
+          .filter(Boolean)
+          .map(el => el.textContent || '')
+          .join(' ');
+      }
+      if (!labelName && node.labels && node.labels.length) {
+        labelName = Array.from(node.labels).map(el => el.textContent || '').join(' ');
+      }
+      labelName = labelName.replace(/\s+/g, ' ').trim();
+      if (labelName) nodeData.attributes['borz-label-name'] = labelName.slice(0, 500);
+    }
+
     // Form values are live properties; HTML attributes retain initial values.
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName)) {
       nodeData.attributes.value = node.type === 'password' ? '[redacted]' : node.value;
@@ -1558,5 +1586,11 @@ window.buildDomTree = (
   // Clear the cache before starting
   DOM_CACHE.clearCache();
 
-  return { rootId, map: DOM_HASH_MAP, rootSelectorMatched };
+  let refToken;
+  if (refRegistry) {
+    refToken = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    globalThis[refRegistryKey] = { token: refToken, elements: refRegistry };
+  }
+
+  return { rootId, map: DOM_HASH_MAP, rootSelectorMatched, refToken };
 };

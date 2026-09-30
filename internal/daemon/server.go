@@ -423,6 +423,7 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 
 	// Dispatch with timeout
 	done := make(chan *protocol.Response, 1)
+	req.SessionID = sessionID
 	go func() {
 		done <- DispatchRequest(s.cdp, &req)
 	}()

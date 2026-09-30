@@ -33,6 +33,7 @@ type buildDomTreeResult struct {
 	RootID              string                     `json:"rootId"`
 	Map                 map[string]json.RawMessage `json:"map"`
 	RootSelectorMatched bool                       `json:"rootSelectorMatched,omitempty"`
+	RefToken            string                     `json:"refToken,omitempty"`
 }
 
 func parseNode(raw json.RawMessage) (isText bool, text rawDomTextNode, el rawDomElementNode) {
@@ -122,6 +123,9 @@ func collectTextContent(el rawDomElementNode, nodeMap map[string]json.RawMessage
 func getName(el rawDomElementNode, nodeMap map[string]json.RawMessage) string {
 	attrs := el.Attributes
 	if v := attrs["aria-label"]; v != "" {
+		return v
+	}
+	if v := attrs["borz-label-name"]; v != "" {
 		return v
 	}
 	if v := attrs["title"]; v != "" {

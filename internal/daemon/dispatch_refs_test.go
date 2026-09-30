@@ -633,7 +633,7 @@ func TestDispatch_ResolveByXPath_RejectsAmbiguousSemanticFallback(t *testing.T) 
 	tab := c.TabManager.GetTab("T1")
 	seedRef(c, "T1", "7", &protocol.RefInfo{XPath: "/gone", Role: "menuitem", Name: "Upload", TagName: "button"})
 
-	_, err := parseRef(c, "T1", tab, "7")
+	_, err := parseRef(c, "T1", tab, "7", "")
 	if err == nil || !strings.Contains(err.Error(), "semantic fallback found 2 exact matches") {
 		t.Fatalf("ambiguous semantic fallback error = %v", err)
 	}
