@@ -57,8 +57,9 @@ var commandHelp = map[string]cmdHelp{
 	// --- Navigation ---
 	"open": {
 		Summary: "Open a URL (reuses a tab with the same URL unless --new).",
-		Usage:   "borz open <url> [--new] [--tab <id>] [--wait-for <selector>] [--timeout <ms>]",
+		Usage:   "borz open (<url> | --stdin) [--new] [--tab <id>] [--wait-for <selector>] [--timeout <ms>]",
 		Flags: []string{
+			"  --stdin                 Read the URL from the first non-empty stdin line (keeps it out of argv/shell history)",
 			"  --new                   Force a new tab even if the URL is already open",
 			"  --tab <id>              Navigate an existing tab instead of opening a new one",
 			"  --wait-for <selector>   Block until document.querySelector(<selector>) is non-null",
@@ -69,16 +70,20 @@ var commandHelp = map[string]cmdHelp{
 			"  borz open https://github.com --new",
 			"  borz open https://example.com/spa --wait-for '.article-content'",
 			"  borz open https://slow.example --wait-for '#root' --timeout 30000",
+			"  sf org open --url-only | borz open --stdin",
 		},
+		Notes: "The echoed URL redacts credential-like query values (sid, code, token, session, ...);\n" +
+			"the browser still receives the full URL. When the reused tab's page is hidden, a note\n" +
+			"on stderr suggests 'borz tab front'.",
 	},
 	"navigate": {
 		Summary: "Navigate the current or selected tab without creating another tab.",
-		Usage:   "borz navigate <url> [--tab <id>] [--wait-for <selector>] [--timeout <ms>]",
+		Usage:   "borz navigate (<url> | --stdin) [--tab <id>] [--wait-for <selector>] [--timeout <ms>]",
 		Examples: []string{
 			"  borz navigate https://example.com/next",
 			"  borz --tab ab1c navigate https://example.com/next",
 		},
-		Notes: "Unlike 'open', navigate always targets the daemon's current tab or the tab selected by --tab. Use 'open --new' to create a fresh tab.",
+		Notes: "Unlike 'open', navigate always targets the daemon's current tab or the tab selected by --tab. Use 'open --new' to create a fresh tab. --stdin reads the URL from stdin; the echoed URL redacts credential-like query values.",
 	},
 	"back":    {Summary: "Go back in the current tab's history.", Usage: "borz back [--tab <id>]" + waitForUsageSuffix},
 	"forward": {Summary: "Go forward in the current tab's history.", Usage: "borz forward [--tab <id>]" + waitForUsageSuffix},
@@ -109,16 +114,16 @@ var commandHelp = map[string]cmdHelp{
 		Notes:    refNote,
 	},
 	"fill": {
-		Summary: "Clear an input/textarea and fill it with <text>.",
+		Summary: "Clear an input, textarea, or contenteditable and fill it with <text>.",
 		Usage:   "borz fill <ref> (<text> | --file <path>) [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{
 			"  borz fill 3 'hello world'",
 			"  borz fill 3 multi word text (remaining args are joined)",
 		},
-		Notes: refNote + "\nUse 'type' to append without clearing. Input is never echoed. --file reads exact contents, including newlines; an empty file clears the field. Monaco hidden textboxes are rejected: focus the editor, press Meta+A (macOS) or Control+A, then type.",
+		Notes: refNote + "\nUse 'type' to append without clearing. Input is never echoed. --file reads exact contents, including newlines; an empty file clears the field. Monaco hidden textboxes are rejected: focus the editor, press Meta+A (macOS) or Control+A, then type. On contenteditable rich editors (CKEditor, Lexical, ProseMirror) fill selects the existing content and replaces it through the browser's input pipeline, then verifies the rendered text; an editor that rejects the change is reported as an error instead of 'Filled'.",
 	},
 	"type": {
-		Summary:  "Append <text> to an input/textarea without clearing it first.",
+		Summary:  "Append <text> to an input, textarea, or contenteditable without clearing it first.",
 		Usage:    "borz type <ref> (<text> | --file <path>) [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz type 3 ' and more'"},
 		Notes:    refNote + "\nUse 'fill' to clear the field before writing. Input is never echoed; --file avoids passing it in process arguments.",
@@ -572,6 +577,11 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Notes: "Requires the Chrome extension. The plural alias 'windows' is also accepted.",
 	},
+	"profiles": {
+		Summary: "Alias for 'profile' (bare 'borz profiles' lists profiles).",
+		Usage:   "borz profiles [list|show|add|set|rm|purge] [<name>] [flags]",
+		Notes:   "Use 'borz help profile' for the full command reference.",
+	},
 	"windows": {
 		Summary: "Alias for 'window'.",
 		Usage:   "borz windows [list|new|focus|close]",
@@ -783,23 +793,27 @@ var commandHelp = map[string]cmdHelp{
 	// --- Utility / infra ---
 	"fetch": {
 		Summary: "Issue an authenticated HTTP request from inside the page (inherits cookies).",
-		Usage:   "borz fetch <url> [--method <M>] [--header 'Name: value'] [--body <data>] [--raw] [--output <path>] [--tab <id>]",
+		Usage:   "borz fetch <url> [--method <M>] [--header 'Name: value'] [--body <data>] [--raw] [--include-headers] [--output <path>] [--tab <id>]",
 		Flags: []string{
 			"  --method <M>          HTTP method (default: GET)",
 			"  --header <N: V>       Request header; repeat for multiple headers",
 			"  --body <data>         Raw request body (including an empty body via --body=)",
 			"  --raw                 Keep JSON responses as text instead of parsing them",
-			"  --output <path>       Write the response body to a local file (mode 0600)",
+			"  --include-headers     Add response headers to the result (only headers the page may read under CORS)",
+			"  --output <path>       Write the response body to a local file (mode 0600); binary bodies are written byte-for-byte",
 		},
 		Examples: []string{
 			"  borz fetch https://api.github.com/user",
 			"  borz fetch https://example.com/data.json --raw --output ./data.json",
+			"  borz fetch https://example.com/report.docx --output ./report.docx",
+			"  borz fetch https://example.com/api/x --include-headers --jq .result.headers",
 			"  borz fetch https://example.com/api/x --method POST --header 'Content-Type: application/json' --body '{\"ok\":true}'",
 		},
 		Notes: "Runs as fetch(url, {credentials:'include'}) in the tab, so session cookies, " +
 			"auth headers, and CORS policy all apply. Body is returned as parsed JSON when the " +
 			"response content-type is application/json, else as raw text. Invalid JSON is " +
-			"returned as raw text with parseError instead of discarding the body. --output is " +
+			"returned as raw text with parseError instead of discarding the body. With --output, " +
+			"non-JSON (or --raw) bodies are transferred as exact bytes, so DOCX/ZIP/PDF files stay intact. --output is " +
 			"always written on the CLI host, including when the selected profile is remote.",
 	},
 	"status": {
@@ -1283,7 +1297,7 @@ var commandHelp = map[string]cmdHelp{
 
 	// --- Subcommand pages: tab.* ---
 	"tab.list": {
-		Summary:  "List every open tab with title, URL, 1-based index, and short id.",
+		Summary:  "List every open tab with title, URL, 0-based index, and short id.",
 		Usage:    "borz tab [list]",
 		Examples: []string{"  borz tab", "  borz tab list"},
 		Notes: "The active tab is marked with '*'. The short id shown in the last column is " +
@@ -1311,7 +1325,7 @@ var commandHelp = map[string]cmdHelp{
 		Summary: "Switch the active tab by index or short id.",
 		Usage:   "borz tab select <n|--id <short-id>>",
 		Flags: []string{
-			"  <n>               1-based index as shown by 'borz tab'",
+			"  <n>               0-based index as shown in brackets by 'borz tab'",
 			"  --id <short-id>   Short tab id (also shown by 'borz tab')",
 		},
 		Examples: []string{
@@ -1319,6 +1333,9 @@ var commandHelp = map[string]cmdHelp{
 			"  borz tab select 2",
 			"  borz tab select --id abc123",
 		},
+		Notes: "Activates the tab inside Chrome only. If its window is minimized, covered, or on\n" +
+			"another Space, the page stays hidden: the response reports visibilityState and a note\n" +
+			"is printed on stderr. Use 'borz tab front' to restore/raise the window.",
 	},
 	"tab.close": {
 		Summary: "Close a tab by index or short id (default: the currently active tab).",
@@ -1330,7 +1347,7 @@ var commandHelp = map[string]cmdHelp{
 		},
 	},
 	"tab.front": {
-		Summary: "Bring a tab to the real OS foreground (default: the currently active tab).",
+		Summary: "Bring a tab to the foreground and verify the page is visible (default: the currently active tab).",
 		Usage:   "borz tab front [n|--id <short-id>]",
 		Examples: []string{
 			"  borz tab front",
@@ -1343,6 +1360,9 @@ var commandHelp = map[string]cmdHelp{
 			"additionally restores the Chrome window if minimized (Browser.setWindowBounds)\n" +
 			"and focuses the page (Page.bringToFront), so the page becomes really visible.\n" +
 			"The response reports the resulting visibilityState so scripts can verify.\n" +
+			"CDP cannot raise a window covered by another app or move it across\n" +
+			"Spaces/desktops; when the page is still hidden afterwards, tab front fails\n" +
+			"with an explanation instead of reporting success.\n" +
 			"If the page must merely BELIEVE it is visible (headless-ish automation),\n" +
 			"see 'borz page visibility'.",
 	},
@@ -1671,6 +1691,9 @@ var commandHelp = map[string]cmdHelp{
 			"  borz network requests --since last_action --with-body",
 			"  borz network requests --tail --filter /api/",
 		},
+		Notes: "Credential-bearing header values (Authorization, Cookie/Set-Cookie, CSRF/XSRF,\n" +
+			"API keys, and names containing token/session/secret) are shown as REDACTED;\n" +
+			"header names are kept. Use 'borz fetch --include-headers' to read a response header.",
 	},
 	"network.clear": {
 		Summary: "Drop all captured network requests for the current tab.",
@@ -1766,6 +1789,15 @@ var commandHelp = map[string]cmdHelp{
 			"  --limit N       Maximum results",
 			"  --state S       Filter by download state",
 		},
+		Examples: []string{
+			"  borz downloads list --limit 5",
+			"  borz downloads list --jq 'map({id, filename, state, finalUrl})'",
+			"  borz downloads list --state complete --jq '.[0].filename'",
+		},
+		Notes: "--json prints a bare array of chrome.downloads DownloadItem objects (no envelope):\n" +
+			"id, url, finalUrl, filename (absolute path on the browser host), state, bytesReceived,\n" +
+			"totalBytes, mime, startTime, endTime, exists, error. --jq runs against that array.\n" +
+			"Remote profiles add filesystem: \"remote\" and profile to each item.",
 	},
 	"downloads.search": {
 		Summary: "Search Chrome downloads.",

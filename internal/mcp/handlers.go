@@ -123,7 +123,7 @@ func handleNavigate(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolRe
 		return e, nil
 	}
 	if resp.Data != nil && resp.Data.Reused {
-		return textResult(resp, fmt.Sprintf("Reused existing tab at %s (not reloaded; refresh it to update the rendered page)", url)), nil
+		return textResult(resp, fmt.Sprintf("Reused existing tab at %s (not reloaded; refresh it to update the rendered page)", url)+hiddenTabNote(resp)), nil
 	}
 	return textResult(resp, fmt.Sprintf("Navigated to %s", url)), nil
 }
@@ -867,7 +867,16 @@ func handleTabSelect(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolR
 	if e := checkError(resp, err); e != nil {
 		return e, nil
 	}
-	return textResult(resp, "Switched tab"), nil
+	return textResult(resp, "Switched tab"+hiddenTabNote(resp)), nil
+}
+
+// hiddenTabNote flags a tab switch that left the page hidden (window
+// minimized, covered, or on another Space).
+func hiddenTabNote(resp *protocol.Response) string {
+	if resp == nil || resp.Data == nil || resp.Data.VisibilityState != "hidden" {
+		return ""
+	}
+	return ". Note: the page is still hidden; call browser_tab_front to raise its window, or browser_page_visibility to make the page believe it is visible"
 }
 
 func handleTabClose(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {

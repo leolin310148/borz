@@ -1,6 +1,7 @@
 package e2e_verify_site
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -569,4 +570,18 @@ func getBody(t *testing.T, url string) string {
 		t.Fatalf("read %s: %v", url, err)
 	}
 	return string(data)
+}
+
+func TestHandlerServesRichEditorAndBinaryFetch(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/rich-editor", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `id="model-editor"`) || !strings.Contains(rec.Body.String(), "beforeinput") {
+		t.Fatalf("rich editor page: %d %q", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/fetch/binary", nil))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/octet-stream" || !bytes.Equal(rec.Body.Bytes(), BinaryFixture()) {
+		t.Fatalf("binary fetch: %d %q len=%d", rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())
+	}
 }

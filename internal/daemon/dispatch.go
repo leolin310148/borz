@@ -1383,12 +1383,12 @@ func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, 
 				return { ok: true };
 			}
 			if (this instanceof HTMLElement && this.isContentEditable) {
-				this.textContent = value;
+				// Rich editors (CKEditor, Lexical, ProseMirror, Draft) render the
+				// DOM from their own model and discard direct textContent writes.
+				// Select everything and let the trusted input pipeline replace it.
 				const selection = window.getSelection();
-				if (selection) { const range = document.createRange(); range.selectNodeContents(this); range.collapse(false); selection.removeAllRanges(); selection.addRange(range); }
-				this.dispatchEvent(new Event('input', { bubbles: true }));
-				this.dispatchEvent(new Event('change', { bubbles: true }));
-				return { ok: true };
+				if (selection) { const range = document.createRange(); range.selectNodeContents(this); selection.removeAllRanges(); selection.addRange(range); }
+				return { ok: true, editable: true };
 			}
 			return { ok: false, error: 'element is not an input, textarea, or contenteditable' };
 		}`,
@@ -1401,8 +1401,9 @@ func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, 
 		var call struct {
 			Result struct {
 				Value struct {
-					OK    bool   `json:"ok"`
-					Error string `json:"error"`
+					OK       bool   `json:"ok"`
+					Error    string `json:"error"`
+					Editable bool   `json:"editable"`
 				} `json:"value"`
 			} `json:"result"`
 		}
@@ -1411,6 +1412,9 @@ func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, 
 		}
 		if !call.Result.Value.OK {
 			return fmt.Errorf("fill action failed: %s", call.Result.Value.Error)
+		}
+		if call.Result.Value.Editable {
+			return replaceContentEditable(cdp, targetID, backendNodeID, resolved.Object.ObjectID, text)
 		}
 		return nil
 	}
@@ -1456,6 +1460,75 @@ func insertTextIntoNode(cdp *CdpConnection, targetID string, backendNodeID int, 
 		return err
 	}
 	return nil
+}
+
+// contentEditableVerifyAttempts bounds how long fill waits for a rich editor
+// to re-render its model before judging the replacement.
+const contentEditableVerifyAttempts = 10
+
+// replaceContentEditable replaces the already-selected contents of a
+// contenteditable element through Chrome's trusted input pipeline, then
+// verifies the rendered text so a rich editor that rejected the change is
+// reported instead of silently "filled".
+func replaceContentEditable(cdp *CdpConnection, targetID string, backendNodeID int, objectID, text string) error {
+	if text != "" {
+		if _, err := cdp.SessionCommand(targetID, "DOM.focus", map[string]interface{}{"backendNodeId": backendNodeID}); err != nil {
+			return err
+		}
+		if _, err := cdp.SessionCommand(targetID, "Input.insertText", map[string]interface{}{"text": text}); err != nil {
+			return err
+		}
+	} else {
+		for _, eventType := range []string{"rawKeyDown", "keyUp"} {
+			if _, err := cdp.SessionCommand(targetID, "Input.dispatchKeyEvent", map[string]interface{}{
+				"type": eventType, "key": "Backspace", "code": "Backspace",
+				"windowsVirtualKeyCode": 8, "nativeVirtualKeyCode": 8,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	var got string
+	for attempt := 0; attempt < contentEditableVerifyAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		raw, err := cdp.SessionCommand(targetID, "Runtime.callFunctionOn", map[string]interface{}{
+			"objectId": objectID,
+			"functionDeclaration": `function(value) {
+				const norm = (s) => String(s || '').replace(/\u00a0/g, ' ').replace(/[\u200b\ufeff]/g, '').replace(/\s+/g, ' ').trim();
+				if (!this.isConnected) return { detached: true, text: '' };
+				const text = norm(this.innerText);
+				return { match: text === norm(value), text };
+			}`,
+			"arguments":     []map[string]interface{}{{"value": text}},
+			"returnByValue": true,
+		})
+		if err != nil {
+			return err
+		}
+		var check struct {
+			Result struct {
+				Value struct {
+					Match    bool   `json:"match"`
+					Detached bool   `json:"detached"`
+					Text     string `json:"text"`
+				} `json:"value"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(raw, &check); err != nil {
+			return fmt.Errorf("decode fill verification: %w", err)
+		}
+		if check.Result.Value.Detached {
+			return fmt.Errorf("fill action failed: the contenteditable element was replaced while filling; take a fresh snapshot and retry")
+		}
+		if check.Result.Value.Match {
+			return nil
+		}
+		got = check.Result.Value.Text
+	}
+	return fmt.Errorf("fill action failed: the contenteditable editor did not accept the replacement (it now shows %d characters, not the requested %d); click it, press Meta+A (macOS) or Control+A, then use type", len([]rune(got)), len([]rune(text)))
 }
 
 func setCheckedState(cdp *CdpConnection, targetID string, backendNodeID int, desired bool) error {
@@ -2194,6 +2267,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 				return withWaitFor(req, cdp, existing.ID, okResp(req.ID, &protocol.ResponseData{
 					TabID: existing.ID, URL: existing.URL, Title: existing.Title,
 					Tab: shortID, Seq: seq, Viewport: viewport, Reused: true,
+					VisibilityState: pageVisibilityState(cdp, existing.ID, 3),
 				}))
 			}
 		}
@@ -2961,6 +3035,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		}
 		return okResp(req.ID, &protocol.ResponseData{
 			TabID: selected.ID, URL: selected.URL, Title: selected.Title, Tab: tabShort,
+			VisibilityState: pageVisibilityState(cdp, selected.ID, 3),
 		})
 
 	case protocol.ActionTabFront:
@@ -2970,6 +3045,9 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 		// additionally restores the OS window so the page is really visible.
 		seq := tab.RecordAction()
 		result := bringTabToFront(cdp, target.ID)
+		if err := tabFrontIncomplete(result); err != nil {
+			return failResp(req.ID, err)
+		}
 		return okResp(req.ID, &protocol.ResponseData{
 			Result: result, TabID: target.ID, URL: target.URL, Title: target.Title,
 			Tab: shortID, Seq: intPtr(seq),
@@ -3280,6 +3358,10 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 					item.ResponseBody = body.Body
 					item.ResponseBodyBase64 = body.Base64Encoded
 				}
+			}
+			for i := range qr.Items {
+				qr.Items[i].RequestHeaders = redactSensitiveHeaders(qr.Items[i].RequestHeaders)
+				qr.Items[i].ResponseHeaders = redactSensitiveHeaders(qr.Items[i].ResponseHeaders)
 			}
 			return okResp(req.ID, &protocol.ResponseData{
 				NetworkRequests: qr.Items, Tab: shortID, Cursor: intPtr(qr.Cursor),

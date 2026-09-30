@@ -512,3 +512,66 @@ func TestE2ECLIClipboardWriteAndPaste(t *testing.T) {
 		}
 	}
 }
+
+func TestE2ECLIRichEditorFillAndBinaryFetch(t *testing.T) {
+	skipUnlessE2E(t)
+
+	home := t.TempDir()
+	t.Setenv("BORZ_HOME", home)
+	client.ResetForTests()
+	t.Cleanup(client.ResetForTests)
+
+	site, err := e2everify.Start("")
+	if err != nil {
+		t.Fatalf("start e2e verify site: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = site.Close(ctx)
+	})
+
+	env := startE2EDaemon(t, home)
+	openResp := runE2EJSON(t, env, "open", site.URL()+"/rich-editor", "--new", "--wait-for", "#rich-editor-ready", "--timeout", "10000", "--json")
+	tab := openResp.Data.Tab
+	t.Cleanup(func() {
+		runE2ECLI(t, env, "close", "--tab", tab, "--json")
+	})
+
+	snapshot := runE2EJSON(t, env, "snapshot", "-i", "--json")
+	if snapshot.Data.SnapshotData == nil {
+		t.Fatalf("rich editor snapshot returned no snapshot data: %+v", snapshot.Data)
+	}
+	plainRef := refByName(t, snapshot.Data.SnapshotData, "Plain editable")
+	modelRef := refByName(t, snapshot.Data.SnapshotData, "Model editor")
+
+	runE2EJSON(t, env, "fill", plainRef, "plain new", "--json")
+	requireEvalString(t, env, `document.querySelector("#plain-editable").textContent`, "plain new")
+
+	runE2EJSON(t, env, "fill", modelRef, "model new", "--json")
+	requireEvalString(t, env, `document.querySelector("#model-state").textContent`, "model new")
+	requireEvalString(t, env, `document.querySelector("#model-editor").textContent`, "model new")
+
+	emptyPath := filepath.Join(t.TempDir(), "empty.txt")
+	if err := os.WriteFile(emptyPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runE2EJSON(t, env, "fill", modelRef, "--file", emptyPath, "--json")
+	requireEvalString(t, env, `document.querySelector("#model-state").textContent`, "")
+
+	outPath := filepath.Join(t.TempDir(), "binary.bin")
+	runE2ECLI(t, env, "fetch", site.URL()+"/api/fetch/binary", "--output", outPath)
+	got, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read fetch output: %v", err)
+	}
+	if want := e2everify.BinaryFixture(); string(got) != string(want) {
+		t.Fatalf("binary fetch output corrupted: got %d bytes, want %d", len(got), len(want))
+	}
+	headersResp := runE2EJSON(t, env, "fetch", site.URL()+"/api/fetch/binary", "--include-headers", "--output", filepath.Join(t.TempDir(), "b.bin"), "--json")
+	result, _ := headersResp.Data.Result.(map[string]interface{})
+	headers, _ := result["headers"].(map[string]interface{})
+	if headers["x-e2e-binary"] != "yes" {
+		t.Fatalf("fetch --include-headers result: %+v", result)
+	}
+}

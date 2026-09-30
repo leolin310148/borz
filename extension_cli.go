@@ -42,7 +42,7 @@ func handleExtension(cmdArgs []string, jsonOutput bool, rawArgSets ...[]string) 
 		}
 		raw, err := client.GetJSON("/v1/ext/capabilities", 10*time.Second)
 		if err != nil {
-			fatal(err.Error())
+			fatalExtension(err)
 		}
 		if jsonOutput {
 			printJSON(raw)
@@ -86,7 +86,7 @@ func handleExtension(cmdArgs []string, jsonOutput bool, rawArgSets ...[]string) 
 func runExtensionCall(method string, params map[string]any, jsonOutput bool) {
 	raw, err := client.PostJSON("/v1/ext/call", map[string]any{"method": method, "params": params}, 15*time.Second)
 	if err != nil {
-		fatal(err.Error())
+		fatalExtension(err)
 	}
 	if jsonOutput {
 		printJSON(raw)

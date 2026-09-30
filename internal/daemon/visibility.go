@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Page-visibility override.
@@ -149,10 +150,7 @@ func bringTabToFront(cdp *CdpConnection, targetID string) map[string]interface{}
 	cdp.SessionCommand(targetID, "Page.bringToFront", nil)
 	cdp.SetCurrentTargetID(targetID)
 
-	visibility := ""
-	if raw, err := cdp.Evaluate(targetID, "document.visibilityState", true); err == nil {
-		json.Unmarshal(raw, &visibility)
-	}
+	visibility := pageVisibilityState(cdp, targetID, visibilitySettleAttempts)
 
 	result := map[string]interface{}{
 		"activated":       true,
@@ -165,4 +163,48 @@ func bringTabToFront(cdp *CdpConnection, targetID string) map[string]interface{}
 		result["restoredFromMinimized"] = true
 	}
 	return result
+}
+
+// visibilitySettleAttempts bounds how long tab front waits (100 ms per
+// attempt) for Chrome to report the page visible after activation.
+const visibilitySettleAttempts = 10
+
+// pageVisibilityState reads document.visibilityState, polling up to attempts
+// times (100 ms apart) while it is still "hidden" so a just-activated tab has
+// a moment to settle. Returns "" when the page cannot be evaluated.
+func pageVisibilityState(cdp *CdpConnection, targetID string, attempts int) string {
+	visibility := ""
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(100 * time.Millisecond)
+		}
+		raw, err := cdp.Evaluate(targetID, "document.visibilityState", true)
+		if err != nil {
+			return visibility
+		}
+		visibility = ""
+		json.Unmarshal(raw, &visibility)
+		if visibility != "hidden" {
+			return visibility
+		}
+	}
+	return visibility
+}
+
+// tabFrontIncomplete turns a tab front that left the page hidden into an
+// explicit error. CDP can activate the tab and restore a minimized window, but
+// it cannot raise a Chrome window above other applications or move it across
+// Spaces, and reporting success there misled callers that need a visible page.
+func tabFrontIncomplete(result map[string]interface{}) error {
+	if visibility, _ := result["visibilityState"].(string); visibility != "hidden" {
+		return nil
+	}
+	windowState, _ := result["windowState"].(string)
+	if windowState == "" {
+		windowState = "unknown"
+	}
+	return fmt.Errorf("tab front: the tab is active in Chrome but the page is still hidden (window state: %s). "+
+		"The Chrome window is likely covered by another app, on another Space/desktop, or on a locked/asleep display; "+
+		"CDP cannot raise it above other applications. Bring that Chrome window to the front on the host, then retry. "+
+		"If the page only needs to believe it is visible, use 'borz page visibility visible'", windowState)
 }

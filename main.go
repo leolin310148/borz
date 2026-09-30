@@ -69,10 +69,10 @@ var cliValueFlagSet = makeFlagSet(cliValueFlags)
 var cliBoolFlags = []string{
 	"-i", "-c",
 	"--all", "--all-profiles", "--baked", "--check", "--clear", "--close-owned-browser", "--compact", "--copy", "--diff", "--ensure-browser", "--focused",
-	"--force", "--help", "--interactive", "--json", "--lossless", "--managed",
+	"--force", "--help", "--include-headers", "--interactive", "--json", "--lossless", "--managed",
 	"--mask-by-default", "--mobile", "--new", "--no-auto-await", "--no-check",
 	"--no-touch", "--paste", "--raw", "--recover", "--recursive", "--remote", "--reset", "--save-as",
-	"--smooth", "--tail", "--text", "--text-only", "--touch", "--unwrap",
+	"--smooth", "--stdin", "--tail", "--text", "--text-only", "--touch", "--unwrap",
 	"--version", "--with-body", "--hide-refs", "--show-refs",
 }
 
@@ -206,10 +206,10 @@ func main() {
 
 	// --- Navigation ---
 	case "open":
-		if len(cmdArgs) == 0 {
-			fatal("Usage: borz open <url> [--tab <tabId>] [--new] [--wait-for <selector>] [--timeout <ms>]")
+		url := navigationURLArg("open", cmdArgs, args)
+		if url == "" {
+			fatal("Usage: borz open (<url> | --stdin) [--tab <tabId>] [--new] [--wait-for <selector>] [--timeout <ms>]")
 		}
-		url := cmdArgs[0]
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionOpen, URL: url}
 		if globalTabID != "" {
 			req.TabID = globalTabID
@@ -219,10 +219,11 @@ func main() {
 		}
 		applyCLIViewport(req, args)
 		applyCLIWaitFor(req, args)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		sendPrepareAndPrint(req, jsonOutput, redactResponseURL, func(resp *protocol.Response) {
 			if resp.Data != nil {
 				if resp.Data.Reused {
 					fmt.Printf("Reused existing tab (not reloaded): %s (tab: %s; run 'borz refresh' to reload)\n", resp.Data.URL, resp.Data.Tab)
+					warnHiddenTab(resp)
 					return
 				}
 				fmt.Printf("Opened: %s (tab: %s)\n", resp.Data.URL, resp.Data.Tab)
@@ -230,8 +231,9 @@ func main() {
 		})
 
 	case "navigate":
-		if len(cmdArgs) == 0 {
-			fatal("Usage: borz navigate <url> [--tab <tabId>] [--wait-for <selector>] [--timeout <ms>]")
+		navURL := navigationURLArg("navigate", cmdArgs, args)
+		if navURL == "" {
+			fatal("Usage: borz navigate (<url> | --stdin) [--tab <tabId>] [--wait-for <selector>] [--timeout <ms>]")
 		}
 		if hasFlag(args, "--new") {
 			fatal("navigate targets the current/selected tab and does not accept --new; use 'borz open <url> --new' instead")
@@ -240,10 +242,10 @@ func main() {
 		if tabID == "" {
 			tabID = currentTabRef()
 		}
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionOpen, URL: cmdArgs[0], TabID: tabID}
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionOpen, URL: navURL, TabID: tabID}
 		applyCLIViewport(req, args)
 		applyCLIWaitFor(req, args)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		sendPrepareAndPrint(req, jsonOutput, redactResponseURL, func(resp *protocol.Response) {
 			if resp.Data != nil {
 				fmt.Printf("Navigated: %s (tab: %s)\n", resp.Data.URL, resp.Data.Tab)
 			}
@@ -743,7 +745,7 @@ func main() {
 		handleClient(cmdArgs, args, jsonOutput)
 
 	// --- Profiles (declarative browser targets) ---
-	case "profile":
+	case "profile", "profiles":
 		handleProfile(cmdArgs, args, jsonOutput)
 
 	// --- Status ---
@@ -867,7 +869,7 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 		}
 		req := &protocol.Request{ID: newID(), Action: protocol.ActionTabNew, URL: url}
 		applyCLIViewport(req, rawArgs)
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		sendPrepareAndPrint(req, jsonOutput, redactResponseURL, func(resp *protocol.Response) {
 			if resp.Data != nil {
 				fmt.Printf("Created tab: %s (tab: %s)\n", resp.Data.URL, resp.Data.Tab)
 			}
@@ -884,9 +886,10 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 		// Let the daemon resolve short IDs first, then fall back to numeric
 		// indexes. Short tab IDs are hex suffixes and can be all digits.
 		req.TabID = tabID
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		sendPrepareAndPrint(req, jsonOutput, redactResponseURL, func(resp *protocol.Response) {
 			if resp.Data != nil {
 				fmt.Printf("Selected: %s - %s\n", resp.Data.URL, resp.Data.Title)
+				warnHiddenTab(resp)
 			}
 		})
 	case "close":
@@ -943,7 +946,7 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 		if tabID != "" {
 			req.TabID = tabID
 		}
-		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		sendPrepareAndPrint(req, jsonOutput, redactResponseURL, func(resp *protocol.Response) {
 			if resp.Data == nil {
 				return
 			}
@@ -962,9 +965,10 @@ func handleTab(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []
 		if idx, err := strconv.Atoi(sub); err == nil {
 			i := idx
 			req := &protocol.Request{ID: newID(), Action: protocol.ActionTabSelect, Index: &i}
-			sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+			sendPrepareAndPrint(req, jsonOutput, redactResponseURL, func(resp *protocol.Response) {
 				if resp.Data != nil {
 					fmt.Printf("Selected: %s - %s\n", resp.Data.URL, resp.Data.Title)
+					warnHiddenTab(resp)
 				}
 			})
 		} else {
@@ -1246,6 +1250,7 @@ func handleErrors(jsonOutput bool, globalTabID, globalSince string, rawArgs []st
 func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs []string) {
 	url := cmdArgs[0]
 	rawBody := hasFlag(rawArgs, "--raw")
+	includeHeaders := hasFlag(rawArgs, "--include-headers")
 	outputPath, outputSet := getArgValueOK(rawArgs, "--output")
 	if outputSet && strings.TrimSpace(outputPath) == "" {
 		fatal("--output requires a local file path")
@@ -1272,6 +1277,12 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 	headersJSON, _ := json.Marshal(headers)
 	bodyJSON, _ := json.Marshal(body)
 	rawBodyJSON, _ := json.Marshal(rawBody)
+	// --output keeps the exact response bytes (base64 over the wire) unless the
+	// body is parsed JSON, which is pretty-printed as before. Decoding binary
+	// bodies through resp.text() replaced invalid UTF-8 with U+FFFD and
+	// corrupted DOCX/ZIP downloads.
+	bytesJSON, _ := json.Marshal(outputSet)
+	headersOutJSON, _ := json.Marshal(includeHeaders)
 	bodyOption := ""
 	if bodySet {
 		bodyOption = ", body: " + string(bodyJSON)
@@ -1284,6 +1295,21 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 			const resp = await fetch(%s, { method: %s, credentials: 'include', headers: %s%s });
 			const contentType = resp.headers.get('content-type') || '';
 			const isJson = /\bapplication\/(?:[\w.-]+\+)?json\b/i.test(contentType);
+			const responseHeaders = %s ? Object.fromEntries(resp.headers.entries()) : undefined;
+			if (%s && (%s || !isJson)) {
+				const bytes = new Uint8Array(await resp.arrayBuffer());
+				let binary = '';
+				for (let i = 0; i < bytes.length; i += 0x8000) {
+					binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+				}
+				return {
+					status: resp.status,
+					statusText: resp.statusText,
+					contentType: contentType,
+					...(responseHeaders ? { headers: responseHeaders } : {}),
+					bodyBase64: btoa(binary)
+				};
+			}
 			const text = await resp.text();
 			let body = text;
 			let parseError = '';
@@ -1297,13 +1323,14 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 				status: resp.status,
 				statusText: resp.statusText,
 				contentType: contentType,
+				...(responseHeaders ? { headers: responseHeaders } : {}),
 				body: body,
 				...(parseError ? { parseError: parseError } : {})
 			};
 		} catch(e) {
 			return { error: e.message, hint: 'Page fetch uses credentials: include but remains subject to CORS, cookie scope and redirects. A previously loaded resource may have used different headers or a different frame session.' };
 		}
-	})()`, urlJSON, methodJSON, headersJSON, bodyOption, rawBodyJSON, rawBodyJSON)
+	})()`, urlJSON, methodJSON, headersJSON, bodyOption, headersOutJSON, bytesJSON, rawBodyJSON, rawBodyJSON, rawBodyJSON)
 
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionEval, Script: script}
 	setTab(req, globalTabID)
@@ -1333,6 +1360,14 @@ func saveFetchBody(path string, resp *protocol.Response) error {
 	if !ok {
 		return fmt.Errorf("fetch response result has unexpected type %T", resp.Data.Result)
 	}
+	if encoded, isBase64 := result["bodyBase64"].(string); isBase64 {
+		data, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return fmt.Errorf("decode fetch response body: %w", err)
+		}
+		delete(result, "bodyBase64")
+		return writeFetchOutput(path, data, result)
+	}
 	body, ok := result["body"]
 	if !ok {
 		if message, _ := result["error"].(string); message != "" {
@@ -1351,6 +1386,11 @@ func saveFetchBody(path string, resp *protocol.Response) error {
 		}
 		data = append(data, '\n')
 	}
+	delete(result, "body")
+	return writeFetchOutput(path, data, result)
+}
+
+func writeFetchOutput(path string, data []byte, result map[string]interface{}) error {
 	if dir := filepath.Dir(path); dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create fetch output directory: %w", err)
@@ -1362,7 +1402,6 @@ func saveFetchBody(path string, resp *protocol.Response) error {
 	if err := os.Chmod(path, 0o600); err != nil {
 		return fmt.Errorf("secure fetch output permissions: %w", err)
 	}
-	delete(result, "body")
 	result["output"] = path
 	result["bytes"] = len(data)
 	return nil

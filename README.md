@@ -569,7 +569,7 @@ Point any OpenAPI-aware tool (Postman, Insomnia, n8n's HTTP Request node, `opena
 | POST | `/v1/tabs` | `{url?, preset?, viewport?}` — open new tab |
 | POST | `/v1/tabs/select` | `{tabId?, index?}` |
 | POST | `/v1/tabs/close` | `{tabId?, index?}` |
-| POST | `/v1/tabs/front` | `{tab?}` — bring the tab to the real OS foreground: restore the window if minimized, activate the tab, focus the page. Unlike `/v1/tabs/select` this makes `document.visibilityState` become `visible`, so background throttling stops |
+| POST | `/v1/tabs/front` | `{tab?}` — bring the tab to the foreground: restore the window if minimized, activate the tab, focus the page. Unlike `/v1/tabs/select` this can make `document.visibilityState` become `visible`; fails when the page stays `hidden` (window covered by another app or on another Space) |
 | POST | `/v1/open` | `{url, new?, tab?, waitFor?, timeoutMs?, preset?, viewport?}` — reuses a tab with the exact same URL when one exists; `new: true` forces a fresh tab |
 | POST | `/v1/back` \| `/forward` \| `/refresh` | `{tab?, waitFor?, timeoutMs?}` |
 | POST | `/v1/close` | `{tab?}` |
@@ -715,10 +715,16 @@ borz open https://app.example.com --wait-for ".dashboard-loaded"
 
 # Open directly in a mobile viewport for responsive layout checks
 borz open http://localhost:3000 --viewport mobile
+
+# Read a long or one-time login URL from stdin (keeps it out of argv/shell history)
+sf org open --url-only | borz open --stdin
 ```
 
 When a tab is reused, text output explicitly says `Reused existing tab (not
-reloaded)` and suggests `borz refresh`; JSON responses set `data.reused: true`.
+reloaded)` and suggests `borz refresh`; JSON responses set `data.reused: true`
+and report the page's `visibilityState`. The URL echoed by `open`, `navigate`,
+and `tab` commands redacts credential-like query values (`sid`, `code`, `token`,
+`session`, `signature`, ...); the browser still receives the full URL.
 
 `--wait-for <selector>` and `--timeout <ms>` work on **every action that changes the page** — `open`, `click`, `hover`, `fill`, `type`, `check`, `uncheck`, `select`, `press`, `scroll`, `eval`, `back`, `forward`, `refresh`. The daemon runs the action, then polls `document.querySelector(...)` on a 100 ms tick until the node appears or the timeout elapses. Prefer this over `wait <ms>` for any DOM change.
 
@@ -881,6 +887,10 @@ borz network requests --tail --filter /api/ --method POST
 # Clear captured requests
 borz network clear
 ```
+
+Header values that carry credentials — `Authorization`, `Cookie`/`Set-Cookie`,
+CSRF/XSRF tokens, API keys, and any header whose name contains `token`,
+`session`, or `secret` — are returned as `REDACTED`; header names are kept.
 
 #### `console` - Read console messages
 
@@ -1206,7 +1216,8 @@ A Chrome window that is minimized or fully occluded reports
 `document.visibilityState === "hidden"`, and many web apps gate real work on
 that — image uploads never start, polling stops, media pauses. `borz tab select`
 does not help: it activates the tab *inside* Chrome, but the OS window is still
-hidden.
+hidden. `tab select`, `tab <n>`, and `open` reusing a tab report the resulting
+`visibilityState` and print a note on stderr when the page is still hidden.
 
 ```bash
 # Really unhide: restore the window if minimized, activate the tab, focus the page
@@ -1215,6 +1226,12 @@ borz tab front
 # The response reports what the page ended up believing
 borz tab front --json | jq .data.result.visibilityState   # "visible"
 ```
+
+`tab front` restores a minimized window, but CDP cannot raise a Chrome window
+above other applications or move it across Spaces/desktops. When the page is
+still `hidden` afterwards (window covered, on another Space, display asleep),
+`tab front` fails with an explanation instead of reporting success; bring the
+window forward on the host or use the override below.
 
 When the window must stay where it is — unattended automation on a machine
 someone else is using — make the page *believe* it is visible instead:
@@ -1321,12 +1338,20 @@ borz fetch https://api.example.com/data --method POST
 
 # Preserve even malformed JSON as raw text and write it on the CLI host
 borz fetch https://api.example.com/data.json --raw --output ./data.json
+
+# Binary downloads (DOCX, ZIP, PDF, images) are written byte-for-byte
+borz fetch https://files.example.com/report.docx --output ./report.docx
+
+# Inspect response headers (only those CORS lets the page read)
+borz fetch https://api.example.com/run --include-headers --jq .result.headers
 ```
 
 This is useful for accessing authenticated APIs without extracting cookies manually.
 JSON parse failures preserve the original body and report `parseError` instead
 of replacing it with a generic parser failure. `--output` writes mode `0600`
-on the CLI host, including when the selected browser profile is remote.
+on the CLI host, including when the selected browser profile is remote. With
+`--output`, non-JSON bodies (and every body under `--raw`) travel as exact bytes,
+so binary files are never re-encoded as text.
 
 ### Trace (Record User Actions)
 
@@ -1749,6 +1774,10 @@ MIT
   redact password values. `snapshot --text-only` omits Monaco internals with a
   marker. Monaco's hidden textarea is not its document model: `fill` rejects it
   with instructions to focus, select all, then `type`.
+- `fill` on a contenteditable rich editor (CKEditor, Lexical, ProseMirror)
+  selects the current content and replaces it through the browser's trusted
+  input pipeline, then verifies the rendered text. An editor that rejects the
+  change fails with a hint instead of reporting `Filled`.
 - `check` does not fabricate `aria-checked` on an inert custom checkbox. Native
   inputs and explicit component `checked`/`fireChange` APIs remain supported.
 - `screenshot --output out.png` is equivalent to `screenshot out.png`.

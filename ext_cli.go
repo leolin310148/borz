@@ -80,7 +80,7 @@ func handleCookies(cmdArgs []string, jsonOutput bool) {
 		}
 		raw, err := client.GetJSON(path, 15*time.Second)
 		if err != nil {
-			fatal(err.Error())
+			fatalExtension(err)
 		}
 		if jsonOutput {
 			printJSON(raw)
@@ -140,7 +140,7 @@ func handleTabEvents(rawArgs []string, jsonOutput bool) {
 	if !tail {
 		evs, _, err := fetchTabEvents(since)
 		if err != nil {
-			fatal(err.Error())
+			fatalExtension(err)
 		}
 		emitTabEvents(evs, jsonOutput)
 		return
@@ -153,7 +153,7 @@ func handleTabEvents(rawArgs []string, jsonOutput bool) {
 		// continuing to stream.
 		_, latest, err := fetchTabEvents(^uint64(0))
 		if err != nil {
-			fatal(err.Error())
+			fatalExtension(err)
 		}
 		cursor = latest
 	}
@@ -484,7 +484,7 @@ func handleWindows(cmdArgs []string, jsonOutput bool, rawArgs []string) {
 func extGetJSON(path string) json.RawMessage {
 	raw, err := client.GetJSON(path, 15*time.Second)
 	if err != nil {
-		fatal(err.Error())
+		fatalExtension(err)
 	}
 	return raw
 }
@@ -492,7 +492,7 @@ func extGetJSON(path string) json.RawMessage {
 func extPostJSON(path string, body any) json.RawMessage {
 	raw, err := client.PostJSON(path, body, 15*time.Second)
 	if err != nil {
-		fatal(err.Error())
+		fatalExtension(err)
 	}
 	return raw
 }
@@ -531,4 +531,30 @@ func mustAtoi(v, name string) int {
 		fatal(name + " must be a number")
 	}
 	return n
+}
+
+// fatalExtension exits with err, adding recovery steps when the daemon reports
+// that the selected profile has no borz extension connected. The raw
+// "HTTP 503 no extension connected" did not say which profile was missing it
+// or that CDP-only commands still work.
+func fatalExtension(err error) {
+	fatal(extensionErrorMessage(err.Error(), config.Profile()))
+}
+
+func extensionErrorMessage(msg, profileName string) string {
+	if !strings.Contains(msg, "no extension connected") {
+		return msg
+	}
+	name := profileName
+	if name == "" {
+		name = "default"
+	}
+	prefix := "borz --profile " + name
+	return msg + "\n" +
+		"This command needs the borz Chrome extension, and profile \"" + name + "\" has no extension connected.\n" +
+		"CDP commands (tab, open, snapshot, click, fill, tab front, ...) keep working without it.\n" +
+		"  Check:   borz extension status --all-profiles\n" +
+		"  Install: borz extension download, load ~/.borz/extension unpacked in that profile's Chrome,\n" +
+		"           then pair it: " + prefix + " daemon token --copy (paste into the popup, Profile = " + name + ")\n" +
+		"  To bring a tab forward without the extension: " + prefix + " tab front"
 }

@@ -30,6 +30,7 @@ Every response carries a short `tab` id (e.g. `ab1c`); pass it as `--tab <id>` (
 ```bash
 borz open <url>                              # reuses tab with same URL; --new forces fresh
 borz navigate <url>                          # navigate current/--tab-selected tab; never creates a tab
+borz open --stdin < url.txt                  # URL from stdin (long/one-time login links); echoed URLs redact sid/code/token
 borz open <url> --wait-for '<selector>' [--timeout <ms>]  # block until selector found (10s default)
 borz <any-cmd> --pre-delay <ms>              # sleep N ms before the action (replaces 'sleep N && borz ...')
 borz <any-cmd> --post-delay <ms>             # sleep N ms after a successful action (use --wait-for when a selector exists)
@@ -68,11 +69,12 @@ borz screenshot out.png --annotate '@12=Click here to save'  # frame current ref
 borz get <url|title|text|href|value|class> [ref]
 borz network [requests|clear] [--filter] [--method] [--status code|class] [--with-body] [--limit n]
 borz network requests --tail [--interval duration|ms]   # live stream of new requests (Ctrl+C to stop)
+# network output redacts Authorization/Cookie/CSRF/token/session header values (names kept)
 borz console [--clear] [--filter] [--tail]  # --tail streams new messages
 borz errors [--clear] [--filter] [--tail]   # --tail streams new JS errors
-borz fetch <url> [--method POST] [--header 'Name: value'] [--body data] [--raw] [--output path]  # authenticated HTTP via page; output is local
+borz fetch <url> [--method POST] [--header 'Name: value'] [--body data] [--raw] [--include-headers] [--output path]  # authenticated HTTP via page; output is local and byte-exact
 borz tab | borz tabs                         # list; "tab new", "tab 2", "tab close 1"
-borz tab front                               # bring the tab to the real OS foreground (unminimize + focus)
+borz tab front                               # unminimize + activate + focus; fails if the page stays hidden
 borz tab pin | borz tab unpin                # pin/unpin a tab so Chrome keeps it (extension)
 borz page visibility visible|hidden|reset    # override document.visibilityState without moving a window
 borz frame <selector> | main                 # iframe switching
@@ -300,7 +302,7 @@ Auth: `Authorization: Bearer <token>`. Response shape: `{id, success, data?, err
 - **`eval --unwrap`** prints `resp.data.result` raw — strings without surrounding quotes, everything else JSON-pretty. `--jq` and `--json` still take precedence when set.
 - **Non-loopback bind requires a token.** The server refuses to start otherwise.
 - **Site adapters have an explicit scope.** CLI and MCP default to `client`: they read the adapter and SHA256 trust beside the CLI/MCP process, build its JavaScript locally, and can send it through a managed, cdp, or remote profile. `--scope server` / MCP `scope:"server"` uses `/v1/sites/*`, so catalog, trust, and usage come from the selected daemon's `~/.borz/sites` or `~/.borz/bb-sites`. Direct `/v1/sites/*` calls are always server-scoped. `site update/new/lint/trust` are client-only; manage server adapters on the daemon host. When no tab is specified, adapters reuse or open their domain first; explicit tabs still enforce the domain guard unless `force` is set.
-- **Backgrounded tabs report `visibilityState: "hidden"` and pages throttle on it.** Many apps (Teams, Slack, most upload flows) refuse to start work while hidden — the request is simply never made. `borz tab front` / `/v1/tabs/front` really unhides the window (restores it if minimized, then activates + focuses), and needs no Chrome extension. When the window must stay where it is (unattended automation on a headless-ish host), `borz page visibility visible` / `/v1/page/visibility` makes the page *believe* it is visible: `document.visibilityState` / `document.hidden` are overridden, a synthetic `visibilitychange` fires, focus is emulated, and the web lifecycle state is set to active. That override persists across navigations in the tab until `reset`, but it cannot un-throttle requestAnimationFrame or compositor rendering — for real rendering use `tab front`.
+- **Backgrounded tabs report `visibilityState: "hidden"` and pages throttle on it.** Many apps (Teams, Slack, most upload flows) refuse to start work while hidden — the request is simply never made. `borz tab front` / `/v1/tabs/front` restores a minimized window, then activates + focuses, and needs no Chrome extension; it cannot raise a window covered by another app or on another Space, and fails with an explanation when the page stays hidden. `tab select` / `open` (reused tab) report `visibilityState` and warn when hidden. When the window must stay where it is (unattended automation on a headless-ish host), `borz page visibility visible` / `/v1/page/visibility` makes the page *believe* it is visible: `document.visibilityState` / `document.hidden` are overridden, a synthetic `visibilitychange` fires, focus is emulated, and the web lifecycle state is set to active. That override persists across navigations in the tab until `reset`, but it cannot un-throttle requestAnimationFrame or compositor rendering — for real rendering use `tab front`.
 - **`filechooser` is for file inputs that don't exist in the DOM yet.** `upload <ref>` needs a stable `<input type=file>`. When a site builds the input on click or opens the OS dialog directly, arm `borz filechooser accept <file>` *before* the click: the native dialog is intercepted and fulfilled. Arming is one-shot, like `dialog`.
 - **WebAuthn virtual authenticators are tab-session scoped.** For real browser Passkey E2E, run `webauthn enable --tab T`, then `webauthn add --tab T --json`; the safe add defaults are CTAP2/internal with resident keys, UV capability, `isUserVerified=true`, and automatic presence. Keep `data.result.authenticatorId` for `credentials`, `set-user-verified`, `set-automatic-presence`, and `remove`; finish with `disable`. This is a typed WebAuthn surface, not arbitrary raw CDP.
 - **Network/console/error buffers are per-tab rings.** Use `--since last_action` for incremental queries.
@@ -339,7 +341,9 @@ empty select streams stay empty. There is no fallback to unfiltered data.
 Snapshots read live form values; password values are redacted. Text-only mode
 omits virtualized Monaco internals with an explicit marker. `fill` rejects
 Monaco helper textboxes: focus the editor, press Meta+A (macOS) or Control+A,
-then type. Inert ARIA-only checkboxes now fail instead of having their
+then type. On contenteditable rich editors (CKEditor, Lexical, ProseMirror)
+`fill` replaces the selected content via trusted input and verifies the
+rendered text, failing instead of reporting a false `Filled`. Inert ARIA-only checkboxes now fail instead of having their
 aria-checked attribute fabricated. Component checked/fireChange APIs remain
 supported. Success still does not prove a server accepted a form submission.
 

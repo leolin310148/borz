@@ -653,3 +653,49 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 	t.Fatal("condition not met within 2s")
 }
+
+// Chrome can activate the tab while its window stays covered by another app;
+// tab front must report that instead of claiming the page is in front.
+func TestDispatch_TabFront_StillHiddenFails(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	f.On("Browser.getWindowForTarget", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{
+			"windowId": 7,
+			"bounds":   map[string]interface{}{"windowState": "normal"},
+		}, nil
+	})
+	f.On("Runtime.evaluate", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{
+			"result": map[string]interface{}{"type": "string", "value": "hidden"},
+		}, nil
+	})
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionTabFront})
+	if resp.Success {
+		t.Fatalf("tab front must fail when the page stays hidden: %+v", resp)
+	}
+	if !strings.Contains(resp.Error, "still hidden") || !strings.Contains(resp.Error, "window state: normal") {
+		t.Fatalf("error should explain the hidden page: %q", resp.Error)
+	}
+	if !contains(activatedTargetIDs(t, f), "T1") {
+		t.Fatal("tab front must still activate the target before failing")
+	}
+}
+
+func TestDispatch_TabSelect_ReportsVisibility(t *testing.T) {
+	f := newFakeCDP(t)
+	setupOnePage(f, "T1", "https://a", "A")
+	f.On("Runtime.evaluate", func(json.RawMessage) (interface{}, error) {
+		return map[string]interface{}{
+			"result": map[string]interface{}{"type": "string", "value": "hidden"},
+		}, nil
+	})
+	c := connectCdp(t, f)
+
+	resp := DispatchRequest(c, &protocol.Request{ID: "x", Action: protocol.ActionTabSelect, TabID: "T1"})
+	if !resp.Success || resp.Data.VisibilityState != "hidden" {
+		t.Fatalf("tab select should succeed and report hidden: %+v %+v", resp, resp.Data)
+	}
+}

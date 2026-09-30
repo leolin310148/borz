@@ -68,6 +68,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/delayed-render", delayedRender)
 	mux.HandleFunc("/async-action", asyncAction)
 	mux.HandleFunc("/file-upload", fileUpload)
+	mux.HandleFunc("/rich-editor", richEditor)
 	mux.HandleFunc("/dialogs", dialogs)
 	mux.HandleFunc("/keyboard", keyboard)
 	mux.HandleFunc("/clipboard", clipboard)
@@ -91,6 +92,7 @@ func Handler() http.Handler {
 	mux.HandleFunc("/api/fetch/post", fetchRequest)
 	mux.HandleFunc("/api/fetch/put", fetchRequest)
 	mux.HandleFunc("/api/fetch/status", fetchRequest)
+	mux.HandleFunc("/api/fetch/binary", fetchBinary)
 	return mux
 }
 
@@ -493,6 +495,78 @@ func fileUpload(w http.ResponseWriter, r *http.Request) {
     labelOnly.addEventListener('change', () => {
       showFiles(labelOnly, document.getElementById('label-only-upload-state'));
     });
+  </script>
+</body>
+</html>`)
+}
+
+// BinaryFixture is the exact body served by /api/fetch/binary: every byte
+// value, including ones that are invalid as UTF-8.
+func BinaryFixture() []byte {
+	body := make([]byte, 0, 512)
+	for i := 0; i < 2; i++ {
+		for b := 0; b < 256; b++ {
+			body = append(body, byte(b))
+		}
+	}
+	return body
+}
+
+func fetchBinary(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-E2E-Binary", "yes")
+	w.Write(BinaryFixture())
+}
+
+// richEditor serves a model-driven contenteditable that behaves like CKEditor:
+// it only accepts beforeinput edits and re-renders from its model, reverting
+// any direct DOM write.
+func richEditor(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>E2E Rich Editor</title>
+</head>
+<body>
+  <h1 id="rich-editor-ready">Rich editor fixture</h1>
+  <div id="plain-editable" contenteditable="true" role="textbox" aria-label="Plain editable">plain old</div>
+  <div id="model-editor" contenteditable="true" role="textbox" aria-label="Model editor"></div>
+  <output id="model-state"></output>
+  <script>
+    const editor = document.getElementById('model-editor');
+    const state = document.getElementById('model-state');
+    let model = 'model old';
+    let rendering = false;
+    function render() {
+      rendering = true;
+      if (editor.textContent !== model) editor.textContent = model;
+      state.textContent = model;
+      rendering = false;
+    }
+    function selectsAll() {
+      const sel = getSelection();
+      return !!sel && sel.rangeCount > 0 && sel.toString() === editor.textContent && model !== '';
+    }
+    editor.addEventListener('beforeinput', (event) => {
+      event.preventDefault();
+      const all = selectsAll();
+      if (event.inputType === 'insertText' || event.inputType === 'insertReplacementText') {
+        model = all ? (event.data || '') : model + (event.data || '');
+      } else if (event.inputType.startsWith('delete')) {
+        model = all ? '' : model.slice(0, -1);
+      }
+      render();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+    });
+    new MutationObserver(() => { if (!rendering) render(); })
+      .observe(editor, { childList: true, characterData: true, subtree: true });
+    render();
   </script>
 </body>
 </html>`)

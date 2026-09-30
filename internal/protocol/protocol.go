@@ -501,13 +501,17 @@ type TraceStatus struct {
 
 // ResponseData is the data field of a successful response.
 type ResponseData struct {
-	Title  string      `json:"title,omitempty"`
-	URL    string      `json:"url,omitempty"`
-	Reused bool        `json:"reused,omitempty"`
-	TabID  interface{} `json:"tabId,omitempty"`
-	Tab    string      `json:"tab,omitempty"`
-	Seq    *int        `json:"seq,omitempty"`
-	Cursor *int        `json:"cursor,omitempty"`
+	Title  string `json:"title,omitempty"`
+	URL    string `json:"url,omitempty"`
+	Reused bool   `json:"reused,omitempty"`
+	// VisibilityState is the page's document.visibilityState after a tab
+	// switch (tab_select, open reusing a tab). "hidden" means Chrome activated
+	// the tab but its window is minimized, occluded, or on another Space.
+	VisibilityState string      `json:"visibilityState,omitempty"`
+	TabID           interface{} `json:"tabId,omitempty"`
+	Tab             string      `json:"tab,omitempty"`
+	Seq             *int        `json:"seq,omitempty"`
+	Cursor          *int        `json:"cursor,omitempty"`
 
 	SnapshotData     *SnapshotData     `json:"snapshotData,omitempty"`
 	SnapshotDiffData *SnapshotDiffData `json:"snapshotDiffData,omitempty"`

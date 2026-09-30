@@ -112,7 +112,7 @@ var hoverTool = mcp.NewTool("browser_hover",
 )
 
 var fillTool = mcp.NewTool("browser_fill",
-	mcp.WithDescription("Clear an input field and fill it with new text"),
+	mcp.WithDescription("Clear an input, textarea, or contenteditable (including rich editors such as CKEditor) and fill it with new text; the rendered result is verified for contenteditable targets"),
 	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot")),
 	mcp.WithString("text", mcp.Required(), mcp.Description("Text to fill into the field")),
 	tabParam(),
@@ -202,7 +202,7 @@ var fileChooserTool = mcp.NewTool("browser_filechooser",
 )
 
 var tabFrontTool = mcp.NewTool("browser_tab_front",
-	mcp.WithDescription("Bring a tab to the real OS foreground: restores the Chrome window if minimized, activates the tab, and focuses the page. Unlike browser_tab_select this works at the OS window level, so document.visibilityState becomes \"visible\" and background throttling stops — required for pages that gate work on visibility (uploads, media, timers). The result reports the achieved visibilityState. If the page only needs to BELIEVE it is visible, use browser_page_visibility instead."),
+	mcp.WithDescription("Bring a tab to the foreground: restores the Chrome window if minimized, activates the tab, and focuses the page, so document.visibilityState can become \"visible\" and background throttling stops — required for pages that gate work on visibility (uploads, media, timers). The result reports the achieved visibilityState. CDP cannot raise a window covered by another app or on another Space; the tool fails when the page stays hidden. If the page only needs to BELIEVE it is visible, use browser_page_visibility instead."),
 	mcp.WithString("tab", mcp.Description("Tab ID to bring to front (default: active tab)")),
 )
 
