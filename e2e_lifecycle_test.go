@@ -561,6 +561,15 @@ func TestE2EIdleTabReaper(t *testing.T) {
 	portPath := filepath.Join(home, "profiles", profile, "browser", "cdp-port")
 	browserPort := 0
 	t.Cleanup(func() {
+		// Chrome keeps writing into its user-data dir for a moment after the
+		// CDP endpoint closes; wait for the process itself so TempDir cleanup
+		// does not race it ("directory not empty").
+		browserPID := e2eBrowserPIDFromSingletonLock(filepath.Join(home, "profiles", profile, "browser", "user-data"))
+		defer func() {
+			if browserPID > 0 && !client.WaitForProcessExit(browserPID, 5*time.Second) {
+				t.Errorf("isolated browser pid %d still running after cleanup", browserPID)
+			}
+		}()
 		if raw, readErr := os.ReadFile(daemonPath); readErr == nil {
 			var info protocol.DaemonInfo
 			_ = json.Unmarshal(raw, &info)
@@ -631,35 +640,47 @@ func TestE2EIdleTabReaper(t *testing.T) {
 	}
 }
 
+// e2eBrowserPIDFromSingletonLock returns the pid Chrome records in its
+// user-data dir's SingletonLock symlink ("<host>-<pid>"), or 0.
+func e2eBrowserPIDFromSingletonLock(userDataDir string) int {
+	target, err := os.Readlink(filepath.Join(userDataDir, "SingletonLock"))
+	if err != nil {
+		return 0
+	}
+	idx := strings.LastIndex(target, "-")
+	if idx < 0 {
+		return 0
+	}
+	pid, err := strconv.Atoi(target[idx+1:])
+	if err != nil || pid <= 0 {
+		return 0
+	}
+	return pid
+}
+
+// closeE2EBrowser makes sure the isolated browser on port is gone. A daemon
+// started with --close-owned-browser may already have closed it (or be in the
+// middle of closing it) during shutdown, so an unreachable or half-closed
+// endpoint is not an error; only a browser still answering after the grace
+// period is.
 func closeE2EBrowser(t *testing.T, port int) {
 	t.Helper()
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/json/version", port))
-	if err != nil {
-		t.Errorf("close isolated browser: read version endpoint: %v", err)
-		return
+	versionURL := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
+	if resp, err := http.Get(versionURL); err == nil {
+		var versionInfo struct {
+			WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&versionInfo)
+		_ = resp.Body.Close()
+		if decodeErr == nil && versionInfo.WebSocketDebuggerURL != "" {
+			if conn, _, dialErr := websocket.DefaultDialer.Dial(versionInfo.WebSocketDebuggerURL, nil); dialErr == nil {
+				_ = conn.WriteJSON(map[string]interface{}{"id": 1, "method": "Browser.close"})
+				_ = conn.Close()
+			}
+		}
 	}
-	defer resp.Body.Close()
-	var versionInfo struct {
-		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil || versionInfo.WebSocketDebuggerURL == "" {
-		t.Errorf("close isolated browser: decode version endpoint: %v", err)
-		return
-	}
-	conn, _, err := websocket.DefaultDialer.Dial(versionInfo.WebSocketDebuggerURL, nil)
-	if err != nil {
-		t.Errorf("close isolated browser: connect CDP: %v", err)
-		return
-	}
-	if err := conn.WriteJSON(map[string]interface{}{"id": 1, "method": "Browser.close"}); err != nil {
-		_ = conn.Close()
-		t.Errorf("close isolated browser: send Browser.close: %v", err)
-		return
-	}
-	_ = conn.Close()
 
 	deadline := time.Now().Add(3 * time.Second)
-	versionURL := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
 	for time.Now().Before(deadline) {
 		check, checkErr := http.Get(versionURL)
 		if checkErr != nil {

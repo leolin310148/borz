@@ -272,14 +272,14 @@ func TestE2ECLISelectorAndRefErrors(t *testing.T) {
 	requireError("nonexistent ref", nonexistentRef, "unknown ref: e999999", "Run snapshot first")
 
 	wrongType := runE2EJSONResponse(t, env, "select", inputRef, "green", "--tab", tab, "--json")
-	requireError("wrong element type", wrongType, "element is not a select")
+	requireError("wrong element type", wrongType, "element is not a native select or ARIA combobox")
 
 	invalidValue := runE2EJSONResponse(t, env, "select", selectRef, "purple", "--tab", tab, "--json")
 	requireError("invalid select value", invalidValue, "select value not found: purple")
 
 	runE2EJSON(t, env, "open", baseURL+"/page2", "--tab", tab, "--wait-for", "#page-two-ready", "--timeout", "5000", "--json")
 	staleRef := runE2EJSONResponse(t, env, "click", clickRef, "--tab", tab, "--json")
-	requireError("stale ref", staleRef, "unknown ref: "+clickRef, "Run snapshot first")
+	requireError("stale ref", staleRef, "unknown ref: "+clickRef, "page navigated", "Run snapshot again")
 
 	runE2EJSON(t, env, "open", baseURL+"/", "--tab", tab, "--wait-for", "#ready", "--timeout", "5000", "--json")
 	refreshed := runE2EJSON(t, env, "snapshot", "-i", "--tab", tab, "--json").Data.SnapshotData

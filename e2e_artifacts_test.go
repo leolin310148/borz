@@ -15,6 +15,7 @@ import (
 
 	"github.com/leolin310148/borz/internal/client"
 	e2everify "github.com/leolin310148/borz/internal/e2e_verify_site"
+	"github.com/leolin310148/borz/internal/jseval"
 	"github.com/leolin310148/borz/internal/protocol"
 	"github.com/leolin310148/borz/internal/recorder"
 )
@@ -334,7 +335,9 @@ func TestE2ECLIOperationalLogsPrivacy(t *testing.T) {
 			}
 			foundWait = entry.Success != nil && *entry.Success && entry.DurationMS >= 30
 		case string(protocol.ActionEval):
-			foundEval = foundEval || entry.ScriptBytes == len(evalScript)
+			// The CLI wraps inline scripts before sending them (jseval.PrepareCLI),
+			// so the logged size is the prepared script's, not the raw argument's.
+			foundEval = foundEval || entry.ScriptBytes == len(jseval.PrepareCLI(evalScript, "", true))
 		case string(protocol.ActionClipboardWrite):
 			foundClipboard = entry.Success != nil && *entry.Success && entry.TextBytes == len(clipboardSecret)
 		}
@@ -411,6 +414,13 @@ func TestE2ELegacyCompatibility(t *testing.T) {
 	}
 
 	profile := "e2e-legacy-compat"
+	// BORZ_CDP_URL / BB_BROWSER_CDP_URL may only redirect the default
+	// profile, so the named legacy profile is declared as a cdp profile in
+	// the legacy home; migration must carry profiles.json across with it.
+	legacyProfiles := fmt.Sprintf(`{"version":1,"profiles":{%q:{"transport":"cdp","cdpUrl":"http://%s:%d","idleTabTimeout":0}}}`+"\n", profile, ep.Host, ep.Port)
+	if err := os.WriteFile(filepath.Join(legacyHome, "profiles.json"), []byte(legacyProfiles), 0o600); err != nil {
+		t.Fatalf("write legacy profiles.json: %v", err)
+	}
 	legacyEnv := make([]string, 0, len(os.Environ())+6)
 	for _, entry := range os.Environ() {
 		if strings.HasPrefix(entry, "HOME=") || strings.HasPrefix(entry, "PATH=") ||
@@ -425,7 +435,6 @@ func TestE2ELegacyCompatibility(t *testing.T) {
 	legacyEnv = append(legacyEnv,
 		"HOME="+userHome,
 		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
-		fmt.Sprintf("BB_BROWSER_CDP_URL=http://%s:%d", ep.Host, ep.Port),
 		"BB_BROWSER_PROFILE="+profile,
 		"BB_BROWSER_TAB_IDLE_TIMEOUT=0",
 		"BB_BROWSER_E2E=1",
