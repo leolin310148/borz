@@ -82,6 +82,10 @@ type CdpConnection struct {
 	// sessionListeners for flat-mode session events
 	sessionMu        sync.Mutex
 	sessionListeners map[int64]sessionListener
+
+	// titleLabel is the "[profile] " prefix shown on page titles of a
+	// managed browser; empty disables it. Set once before Connect.
+	titleLabel string
 }
 
 type sessionListener struct {
@@ -1002,6 +1006,9 @@ func (c *CdpConnection) attachAndEnable(targetID string, registerAsTab bool) err
 	for _, domain := range []string{"Page.enable", "Runtime.enable", "Network.enable", "DOM.enable", "Accessibility.enable"} {
 		c.SessionCommand(targetID, domain, nil)
 	}
+	if registerAsTab {
+		c.installTitleLabel(targetID)
+	}
 
 	return nil
 }
@@ -1041,7 +1048,7 @@ func (c *CdpConnection) GetTargets() ([]CdpTargetInfo, error) {
 		pages = append(pages, CdpTargetInfo{
 			ID:       t.ID,
 			Type:     t.Type,
-			Title:    t.Title,
+			Title:    c.StripTitleLabel(t.Title),
 			URL:      t.URL,
 			OpenerID: t.OpenerID,
 		})

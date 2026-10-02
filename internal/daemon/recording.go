@@ -431,7 +431,7 @@ func (m *recordingManager) drainPageEvents(ar *activeRecording) ([]recorder.Even
 		ar.info.URL = payload.URL
 		ar.mu.Unlock()
 	}
-	return events, vp, payload.URL, payload.Title, payload.ScrollX, payload.ScrollY
+	return events, vp, payload.URL, m.cdp.StripTitleLabel(payload.Title), payload.ScrollX, payload.ScrollY
 }
 
 func (m *recordingManager) runClient(ctx context.Context, ar *activeRecording) {
@@ -489,7 +489,7 @@ func (m *recordingManager) captureClient(ar *activeRecording) error {
 		return err
 	}
 	ts := time.Since(ar.info.StartedAt).Nanoseconds()
-	rec, err := ar.writer.AddFrame(ts, data, ext, recorder.Viewport{Width: payload.Width, Height: payload.Height, DPR: payload.DPR}, payload.URL, payload.Title, 0, 0)
+	rec, err := ar.writer.AddFrame(ts, data, ext, recorder.Viewport{Width: payload.Width, Height: payload.Height, DPR: payload.DPR}, payload.URL, m.cdp.StripTitleLabel(payload.Title), 0, 0)
 	ar.updateCounts(rec.Seq, 0, ts)
 	return err
 }

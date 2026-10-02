@@ -33,6 +33,11 @@ type ServerOptions struct {
 	// clients. Empty is normalized to "default" for compatibility.
 	Profile string
 
+	// TitleLabel is the prefix shown in front of every page title (see
+	// titlelabel.go). Set only for a borz-managed browser of a named
+	// profile; empty leaves page titles untouched.
+	TitleLabel string
+
 	// CloseOwnedBrowser closes the CDP browser during daemon shutdown. It is
 	// set only by the local client after discovery proves that the endpoint
 	// was launched (or previously recorded) by borz. External CDP profiles
@@ -93,6 +98,7 @@ func NewServer(opts ServerOptions) *Server {
 	cdp := NewCdpConnection(opts.CDPHost, opts.CDPPort, tabManager)
 	cdp.SetEnsureBrowser(opts.EnsureBrowser)
 	cdp.SetMaxTabs(opts.MaxTabs)
+	cdp.SetTitleLabel(opts.TitleLabel)
 	extHub := extbridge.NewHub()
 
 	return &Server{

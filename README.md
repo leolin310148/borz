@@ -110,11 +110,16 @@ can also point at an existing CDP endpoint or a remote borz server — see
 [Profiles](#profiles) below.
 
 Each managed browser is labelled with its profile so several can be told
-apart: its first window is named `borz - <profile>` (just `borz` for the
-default profile) in Mission Control, Cmd+\` and the Window menu, and it gets a
-stable per-profile theme color unless you already picked one. The label is
-applied when borz launches Chrome; an already-running browser keeps its look
-until it is relaunched.
+apart: every page title starts with `[<profile>] ` (for example
+`[teams] Chat | Microsoft Teams`), which shows in the tab strip, the Window
+menu and Mission Control. The prefix is display-only: `tab list`, `open`,
+`snapshot`, `get title` and friends report the page's own title, but page
+JavaScript reading `document.title` sees the prefix. Set
+`BORZ_NO_TITLE_LABEL=1` on the daemon/server to turn it off. Browsers borz
+attaches to (`cdp` profiles) are never relabelled. The first window is also
+named `borz - <profile>` and gets a stable per-profile theme color at launch
+unless you already picked one; those two apply only when borz launches Chrome,
+while the title prefix applies as soon as a new daemon attaches.
 
 If you prefer manual control, start Chrome with debugging enabled:
 

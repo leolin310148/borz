@@ -507,7 +507,7 @@ func waitForSelector(cdp *CdpConnection, targetID, selector string, timeout time
 				details = append(details, fmt.Sprintf("current URL %q", lastState.Href))
 			}
 			if lastState.Title != "" {
-				details = append(details, fmt.Sprintf("title %q", truncateDiagnostic(lastState.Title, 160)))
+				details = append(details, fmt.Sprintf("title %q", truncateDiagnostic(cdp.StripTitleLabel(lastState.Title), 160)))
 			}
 			if lastState.ReadyState != "" {
 				details = append(details, fmt.Sprintf("readyState %q", lastState.ReadyState))
@@ -2051,7 +2051,11 @@ func getAttributeValue(cdp *CdpConnection, targetID string, backendNodeID int, a
 		} `json:"result"`
 	}
 	json.Unmarshal(callRaw, &call)
-	return fmt.Sprintf("%v", call.Result.Value), nil
+	value := fmt.Sprintf("%v", call.Result.Value)
+	if attribute == "title" {
+		value = cdp.StripTitleLabel(value)
+	}
+	return value, nil
 }
 
 // keyDef is the CDP keyboard event descriptor for a single key.
@@ -2868,6 +2872,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			raw, _ := cdp.Evaluate(target.ID, "document.title", true)
 			var val string
 			json.Unmarshal(raw, &val)
+			val = cdp.StripTitleLabel(val)
 			return okResp(req.ID, &protocol.ResponseData{Value: val, Tab: shortID})
 		}
 		if req.Ref == "" {

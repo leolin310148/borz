@@ -61,7 +61,7 @@ func buildTextSnapshot(cdp *CdpConnection, targetID string) (*protocol.SnapshotD
 		return nil, fmt.Errorf("parse text snapshot: %w", err)
 	}
 	return &protocol.SnapshotData{
-		Snapshot: formatTextSnapshot(payload.Title, payload.URL, payload.Text),
+		Snapshot: formatTextSnapshot(cdp.StripTitleLabel(payload.Title), payload.URL, payload.Text),
 		Refs:     map[string]*protocol.RefInfo{},
 		Elements: []*protocol.ElementInfo{},
 	}, nil

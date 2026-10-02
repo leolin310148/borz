@@ -192,9 +192,11 @@ use `profile rm` for the declaration.
 managed profiles reject it; use a declared `cdp` profile for an external CDP
 endpoint. Managed browser identity and lifecycle locks are profile-scoped, so
 concurrent CLI processes converge on one daemon and one recorded Chrome.
-Managed Chrome windows are named `borz - <profile>` and get a per-profile
-theme color at launch, so a human can tell which profile a window belongs to;
-page titles are not changed.
+Managed Chrome pages show `[<profile>] ` in front of their title so a human
+can tell profiles apart; every title borz reports has the prefix stripped, so
+match titles as usual (page JS reading document.title does see it). Windows
+are also named `borz - <profile>` with a per-profile theme color at launch.
+`cdp` profiles are never relabelled; BORZ_NO_TITLE_LABEL=1 disables it.
 
 ## MCP (for AI agents)
 
