@@ -250,11 +250,13 @@ func TestE2EDaemonReconnectRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discover Chrome CDP endpoint: %v", err)
 	}
-	cdpURL := fmt.Sprintf("http://%s:%d", ep.Host, ep.Port)
+	// Named profiles reject BORZ_CDP_URL; attach through a declared cdp
+	// profile instead, as a real user would.
+	writeE2EProfiles(t, home, fmt.Sprintf(`{"version":1,"profiles":{%q:{"transport":"cdp","cdpUrl":"http://%s:%d"}}}`, profile, ep.Host, ep.Port))
 	run := func(args ...string) string {
 		t.Helper()
 		cmd := exec.Command(bin, args...)
-		cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+		cmd.Env = e2eEnvWithoutCDPOverride("BORZ_HOME=" + home)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("borz %s failed: %v\n%s", strings.Join(args, " "), err, out)
@@ -291,14 +293,14 @@ func TestE2EDaemonReconnectRecovery(t *testing.T) {
 	t.Cleanup(func() {
 		if tab != "" {
 			cmd := exec.Command(bin, "close", "--profile", profile, "--tab", tab, "--json")
-			cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+			cmd.Env = e2eEnvWithoutCDPOverride("BORZ_HOME=" + home)
 			_ = cmd.Run()
 		}
 		if raw, err := os.ReadFile(daemonPath); err == nil {
 			var info protocol.DaemonInfo
 			_ = json.Unmarshal(raw, &info)
 			cmd := exec.Command(bin, "daemon", "shutdown", "--profile", profile)
-			cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+			cmd.Env = e2eEnvWithoutCDPOverride("BORZ_HOME=" + home)
 			_ = cmd.Run()
 			if info.PID > 0 && !client.WaitForProcessExit(info.PID, 3*time.Second) {
 				if process, findErr := os.FindProcess(info.PID); findErr == nil {
@@ -372,13 +374,16 @@ func TestE2ENamedProfileIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discover Chrome CDP endpoint: %v", err)
 	}
-	cdpURL := fmt.Sprintf("http://%s:%d", ep.Host, ep.Port)
 	profiles := []string{"e2e-isolation-a", "e2e-isolation-b"}
+	// Named profiles reject BORZ_CDP_URL; declare both as cdp profiles on the
+	// shared test browser so isolation is about daemons and tab state.
+	cdpURL := fmt.Sprintf("http://%s:%d", ep.Host, ep.Port)
+	writeE2EProfiles(t, home, fmt.Sprintf(`{"version":1,"profiles":{%q:{"transport":"cdp","cdpUrl":%q},%q:{"transport":"cdp","cdpUrl":%q}}}`, profiles[0], cdpURL, profiles[1], cdpURL))
 	run := func(profile string, args ...string) string {
 		t.Helper()
 		args = append(args, "--profile", profile)
 		cmd := exec.Command(bin, args...)
-		cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+		cmd.Env = e2eEnvWithoutCDPOverride("BORZ_HOME=" + home)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("borz %s failed: %v\n%s", strings.Join(args, " "), err, out)
@@ -418,14 +423,14 @@ func TestE2ENamedProfileIsolation(t *testing.T) {
 		for _, profile := range profiles {
 			if tab := tabs[profile]; tab != "" {
 				cmd := exec.Command(bin, "close", "--tab", tab, "--json", "--profile", profile)
-				cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+				cmd.Env = e2eEnvWithoutCDPOverride("BORZ_HOME=" + home)
 				_ = cmd.Run()
 			}
 			if raw, readErr := os.ReadFile(daemonPath(profile)); readErr == nil {
 				var info protocol.DaemonInfo
 				_ = json.Unmarshal(raw, &info)
 				cmd := exec.Command(bin, "daemon", "shutdown", "--profile", profile)
-				cmd.Env = append(os.Environ(), "BORZ_HOME="+home, "BORZ_CDP_URL="+cdpURL)
+				cmd.Env = e2eEnvWithoutCDPOverride("BORZ_HOME=" + home)
 				_ = cmd.Run()
 				if info.PID > 0 && !client.WaitForProcessExit(info.PID, 3*time.Second) {
 					if process, findErr := os.FindProcess(info.PID); findErr == nil {
@@ -735,4 +740,17 @@ func TestE2ECLIDelaySemantics(t *testing.T) {
 	if failedElapsed >= 3500*time.Millisecond {
 		t.Fatalf("failed click took %s with %s post-delay; post-delay should be skipped", failedElapsed, failedActionPostDelay)
 	}
+}
+
+// e2eEnvWithoutCDPOverride is the test process environment minus any
+// BORZ_CDP_URL override (named profiles reject it), plus extra entries.
+func e2eEnvWithoutCDPOverride(extra ...string) []string {
+	env := make([]string, 0, len(os.Environ())+len(extra))
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "BORZ_CDP_URL=") || strings.HasPrefix(entry, "BB_BROWSER_CDP_URL=") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	return append(env, extra...)
 }
