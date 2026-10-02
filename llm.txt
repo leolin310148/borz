@@ -132,11 +132,12 @@ with `--profile <name>` or `BORZ_PROFILE`. Undeclared names (including
 borz profile list                                # what each name means — run this first
 borz profile add mini --remote http://100.64.0.1:13333 --token "$BORZ_TOKEN" \
     --description "Mac Mini's logged-in Chrome"
-borz profile add mdt --cdp 127.0.0.1:19845 --daemon-port 19826 --daemon-token generate --idle-tab-timeout 0 --max-tabs 30
+borz profile add mdt-vpn --cdp 127.0.0.1:19845 --daemon-port 19826 --daemon-token generate --idle-tab-timeout 0 --max-tabs 30
 borz --profile mini open https://example.com     # HTTP to the Mini server
-BORZ_PROFILE=mdt borz snapshot                   # tunnel-attached Chrome
+BORZ_PROFILE=mdt-vpn borz snapshot                   # tunnel-attached Chrome
 borz profile list --all                          # + undeclared profiles, status, disk, last used
 borz profile purge train004 [--force] [--logs]   # reclaim one profile's runtime state
+borz profile retire mdt --replaced-by mdt-vpn --reason "renamed"   # old name now errors instead of opening an empty browser
 ```
 
 Optional `description` is one line of free text on any transport, set with

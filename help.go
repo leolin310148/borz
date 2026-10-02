@@ -1035,7 +1035,7 @@ var commandHelp = map[string]cmdHelp{
 	},
 	"profile": {
 		Summary: "Manage named browser targets in ~/.borz/profiles.json (managed, cdp, or remote transport).",
-		Usage:   "borz profile [list|show|add|set|rm|purge] [<name>] [flags]",
+		Usage:   "borz profile [list|show|add|set|rm|purge|retire|unretire] [<name>] [flags]",
 		Flags: []string{
 			"  list                     Declared profiles: name, transport, target, description",
 			"  list --all               Every profile with local state, declared or not:",
@@ -1045,6 +1045,9 @@ var commandHelp = map[string]cmdHelp{
 			"  set <name>               Edit a declared profile in place",
 			"  rm <name>                Delete a profile from the registry",
 			"  purge <name>             Reclaim a profile's daemon, browser, and files",
+			"  retire <name>            Make an old name fail loudly instead of opening a",
+			"                           fresh browser (--replaced-by <p> --reason <text>)",
+			"  unretire <name>          Make a retired name usable again",
 			"  --logs                   Purge the profile's logs too (purge only)",
 			"  --force                  Actually purge; without it, purge only previews",
 			"  --managed                Transport: borz launches and owns a local Chrome",
@@ -1065,12 +1068,12 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Examples: []string{
 			"  borz profile add mini --remote http://100.64.0.1:13333 --token \"$BORZ_TOKEN\"",
-			"  borz profile add mdt --cdp 127.0.0.1:19845 --idle-tab-timeout 0 \\",
+			"  borz profile add mdt-vpn --cdp 127.0.0.1:19845 --idle-tab-timeout 0 \\",
 			"      --description \"MDT VPN Chrome via the SSH tunnel; never reap its tabs\"",
 			"  borz profile add clean --managed --daemon-port 19827 --daemon-token generate \\",
 			"      --description \"throwaway logged-out Chrome\"",
 			"  borz --profile mini open https://example.com",
-			"  BORZ_PROFILE=mdt borz snapshot",
+			"  BORZ_PROFILE=mdt-vpn borz snapshot",
 		},
 		Notes: "A profile is the single handle for \"which browser am I driving\". Undeclared\n" +
 			"names (including 'default') resolve to the managed transport — today's\n" +
@@ -1154,7 +1157,7 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Examples: []string{
 			"  borz profile add mini --remote http://server:13333 --token \"$BORZ_TOKEN\"",
-			"  borz profile add mdt --cdp 127.0.0.1:19845 --daemon-port 19826 --daemon-token generate",
+			"  borz profile add mdt-vpn --cdp 127.0.0.1:19845 --daemon-port 19826 --daemon-token generate",
 			"  borz profile add mini --remote http://server:13333 --description \"Mac Mini's logged-in Chrome\"",
 		},
 	},
@@ -1163,19 +1166,36 @@ var commandHelp = map[string]cmdHelp{
 		Usage:   "borz profile set <name> [--managed | --cdp <url|host:port> | --remote <url>] [--token <t>] [--daemon-port <p|dynamic>] [--daemon-token <token|generate|dynamic>] [--description <text>] [--idle-tab-timeout <m|default>] [--max-tabs <n|default>] [--no-check]",
 		Examples: []string{
 			"  borz profile set mini --token \"$NEW_TOKEN\"",
-			"  borz profile set mdt --cdp 127.0.0.1:9222",
-			"  borz profile set mdt --description \"MDT VPN Chrome (SSH tunnel); work sites only\"",
-			"  borz profile set mdt --description \"\"          # drop the description again",
-			"  borz profile set mdt --idle-tab-timeout 0        # never auto-close its tabs",
-			"  borz profile set mdt --idle-tab-timeout default  # back to flag/env/0 (disabled)",
-			"  borz profile set mdt --max-tabs 30               # cap runaway tab creation",
-			"  borz profile set mdt --daemon-port 19826 --daemon-token generate",
+			"  borz profile set mdt-vpn --cdp 127.0.0.1:9222",
+			"  borz profile set mdt-vpn --description \"Only for reaching the VPN through the jump host\"",
+			"  borz profile set mdt-vpn --description \"\"          # drop the description again",
+			"  borz profile set mdt-vpn --idle-tab-timeout 0        # never auto-close its tabs",
+			"  borz profile set mdt-vpn --idle-tab-timeout default  # back to flag/env/0 (disabled)",
+			"  borz profile set mdt-vpn --max-tabs 30               # cap runaway tab creation",
+			"  borz profile set mdt-vpn --daemon-port 19826 --daemon-token generate",
 		},
 	},
 	"profile.rm": {
 		Summary:  "Remove a profile from the registry; the name then resolves to managed again.",
 		Usage:    "borz profile rm <name>",
-		Examples: []string{"  borz profile rm mdt", "  borz profile remove mdt   # alias"},
+		Examples: []string{"  borz profile rm mdt-vpn", "  borz profile remove mdt-vpn   # alias"},
+	},
+	"profile.retire": {
+		Summary: "Retire a profile name so selecting it fails and points at its replacement.",
+		Usage:   "borz profile retire <name> [--replaced-by <profile>] [--reason <text>]",
+		Flags: []string{
+			"  --replaced-by <profile>  Profile to use instead; named in the error",
+			"  --reason <text>          One line saying why the name was retired",
+		},
+		Notes: "An undeclared name silently resolves to a fresh managed browser, so after renaming a profile, an old '--profile <name>' in a script, skill, or prompt would open an empty Chrome instead of the intended one. Retiring the old name turns that into an error for every command, daemon and server included. The name must not be declared: add the new profile, remove the old one, then retire the old name. 'profile show' and 'profile purge' still work on a retired name.",
+		Examples: []string{
+			"  borz profile retire mdt --replaced-by mdt-vpn --reason \"renamed: VPN jump host only\"",
+			"  borz profile unretire mdt",
+		},
+	},
+	"profile.unretire": {
+		Summary: "Make a retired profile name usable again.",
+		Usage:   "borz profile unretire <name>",
 	},
 	"profile.remove": {
 		Summary: "Alias for 'profile rm'.",
@@ -1512,7 +1532,7 @@ var commandHelp = map[string]cmdHelp{
 		Flags:   []string{"  --copy   Copy the token to the system clipboard instead of printing it"},
 		Examples: []string{
 			"  borz daemon token --copy",
-			"  borz --profile mdt daemon token --copy",
+			"  borz --profile mdt-vpn daemon token --copy",
 		},
 		Notes: "When a daemon is running, this returns the token it accepts right now. When stopped, a configured stable daemonToken is returned without starting Chrome. Dynamic tokens are only available after the profile has started once. The token is a secret; profile show/list never expose it.",
 	},

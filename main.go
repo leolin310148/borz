@@ -114,6 +114,14 @@ func main() {
 	if err := config.SetProfile(profileName); err != nil {
 		fatal(err.Error())
 	}
+	// A retired name must fail before any command (daemon and server
+	// included) can launch a fresh browser for it. 'borz profile ...' is
+	// exempt so the name can still be inspected, unretired, or purged.
+	if !profileCommand {
+		if err := checkSelectedProfileNotRetired(config.Profile()); err != nil {
+			fatal(err.Error())
+		}
+	}
 	client.SetRequestContext("cli", cliSessionID(
 		os.Getenv("BORZ_SESSION_ID"), os.Getenv("TMUX_PANE"), os.Getenv("TERM_SESSION_ID"), os.Getppid(),
 	))

@@ -47,6 +47,16 @@ func handleProfile(cmdArgs []string, rawArgs []string, jsonOutput bool) {
 			fatal("Usage: borz profile rm <name>")
 		}
 		handleProfileRemove(cmdArgs[1], jsonOutput)
+	case "retire":
+		if len(cmdArgs) < 2 {
+			fatal(profileRetireUsage)
+		}
+		handleProfileRetire(cmdArgs[1], rawArgs, jsonOutput)
+	case "unretire":
+		if len(cmdArgs) < 2 {
+			fatal("Usage: borz profile unretire <name>")
+		}
+		handleProfileUnretire(cmdArgs[1], jsonOutput)
 	case "purge":
 		if len(cmdArgs) < 2 {
 			fatal("Usage: borz profile purge <name> [--logs] [--force]")
@@ -76,12 +86,14 @@ func handleProfileList(jsonOutput bool) {
 		printJSON(map[string]interface{}{
 			"path":     config.ProfilesJSONPath(),
 			"profiles": entries,
+			"retired":  retiredProfilePayload(registry),
 		})
 		return
 	}
 
 	if len(names) == 0 {
 		fmt.Println("No profiles declared; every profile uses the managed transport (local browser).")
+		printRetiredProfiles(registry)
 		fmt.Printf("Config path: %s\n", config.ProfilesJSONPath())
 		fmt.Println("Add one with 'borz profile add <name> --remote <url> | --cdp <host:port> | --managed'")
 		return
@@ -133,6 +145,7 @@ func handleProfileList(jsonOutput bool) {
 		}
 		fmt.Printf("%-*s  %-*s  %s\n", nameWidth, name, transportWidth, entry.Transport, targets[name])
 	}
+	printRetiredProfiles(registry)
 	fmt.Printf("\nConfig path: %s\n", config.ProfilesJSONPath())
 	fmt.Println("Undeclared names (including 'default') resolve to the managed transport.")
 	if !anyDescribed {
@@ -144,6 +157,15 @@ func handleProfileShow(name string, jsonOutput bool) {
 	registry, err := borzprofile.Load()
 	if err != nil {
 		fatal(err.Error())
+	}
+	if retiredErr := registry.CheckRetired(name); retiredErr != nil {
+		retired := registry.Retired[name]
+		if jsonOutput {
+			printJSON(map[string]interface{}{"name": name, "declared": false, "retired": true, "replacedBy": retired.ReplacedBy, "reason": borzprofile.SanitizeDescription(retired.Reason), "path": config.ProfilesJSONPath()})
+			return
+		}
+		fmt.Println(retiredErr.Error())
+		return
 	}
 	entry, declared := registry.Profiles[name]
 	if jsonOutput {
@@ -207,6 +229,9 @@ func handleProfileAdd(name string, rawArgs []string, jsonOutput bool) {
 	}
 	if _, exists := registry.Profiles[name]; exists {
 		fatal(fmt.Sprintf("profile %q already exists; use 'borz profile set %s ...' to modify it", name, name))
+	}
+	if _, retired := registry.Retired[name]; retired {
+		fatal(fmt.Sprintf("profile name %q is retired; run 'borz profile unretire %s' first if you really want to reuse it", name, name))
 	}
 	entry, changed, err := profileEntryFromFlags(borzprofile.Entry{}, rawArgs)
 	if err != nil {

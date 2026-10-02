@@ -399,18 +399,19 @@ borz profile list                       # name, transport, target, description (
 borz profile show mini
 borz profile add mini --remote http://100.64.0.1:13333 --token "$BORZ_TOKEN" \
     --description "Mac Mini's logged-in Chrome"
-borz profile add mdt --cdp 127.0.0.1:19845 --daemon-port 19826 --daemon-token generate \
+borz profile add mdt-vpn --cdp 127.0.0.1:19845 --daemon-port 19826 --daemon-token generate \
     --idle-tab-timeout 0 --max-tabs 30
 borz profile add clean --managed --daemon-port 19827 --daemon-token generate
 borz profile set mini --token "$NEW_TOKEN"
-borz profile set mdt --description "MDT VPN Chrome (SSH tunnel); work sites only"
-borz profile set mdt --description ""             # drop the description
-borz profile set mdt --idle-tab-timeout default   # clear the field again
-borz profile rm mdt
+borz profile set mdt-vpn --description "Only for reaching the VPN through the jump host"
+borz profile set mdt-vpn --description ""             # drop the description
+borz profile set mdt-vpn --idle-tab-timeout default   # clear the field again
+borz profile rm mdt-vpn
 
 borz profile list --all                 # + undeclared profiles, live status, disk, last used
 borz profile purge train004             # preview what reclaiming that profile would do
 borz profile purge train004 --force --logs
+borz profile retire mdt --replaced-by mdt-vpn --reason "renamed"   # old name now errors instead of opening an empty browser
 ```
 
 `profile add` probes the target first (`/status` for remote, `/json/version`
@@ -428,7 +429,7 @@ In `profiles.json` a cdp endpoint is spelled `cdpUrl`, or alternatively
       "token": "...",
       "description": "Mac Mini's logged-in Chrome"
     },
-    "mdt":  {
+    "mdt-vpn":  {
       "transport": "cdp",
       "cdpUrl": "http://127.0.0.1:19845",
       "daemonPort": 19826,

@@ -94,10 +94,54 @@ type Entry struct {
 	MaxTabs *int `json:"maxTabs,omitempty"`
 }
 
+// Retired marks a profile name that must no longer be used, usually because
+// the profile was renamed. Resolving a retired name fails loudly instead of
+// silently falling back to a fresh managed browser, which is what an
+// undeclared name would otherwise get.
+type Retired struct {
+	// ReplacedBy names the profile to use instead; empty when there is none.
+	ReplacedBy string `json:"replacedBy,omitempty"`
+	// Reason is a one-line note shown with the error ("renamed to make the
+	// VPN-only purpose explicit").
+	Reason string `json:"reason,omitempty"`
+}
+
 // File is the on-disk shape of profiles.json.
 type File struct {
-	Version  int              `json:"version"`
-	Profiles map[string]Entry `json:"profiles"`
+	Version  int                `json:"version"`
+	Profiles map[string]Entry   `json:"profiles"`
+	Retired  map[string]Retired `json:"retired,omitempty"`
+}
+
+// RetiredError is returned when a retired profile name is selected.
+type RetiredError struct {
+	Name    string
+	Retired Retired
+}
+
+func (e *RetiredError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "profile %q is retired", e.Name)
+	if reason := SanitizeDescription(e.Retired.Reason); reason != "" {
+		fmt.Fprintf(&b, " (%s)", reason)
+	}
+	if replacement := strings.TrimSpace(e.Retired.ReplacedBy); replacement != "" {
+		fmt.Fprintf(&b, "; use --profile %s instead", replacement)
+	}
+	b.WriteString(". borz refuses retired names so an old command never opens a fresh, empty browser by mistake.")
+	fmt.Fprintf(&b, "\nTo use the name again: borz profile unretire %s", e.Name)
+	return b.String()
+}
+
+// CheckRetired returns a *RetiredError when name is retired in f.
+func (f *File) CheckRetired(name string) error {
+	if f == nil {
+		return nil
+	}
+	if retired, ok := f.Retired[name]; ok {
+		return &RetiredError{Name: name, Retired: retired}
+	}
+	return nil
 }
 
 // CurrentVersion is the profiles.json schema version this binary writes.
@@ -196,6 +240,9 @@ func ResolveTarget(name string) (Target, error) {
 	name = Normalize(name)
 	f, err := Load()
 	if err != nil {
+		return Target{}, err
+	}
+	if err := f.CheckRetired(name); err != nil {
 		return Target{}, err
 	}
 	entry, ok := f.Profiles[name]
