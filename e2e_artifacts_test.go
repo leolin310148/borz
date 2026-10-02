@@ -372,10 +372,7 @@ func TestE2ECLIOperationalLogsPrivacy(t *testing.T) {
 func TestE2ELegacyCompatibility(t *testing.T) {
 	skipUnlessE2E(t)
 
-	ep, err := client.DiscoverCDPPort()
-	if err != nil {
-		t.Fatalf("discover Chrome CDP endpoint: %v", err)
-	}
+	ep := e2eDiscoverCDP(t)
 	site, err := e2everify.Start("")
 	if err != nil {
 		t.Fatalf("start e2e verify site: %v", err)

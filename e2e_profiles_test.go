@@ -86,10 +86,7 @@ func TestE2EProfilesZeroConfigUnchanged(t *testing.T) {
 func TestE2EProfileCDPTransportAttachesWithoutLaunching(t *testing.T) {
 	skipUnlessE2E(t)
 
-	ep, err := client.DiscoverCDPPort()
-	if err != nil {
-		t.Fatalf("discover Chrome CDP endpoint: %v", err)
-	}
+	ep := e2eDiscoverCDP(t)
 	home := t.TempDir()
 	site := startE2EVerifySite(t)
 	bin := filepath.Join(t.TempDir(), "borz")

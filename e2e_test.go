@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leolin310148/borz/internal/client"
 	"github.com/leolin310148/borz/internal/protocol"
 )
 
@@ -54,10 +53,7 @@ func skipUnlessE2E(t *testing.T) {
 func startE2EDaemon(t *testing.T, home string) e2eDaemonEnv {
 	t.Helper()
 
-	ep, err := client.DiscoverCDPPort()
-	if err != nil {
-		t.Fatalf("discover Chrome CDP endpoint: %v", err)
-	}
+	ep := e2eDiscoverCDP(t)
 	port := freeTCPPort(t)
 
 	var stdout, stderr bytes.Buffer
@@ -124,10 +120,7 @@ func startE2EDaemon(t *testing.T, home string) e2eDaemonEnv {
 func startE2EServer(t *testing.T, home, token string) (e2eDaemonEnv, string) {
 	t.Helper()
 
-	ep, err := client.DiscoverCDPPort()
-	if err != nil {
-		t.Fatalf("discover Chrome CDP endpoint: %v", err)
-	}
+	ep := e2eDiscoverCDP(t)
 	port := freeTCPPort(t)
 
 	var stdout, stderr bytes.Buffer

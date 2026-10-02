@@ -246,10 +246,7 @@ func TestE2EDaemonReconnectRecovery(t *testing.T) {
 		_ = site.Close(ctx)
 	})
 
-	ep, err := client.DiscoverCDPPort()
-	if err != nil {
-		t.Fatalf("discover Chrome CDP endpoint: %v", err)
-	}
+	ep := e2eDiscoverCDP(t)
 	// Named profiles reject BORZ_CDP_URL; attach through a declared cdp
 	// profile instead, as a real user would.
 	writeE2EProfiles(t, home, fmt.Sprintf(`{"version":1,"profiles":{%q:{"transport":"cdp","cdpUrl":"http://%s:%d"}}}`, profile, ep.Host, ep.Port))
@@ -370,10 +367,7 @@ func TestE2ENamedProfileIsolation(t *testing.T) {
 		_ = site.Close(ctx)
 	})
 
-	ep, err := client.DiscoverCDPPort()
-	if err != nil {
-		t.Fatalf("discover Chrome CDP endpoint: %v", err)
-	}
+	ep := e2eDiscoverCDP(t)
 	profiles := []string{"e2e-isolation-a", "e2e-isolation-b"}
 	// Named profiles reject BORZ_CDP_URL; declare both as cdp profiles on the
 	// shared test browser so isolation is about daemons and tab state.
