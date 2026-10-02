@@ -1557,6 +1557,11 @@ slices, and array collectors. Invalid syntax fails before running the command;
 evaluation errors never print unfiltered or partial results. Missing fields
 produce `null`, as in jq, rather than the old mini-filter's empty output.
 
+A path that names a field the response does not have (for example
+`.data.requests` instead of `.data.networkRequests`) still prints `null`, plus a
+stderr hint listing the fields that exist. `network requests` always includes
+`requestCount` and `pendingCount`, so an empty result is explicit.
+
 Page commands use response data as the default root (`.result.body` for
 `fetch`); prefix with `.data` to select the response envelope. Array collectors
 such as `[.data.networkRequests[] | select(.status >= 400)]` also work.
@@ -1577,8 +1582,8 @@ borz snapshot --jq ".data.snapshotData.snapshot"
 # Count tabs
 borz tab --json --jq ".data.tabs | length"
 
-# Get all request URLs
-borz network requests --jq ".data.networkRequests[].url"
+# Get all request URLs (networkRequests is omitted when nothing matched)
+borz network requests --jq '.data.networkRequests // [] | .[].url'
 
 # Filter network requests by status
 borz network requests --jq '.data.networkRequests[] | select(.status > 400) | {url: .url, status: .status}'

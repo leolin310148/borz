@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -758,6 +759,7 @@ func main() {
 			}
 			fatal(err.Error())
 		}
+		raw = labelRemoteStatus(raw)
 		var pretty json.RawMessage
 		json.Unmarshal(raw, &pretty)
 		out, _ := json.MarshalIndent(pretty, "", "  ")
@@ -1189,6 +1191,10 @@ func handleNetwork(cmdArgs []string, jsonOutput bool, globalTabID, globalSince s
 	}
 
 	sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
+		if subCmd == "requests" && (resp.Data == nil || len(resp.Data.NetworkRequests) == 0) {
+			fmt.Println("No matching network requests captured for this tab. borz records requests only after it attached to the tab; reload or repeat the action, and check --since/--filter.")
+			return
+		}
 		if resp.Data != nil && len(resp.Data.NetworkRequests) > 0 {
 			for _, nr := range resp.Data.NetworkRequests {
 				status := "-"
@@ -1328,9 +1334,40 @@ func handleFetch(cmdArgs []string, jsonOutput bool, globalTabID string, rawArgs 
 				...(parseError ? { parseError: parseError } : {})
 			};
 		} catch(e) {
-			return { error: e.message, hint: 'Page fetch uses credentials: include but remains subject to CORS, cookie scope and redirects. A previously loaded resource may have used different headers or a different frame session.' };
+			// Diagnose which stage failed (#164). Probes are GET/HEAD only so a
+			// failed state-changing request is never sent again.
+			const target = new URL(%s, location.href);
+			const diagnostics = {
+				pageOrigin: location.origin,
+				targetOrigin: target.origin,
+				crossOrigin: target.origin !== location.origin,
+				mixedContent: location.protocol === 'https:' && target.protocol === 'http:'
+			};
+			const method = %s;
+			if (method === 'GET' || method === 'HEAD') {
+				try {
+					// no-cors only allows redirect: 'follow'; an opaque answer
+					// still proves the server is reachable.
+					await fetch(target.href, { method, mode: 'no-cors', credentials: 'include' });
+					diagnostics.reachable = true;
+				} catch (_) {
+					diagnostics.reachable = false;
+				}
+			}
+			let stage = 'network';
+			let hint = 'The request did not reach a usable response. Check the URL, VPN/DNS, and that the tab is still logged in.';
+			if (diagnostics.mixedContent) {
+				stage = 'mixed-content';
+				hint = 'An https page cannot fetch an http URL. Use an https URL or run fetch from a tab on that origin (--tab).';
+			} else if (diagnostics.crossOrigin && diagnostics.reachable) {
+				stage = 'cors';
+				hint = 'The server answered, but the browser blocked the cross-origin response (no CORS permission for ' + location.origin + ', or a redirect to another origin). Open a tab on ' + target.origin + ' and fetch with --tab, or download it with the page UI and read it via borz downloads.';
+			} else if (diagnostics.crossOrigin) {
+				stage = 'cross-origin-network';
+			}
+			return { error: e.message, stage, hint, diagnostics };
 		}
-	})()`, urlJSON, methodJSON, headersJSON, bodyOption, headersOutJSON, bytesJSON, rawBodyJSON, rawBodyJSON, rawBodyJSON)
+	})()`, urlJSON, methodJSON, headersJSON, bodyOption, headersOutJSON, bytesJSON, rawBodyJSON, rawBodyJSON, rawBodyJSON, urlJSON, methodJSON)
 
 	req := &protocol.Request{ID: newID(), Action: protocol.ActionEval, Script: script}
 	setTab(req, globalTabID)
@@ -1371,6 +1408,10 @@ func saveFetchBody(path string, resp *protocol.Response) error {
 	body, ok := result["body"]
 	if !ok {
 		if message, _ := result["error"].(string); message != "" {
+			if stage, _ := result["stage"].(string); stage != "" {
+				hint, _ := result["hint"].(string)
+				return fmt.Errorf("fetch failed at %s stage: %s. %s", stage, message, hint)
+			}
 			return fmt.Errorf("fetch failed: %s", message)
 		}
 		return fmt.Errorf("fetch response did not include a body")
@@ -2397,9 +2438,103 @@ func applyJQTo(target interface{}, expression string) []interface{} {
 	}
 	results, err := jq.Apply(generic, expression)
 	if err != nil {
+		if hint := jqMissingFieldHint(generic, expression); hint != "" {
+			fatal(err.Error() + "\n" + hint)
+		}
 		fatal(err.Error())
 	}
+	if allNull(results) {
+		if hint := jqMissingFieldHint(generic, expression); hint != "" {
+			fmt.Fprintln(os.Stderr, hint)
+		}
+	}
 	return results
+}
+
+// labelRemoteStatus rewrites a remote daemon's status so "profile" names the
+// profile the caller selected (for example mini), not the remote machine's own
+// profile, which moves to "remoteProfile" (#161).
+func labelRemoteStatus(raw json.RawMessage) json.RawMessage {
+	target, err := client.ActiveTarget()
+	if err != nil || target.Kind != borzprofile.TransportRemote {
+		return raw
+	}
+	var status map[string]interface{}
+	if json.Unmarshal(raw, &status) != nil || status == nil {
+		return raw
+	}
+	if remoteProfile, ok := status["profile"]; ok {
+		status["remoteProfile"] = remoteProfile
+	}
+	status["profile"] = borzprofile.Normalize(config.Profile())
+	status["transport"] = "remote"
+	status["remoteUrl"] = redactDisplayURL(target.Remote.URL)
+	out, err := json.Marshal(status)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+func allNull(results []interface{}) bool {
+	if len(results) == 0 {
+		return false
+	}
+	for _, result := range results {
+		if result != nil {
+			return false
+		}
+	}
+	return true
+}
+
+var jqFieldPath = regexp.MustCompile(`^\s*[\[(]*\s*((?:\.[A-Za-z_][A-Za-z0-9_]*)+)`)
+
+// jqMissingFieldHint explains a --jq path whose leading fields do not exist
+// in the response (for example .data.requests instead of
+// .data.networkRequests), which otherwise just prints null. Omitted list
+// fields are empty, not misspelled, so a present count sibling is mentioned.
+func jqMissingFieldHint(input interface{}, expression string) string {
+	match := jqFieldPath.FindStringSubmatch(expression)
+	if match == nil {
+		return ""
+	}
+	current := input
+	walked := ""
+	fields := strings.Split(strings.TrimPrefix(match[1], "."), ".")
+	for _, field := range fields {
+		// eval/fetch results are caller-shaped data where a missing key is
+		// normal jq behavior, not a borz schema mistake.
+		if field == "result" {
+			return ""
+		}
+	}
+	for _, field := range fields {
+		object, ok := current.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		next, present := object[field]
+		if !present {
+			keys := make([]string, 0, len(object))
+			for key := range object {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			where := "the response"
+			if walked != "" {
+				where = walked
+			}
+			hint := fmt.Sprintf("borz: --jq field %q is not in %s; available fields: %s", field, where, strings.Join(keys, ", "))
+			if _, ok := object["requestCount"]; ok && field == "networkRequests" {
+				hint = "borz: no network requests matched (requestCount is 0); use '.data.networkRequests // []' to always get an array"
+			}
+			return hint
+		}
+		walked += "." + field
+		current = next
+	}
+	return ""
 }
 
 func readInputText(command string, positional, raw []string) (string, string) {

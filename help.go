@@ -99,13 +99,15 @@ var commandHelp = map[string]cmdHelp{
 		Summary:  "Click an element by ref.",
 		Usage:    "borz click <ref> [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz click 5"},
-		Notes:    refNote,
+		Notes: refNote + "\nIf another element covers the target (a loading screen or transient overlay), click " +
+			"re-checks for up to 2s before failing with what it hit. For a styled checkbox/radio whose " +
+			"visual covers the real input, use 'borz check <ref>' / 'borz uncheck <ref>'.",
 	},
 	"mouse": {
 		Summary:  "Send pointer input at viewport CSS pixel coordinates (including canvas/SVG).",
 		Usage:    "borz mouse <click|move|down|up> <x> <y> [--button left|right|middle|none] [--tab <id>]" + waitForUsageSuffix,
 		Examples: []string{"  borz mouse click 120 240", "  borz mouse down 100 100", "  borz mouse move 200 200 --button left", "  borz mouse up 200 200"},
-		Notes:    "Use a screenshot to determine coordinates. Pin --tab throughout a drag. For a held-button move use --button left; always release with mouse up. This sends pointer events, not HTML5 DataTransfer drag-and-drop.",
+		Notes:    "Use a screenshot to determine coordinates. Pin --tab throughout a drag. For a held-button move use --button left; always release with mouse up. A drag that starts native HTML5 drag-and-drop (a draggable element) is intercepted and delivered as dragenter/dragover on move and drop on mouse up, so the button is always released. Overlay scrollbars (macOS) do not accept synthetic drags; scroll with 'borz scroll' or eval instead.",
 	},
 	"hover": {
 		Summary:  "Hover an element by ref.",
@@ -246,6 +248,10 @@ var commandHelp = map[string]cmdHelp{
 			"  borz eval --file ./greet.js --json-arg user='{\"id\":7}' --json-arg n=3",
 		},
 		Notes: "All remaining args are joined with spaces and evaluated as one expression.\n" +
+			"document.querySelector/querySelectorAll do not look inside shadow roots, but\n" +
+			"snapshot does (Salesforce LWC, Fluent, chrome:// pages), so an element with a\n" +
+			"ref may be invisible to querySelector. Act on the ref, or walk\n" +
+			"element.shadowRoot explicitly.\n" +
 			"By default, scripts that contain a top-level `await` are auto-wrapped in\n" +
 			"`(async () => { return (<script>) })()` so the resolved value is returned\n" +
 			"instead of `[object Promise]`. Use --no-auto-await to disable.\n" +
@@ -291,6 +297,8 @@ var commandHelp = map[string]cmdHelp{
 		},
 		Notes: "Snapshot before calling interaction commands — tree refs are regenerated " +
 			"on every snapshot and are cleared by navigation, reload, and viewport changes.\n" +
+			"A snapshot taken while the page is between documents (right after reload or an SPA " +
+			"navigation) waits up to 5s for a document body and retries once.\n" +
 			"A ref points at the exact element the snapshot saw (including inside open shadow " +
 			"roots and same-origin frames), so sibling churn from background widgets does not " +
 			"invalidate it. Only when that element is removed does borz try to rebind by " +
@@ -394,11 +402,17 @@ var commandHelp = map[string]cmdHelp{
 			"  borz network requests --since last_action",
 			"  borz network requests --tail --filter /api/",
 			"  borz network --tail --json | jq -c 'select(.status>=400)'",
+			"  borz network requests --jq '.data.networkRequests // [] | .[] | {url, status}'",
 			"  borz network clear",
 		},
 		Notes: "--tail polls the daemon every --interval, advancing the cursor so each\n" +
 			"request is printed at most once. Combine with --json for JSONL output suitable\n" +
-			"for piping into jq -c, or with --filter/--method/--status to narrow the stream.",
+			"for piping into jq -c, or with --filter/--method/--status to narrow the stream.\n" +
+			"JSON shape (non-tail): .data.networkRequests is an array of request objects,\n" +
+			"omitted when nothing matched; .data.requestCount and .data.pendingCount\n" +
+			"(requests with no response yet) are always present. Iterate\n" +
+			"'.data.networkRequests // []', not '.data[]' (that also yields tab/cursor).\n" +
+			"--tail --json emits one request object per line instead of the envelope.",
 	},
 	"console": {
 		Summary: "Read, clear, or live-tail captured console messages.",
@@ -820,11 +834,17 @@ var commandHelp = map[string]cmdHelp{
 			"response content-type is application/json, else as raw text. Invalid JSON is " +
 			"returned as raw text with parseError instead of discarding the body. With --output, " +
 			"non-JSON (or --raw) bodies are transferred as exact bytes, so DOCX/ZIP/PDF files stay intact. --output is " +
-			"always written on the CLI host, including when the selected profile is remote.",
+			"always written on the CLI host, including when the selected profile is remote. " +
+			"A failed request reports its stage (network, mixed-content, cors, cross-origin-network) " +
+			"with a hint; a GET/HEAD failure is probed once with mode no-cors to tell an unreachable " +
+			"server from a CORS block. Other methods are never re-sent.",
 	},
 	"status": {
 		Summary: "Print the daemon status as JSON (uptime, tabs, CDP connection).",
 		Usage:   "borz status",
+		Notes: "For a remote profile, \"profile\" is the profile you selected (for example mini);\n" +
+			"the remote machine's own daemon profile is \"remoteProfile\", and \"transport\"/\"remoteUrl\"\n" +
+			"name the server.",
 	},
 	"doctor": {
 		Summary: "Run end-to-end diagnostics on the CLI/daemon/browser stack.",

@@ -746,6 +746,13 @@ func (c *CdpConnection) handleSessionEvent(targetID, method string, msg map[stri
 		// no-op when there is no pending dialog left, so the copy is ignored.
 		tab.ResolvePendingDialog(params.Result, params.UserInput, time.Now())
 
+	case "Input.dragIntercepted":
+		var params struct {
+			Data json.RawMessage `json:"data"`
+		}
+		json.Unmarshal(paramsRaw, &params)
+		tab.SetInterceptedDrag(params.Data)
+
 	case "Page.fileChooserOpened":
 		// Only fires while Page.setInterceptFileChooserDialog is enabled,
 		// which ActionFileChooser turns on when arming. The native dialog is

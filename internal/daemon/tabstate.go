@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -84,6 +85,16 @@ type TabState struct {
 	// FileChooser auto-handler config (armed by ActionFileChooser, consumed
 	// on Page.fileChooserOpened).
 	FileChooserHandler *FileChooserHandler
+
+	// Native HTML5 drag interception for "mouse down/move/up". While a
+	// button is held borz enables Input.setInterceptDrags so a drag Chrome
+	// would run in its own event loop (swallowing later mouse events and
+	// leaving the button held) is reported as Input.dragIntercepted instead.
+	// dragData is that intercepted payload; dragEntered records whether the
+	// drop target already received dragEnter.
+	dragIntercepting bool
+	dragData         json.RawMessage
+	dragEntered      bool
 
 	// VisibilityOverride tracks an active page-visibility override:
 	// "visible" or "hidden", empty when no override is set. ScriptID is the
@@ -208,6 +219,45 @@ func (ts *TabState) ConsumeFileChooserHandler() *FileChooserHandler {
 	handler := ts.FileChooserHandler
 	ts.FileChooserHandler = nil
 	return handler
+}
+
+// SetDragIntercepting records whether Input.setInterceptDrags is enabled and
+// clears any previous drag payload.
+func (ts *TabState) SetDragIntercepting(on bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.dragIntercepting = on
+	ts.dragData = nil
+	ts.dragEntered = false
+}
+
+// DragIntercepting reports whether drag interception is enabled.
+func (ts *TabState) DragIntercepting() bool {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.dragIntercepting
+}
+
+// SetInterceptedDrag stores the payload from Input.dragIntercepted.
+func (ts *TabState) SetInterceptedDrag(data json.RawMessage) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.dragIntercepting {
+		ts.dragData = data
+		ts.dragEntered = false
+	}
+}
+
+// InterceptedDrag returns the active drag payload (nil when none) and whether
+// dragEnter was already dispatched; markEntered records that it now has been.
+func (ts *TabState) InterceptedDrag(markEntered bool) (json.RawMessage, bool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	entered := ts.dragEntered
+	if markEntered && ts.dragData != nil {
+		ts.dragEntered = true
+	}
+	return ts.dragData, entered
 }
 
 // PeekFileChooserHandler reports the armed handler without consuming it.

@@ -532,6 +532,10 @@ type ResponseData struct {
 	DialogInfo interface{} `json:"dialogInfo,omitempty"`
 
 	NetworkRequests []NetworkRequestInfo `json:"networkRequests,omitempty"`
+	// RequestCount and PendingCount are always set by "network requests", so
+	// an empty result is explicit even though networkRequests is omitted.
+	RequestCount    *int                 `json:"requestCount,omitempty"`
+	PendingCount    *int                 `json:"pendingCount,omitempty"`
 	RouteCount      *int                 `json:"routeCount,omitempty"`
 	ConsoleMessages []ConsoleMessageInfo `json:"consoleMessages,omitempty"`
 	JSErrors        []JSErrorInfo        `json:"jsErrors,omitempty"`

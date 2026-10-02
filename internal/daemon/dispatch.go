@@ -120,6 +120,77 @@ const fallbackDOMTreeScript = `(function borzFallbackSnapshot(rootSelector) {
 	return { rootId: walk(root, 0), map, rootSelectorMatched, fallback: true };
 })`
 
+// clickObstructionWait bounds how long click waits for an overlay that
+// covers its target to disappear.
+var clickObstructionWait = 2 * time.Second
+
+func waitForUnobstructedPoint(cdp *CdpConnection, targetID string, backendID int, lastErr error, timeout time.Duration) (x, y float64, focusOnly, retargeted bool, err error) {
+	deadline := time.Now().Add(timeout)
+	err = lastErr
+	for time.Now().Before(deadline) {
+		time.Sleep(150 * time.Millisecond)
+		x, y, focusOnly, retargeted, err = getInteractablePoint(cdp, targetID, backendID)
+		if err == nil || !strings.Contains(err.Error(), "Element is not clickable at its center") {
+			return
+		}
+	}
+	if err != nil {
+		err = fmt.Errorf("%w (still covered after waiting %s)", err, timeout)
+	}
+	return
+}
+
+// dragInterceptWait bounds how long a pressed "mouse move" waits for Chrome
+// to report that it started a native drag.
+var dragInterceptWait = 150 * time.Millisecond
+
+func waitForInterceptedDrag(tab *TabState, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if data, _ := tab.InterceptedDrag(false); data != nil {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func dispatchInterceptedDragMove(tab *TabState, sendDrag func(string, json.RawMessage) error) error {
+	data, entered := tab.InterceptedDrag(true)
+	if !entered {
+		if err := sendDrag("dragEnter", data); err != nil {
+			return fmt.Errorf("drag enter: %w", err)
+		}
+	}
+	if err := sendDrag("dragOver", data); err != nil {
+		return fmt.Errorf("drag over: %w", err)
+	}
+	return nil
+}
+
+// snapshotDocumentWait bounds how long a failed snapshot waits for the page
+// to have a document body before its single retry.
+var snapshotDocumentWait = 5 * time.Second
+
+func evaluateBuildDOMTree(cdp *CdpConnection, targetID, expression string, result *buildDomTreeResult) error {
+	raw, err := cdp.Evaluate(targetID, expression, true)
+	if err != nil {
+		return err
+	}
+	if raw == nil || string(raw) == "null" {
+		return fmt.Errorf("DOM tree returned no value")
+	}
+	if err := json.Unmarshal(raw, result); err != nil {
+		return fmt.Errorf("decode DOM tree: %w", err)
+	}
+	if result.RootID == "" {
+		return fmt.Errorf("DOM tree returned no root")
+	}
+	return nil
+}
+
 func evaluateFallbackDOMTree(cdp *CdpConnection, targetID, selector string) (*buildDomTreeResult, error) {
 	selectorJSON, _ := json.Marshal(selector)
 	raw, err := cdp.Evaluate(targetID, fallbackDOMTreeScript+"("+string(selectorJSON)+")", true)
@@ -537,29 +608,34 @@ func buildSnapshot(cdp *CdpConnection, targetID, url string, tab *TabState, req 
 	expression := fmt.Sprintf(`(() => { %s; const fn = globalThis.buildDomTree ?? (typeof window !== 'undefined' ? window.buildDomTree : undefined); if (typeof fn !== 'function') { throw new Error('buildDomTree is not available after script injection'); } return fn(%s); })()`, script, buildArgs)
 
 	var result buildDomTreeResult
-	raw, primaryErr := cdp.Evaluate(targetID, expression, true)
-	if primaryErr == nil && raw != nil && string(raw) != "null" {
-		if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil || result.RootID == "" {
-			if decodeErr != nil {
-				primaryErr = fmt.Errorf("decode DOM tree: %w", decodeErr)
-			} else {
-				primaryErr = fmt.Errorf("DOM tree returned no root")
-			}
+	var primaryErr, fallbackErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		result = buildDomTreeResult{}
+		primaryErr = evaluateBuildDOMTree(cdp, targetID, expression, &result)
+		if primaryErr == nil {
+			break
 		}
-	} else if primaryErr == nil {
-		primaryErr = fmt.Errorf("DOM tree returned no value")
+		var fallback *buildDomTreeResult
+		fallback, fallbackErr = evaluateFallbackDOMTree(cdp, targetID, req.Selector)
+		if fallbackErr == nil {
+			result = *fallback
+			result.RefToken = ""
+			primaryErr = nil
+			break
+		}
+		// Right after a reload or SPA navigation the document can be between
+		// contexts (no body yet). Wait for a document body once and retry
+		// instead of failing the snapshot outright.
+		if attempt == 0 && waitForSelector(cdp, targetID, "body", snapshotDocumentWait) != nil {
+			break
+		}
 	}
 	if primaryErr != nil {
-		fallback, fallbackErr := evaluateFallbackDOMTree(cdp, targetID, req.Selector)
-		if fallbackErr != nil {
-			tab.Refs = map[string]*protocol.RefInfo{}
-			tab.RefInvalidationReason = "the snapshot could not be rebuilt"
-			tab.RefToken = ""
-			tab.PrevDiffSnapshot = nil
-			return nil, nil, fmt.Errorf("build DOM snapshot: %v; fallback failed: %w", primaryErr, fallbackErr)
-		}
-		result = *fallback
-		result.RefToken = ""
+		tab.Refs = map[string]*protocol.RefInfo{}
+		tab.RefInvalidationReason = "the snapshot could not be rebuilt"
+		tab.RefToken = ""
+		tab.PrevDiffSnapshot = nil
+		return nil, nil, fmt.Errorf("build DOM snapshot: %v; fallback failed: %w (the page may still be loading or navigating; retry after 'borz wait' or 'borz navigate --wait-for <selector>')", primaryErr, fallbackErr)
 	}
 
 	selectorFilter := req.Selector
@@ -1207,6 +1283,13 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 				}
 				return false;
 			};
+			// Styled checkboxes/radios (SharePoint, Fluent) cover the real input
+			// with a decorative span; check/uncheck set the state directly (#154).
+			const obstructionAdvice = (expected) => {
+				const toggle = expected.matches('input[type="checkbox"], input[type="radio"], [role="checkbox"], [role="radio"], [role="switch"]');
+				return (toggle ? "If its styled visual covers the input, use 'borz check <ref>' or 'borz uncheck <ref>' instead of click. Otherwise close" : 'Close') +
+					" the blocking popup/overlay (try 'borz press Escape') and take a fresh snapshot.";
+			};
 			const hitBelongsToControl = (expected, hit) => {
 				if (!hit || hit.nodeType !== 1) return false;
 				if (hit === expected || composedContains(expected, hit)) return true;
@@ -1268,14 +1351,14 @@ func getInteractablePoint(cdp *CdpConnection, targetID string, backendNodeID int
 			if (!foundPoint) {
 				initialHit = deepElementFromPoint(expected.ownerDocument, x, y);
 				const hitControl = initialHit?.closest?.(actionableSelector);
-				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' (parent ' + describe(initialHit?.parentElement) + ', control ' + describe(hitControl) + ') instead of ' + describe(expected) + ' (connected ' + expected.isConnected + "). Close the blocking popup/overlay (try 'borz press Escape') and take a fresh snapshot.");
+				throw new Error('Element is not clickable at its center; hit ' + describe(initialHit) + ' (parent ' + describe(initialHit?.parentElement) + ', control ' + describe(hitControl) + ') instead of ' + describe(expected) + ' (connected ' + expected.isConnected + "). " + obstructionAdvice(expected));
 			}
 			const initialView = expected.ownerDocument.defaultView;
 			let view = initialView;
 			while (view) {
 				const hit = view === initialView ? initialHit : deepElementFromPoint(view.document, x, y);
 				if (!hitBelongsToControl(expected, hit)) {
-					throw new Error('Element is not clickable at its center; hit ' + describe(hit) + ' instead of ' + describe(expected) + ". Close the blocking popup/overlay (try 'borz press Escape') and take a fresh snapshot.");
+					throw new Error('Element is not clickable at its center; hit ' + describe(hit) + ' instead of ' + describe(expected) + ". " + obstructionAdvice(expected));
 				}
 				if (!view.frameElement) break;
 				const frame = view.frameElement;
@@ -2653,6 +2736,12 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 				}
 			}
 		}
+		if err != nil && req.Action == protocol.ActionClick && strings.Contains(err.Error(), "Element is not clickable at its center") {
+			// Loading screens and transient overlays (Teams, SAP) sit over a
+			// control for a moment after navigation. Give them a bounded
+			// chance to go away before reporting the obstruction (#169).
+			x, y, focusOnly, retargeted, err = waitForUnobstructedPoint(cdp, target.ID, backendID, err, clickObstructionWait)
+		}
 		if err != nil {
 			return clickFailure(err)
 		}
@@ -2926,19 +3015,57 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			return err
 		}
 
+		sendDrag := func(eventType string, data json.RawMessage) error {
+			_, err := cdp.SessionCommand(target.ID, "Input.dispatchDragEvent", map[string]interface{}{
+				"type": eventType, "x": x, "y": y, "modifiers": mods, "data": data,
+			})
+			return err
+		}
+
 		switch mouseType {
 		case "move":
 			buttons := map[string]int{"none": 0, "left": 1, "right": 2, "middle": 4}[button]
+			if data, _ := tab.InterceptedDrag(false); data != nil {
+				if err := dispatchInterceptedDragMove(tab, sendDrag); err != nil {
+					return failResp(req.ID, err)
+				}
+				break
+			}
 			if err := send("mouseMoved", map[string]interface{}{"buttons": buttons}); err != nil {
 				return failResp(req.ID, err)
 			}
+			if buttons != 0 && tab.DragIntercepting() && waitForInterceptedDrag(tab, dragInterceptWait) {
+				// This move started a native drag; deliver it as the first
+				// drag position so the drop target sees dragEnter/dragOver.
+				if err := dispatchInterceptedDragMove(tab, sendDrag); err != nil {
+					return failResp(req.ID, err)
+				}
+			}
 		case "down":
+			if button != "none" {
+				if _, err := cdp.SessionCommand(target.ID, "Input.setInterceptDrags", map[string]interface{}{"enabled": true}); err == nil {
+					tab.SetDragIntercepting(true)
+				}
+			}
 			if err := send("mousePressed", map[string]interface{}{"clickCount": clickCount}); err != nil {
 				return failResp(req.ID, err)
 			}
 		case "up":
+			var dropErr error
+			if data, _ := tab.InterceptedDrag(false); data != nil {
+				dropErr = sendDrag("drop", data)
+			}
+			if tab.DragIntercepting() {
+				tab.SetDragIntercepting(false)
+				cdp.SessionCommand(target.ID, "Input.setInterceptDrags", map[string]interface{}{"enabled": false})
+			}
+			// Always release the button, even when the drop failed, so a
+			// failed drag never leaves it held.
 			if err := send("mouseReleased", map[string]interface{}{"clickCount": clickCount}); err != nil {
 				return failResp(req.ID, err)
+			}
+			if dropErr != nil {
+				return failResp(req.ID, fmt.Errorf("drop intercepted drag: %w", dropErr))
 			}
 		case "click":
 			if err := send("mouseMoved", map[string]interface{}{"button": "none"}); err != nil {
@@ -3513,8 +3640,15 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 				qr.Items[i].RequestHeaders = redactSensitiveHeaders(qr.Items[i].RequestHeaders)
 				qr.Items[i].ResponseHeaders = redactSensitiveHeaders(qr.Items[i].ResponseHeaders)
 			}
+			pending := 0
+			for _, item := range qr.Items {
+				if item.Status == nil && !item.Failed {
+					pending++
+				}
+			}
 			return okResp(req.ID, &protocol.ResponseData{
 				NetworkRequests: qr.Items, Tab: shortID, Cursor: intPtr(qr.Cursor),
+				RequestCount: intPtr(len(qr.Items)), PendingCount: intPtr(pending),
 			})
 		case "clear":
 			tab.ClearNetwork()
