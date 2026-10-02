@@ -225,6 +225,13 @@ func ReadDaemonJSON() (*protocol.DaemonInfo, error) {
 	return &info, nil
 }
 
+// errNoBrowserExecutable means no Chromium-based browser is installed where
+// borz looks for one; every other managed-launch failure is reported as is.
+var errNoBrowserExecutable = errors.New("no browser found")
+
+// processAlive is IsProcessAlive behind a seam for tests.
+var processAlive = IsProcessAlive
+
 // IsProcessAlive checks if a PID is still running.
 func IsProcessAlive(pid int) bool {
 	proc, err := os.FindProcess(pid)
@@ -303,11 +310,17 @@ func jsonErrorMessage(body []byte) string {
 	var payload struct {
 		Error   string `json:"error"`
 		Message string `json:"message"`
+		Reason  string `json:"reason"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return ""
 	}
 	if message := strings.TrimSpace(payload.Error); message != "" {
+		// The daemon's 503 "Chrome not connected" carries the underlying cause
+		// (e.g. a failed managed-browser launch) in reason.
+		if reason := strings.TrimSpace(payload.Reason); reason != "" && !strings.Contains(message, reason) {
+			message += "\n  reason: " + reason
+		}
 		return message
 	}
 	return strings.TrimSpace(payload.Message)
@@ -494,6 +507,12 @@ func EnsureDaemon() error {
 			logClientEvent("warn", "browser_discovery_failed", observability.Fields{
 				DurationMS: time.Since(autostartStarted).Milliseconds(), ErrorCode: "browser_not_found",
 			})
+			if !errors.Is(err, errNoBrowserExecutable) {
+				// A browser exists but could not be started or attached to
+				// (profile held by another Chrome, identity mismatch, ...);
+				// the install advice below would only mislead.
+				return fmt.Errorf("borz: could not start the managed browser: %w", err)
+			}
 			return fmt.Errorf("borz: Cannot find a Chromium-based browser.\n\n" +
 				"Please do one of the following:\n" +
 				"  1. Install Google Chrome, Edge, or Brave\n" +
@@ -929,7 +948,7 @@ func LaunchManagedBrowser(port int) error {
 func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	executable := browserExecutableFinder()
 	if executable == "" {
-		return nil, fmt.Errorf("no browser found")
+		return nil, errNoBrowserExecutable
 	}
 	if _, err := config.EnsureHomeDir(); err != nil {
 		return nil, err
@@ -956,6 +975,12 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	userDataDir := config.ManagedUserDataDir()
 	if err := os.MkdirAll(userDataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("prepare managed browser profile: %w", err)
+	}
+	// A Chrome already holding this user-data-dir swallows the new launch: the
+	// new process hands its arguments to the running one and exits, so the
+	// requested port never opens. Say so instead of timing out.
+	if holder, ok := managedProfileHolder(userDataDir); ok {
+		return nil, holder.launchError(userDataDir, port)
 	}
 
 	// Write profile preferences
@@ -1025,7 +1050,69 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	return nil, fmt.Errorf("browser did not start in time")
+	if holder, ok := managedProfileHolder(userDataDir); ok && !canConnect("127.0.0.1", port) {
+		return nil, holder.launchError(userDataDir, port)
+	}
+	return nil, fmt.Errorf("browser did not start in time (CDP port %d never opened; user data %s)", port, userDataDir)
+}
+
+// profileHolder describes a live Chrome process that owns a user-data-dir.
+type profileHolder struct {
+	PID          int
+	DevToolsPort int // 0 when the holder exposes no DevTools port
+}
+
+// managedProfileHolder reports the live Chrome holding userDataDir, read from
+// Chrome's SingletonLock symlink ("<hostname>-<pid>") and DevToolsActivePort
+// file. Locks from another host or a dead process are not a holder: Chrome
+// clears those itself on the next launch.
+func managedProfileHolder(userDataDir string) (profileHolder, bool) {
+	target, err := os.Readlink(filepath.Join(userDataDir, "SingletonLock"))
+	if err != nil {
+		return profileHolder{}, false
+	}
+	sep := strings.LastIndex(target, "-")
+	if sep <= 0 {
+		return profileHolder{}, false
+	}
+	pid, err := strconv.Atoi(target[sep+1:])
+	if err != nil || pid <= 0 {
+		return profileHolder{}, false
+	}
+	if host, err := os.Hostname(); err == nil && !sameHostLabel(host, target[:sep]) {
+		return profileHolder{}, false
+	}
+	if !processAlive(pid) {
+		return profileHolder{}, false
+	}
+	holder := profileHolder{PID: pid}
+	if data, err := os.ReadFile(filepath.Join(userDataDir, "DevToolsActivePort")); err == nil {
+		line, _, _ := strings.Cut(string(data), "\n")
+		if p, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && p > 0 {
+			holder.DevToolsPort = p
+		}
+	}
+	return holder, true
+}
+
+// sameHostLabel compares hostnames by their first DNS label, since Chrome and
+// os.Hostname may disagree on a ".local" suffix.
+func sameHostLabel(a, b string) bool {
+	a, _, _ = strings.Cut(a, ".")
+	b, _, _ = strings.Cut(b, ".")
+	return strings.EqualFold(a, b)
+}
+
+func (h profileHolder) launchError(userDataDir string, wantPort int) error {
+	where := "with no DevTools port"
+	if h.DevToolsPort > 0 {
+		where = fmt.Sprintf("on DevTools port %d", h.DevToolsPort)
+	}
+	return fmt.Errorf("managed browser profile is already in use by another Chrome (pid %d, %s), so borz cannot start its browser on port %d.\n"+
+		"  user data: %s\n"+
+		"  This usually means an older borz daemon was killed and left its Chrome running, or the profile's CDP port changed.\n"+
+		"  Fix: quit that Chrome (save anything open in it first, e.g. `kill %d`), then retry. borz relaunches the profile on port %d.",
+		h.PID, where, wantPort, userDataDir, h.PID, wantPort)
 }
 
 // managedBrowserWindowName is the --window-name label for a managed browser.

@@ -1499,6 +1499,7 @@ returns 503 on a failing check).
 
 Two failures are specific enough to get their own remediation:
 
+- **`managed browser profile is already in use by another Chrome (pid N, ...)`** — another Chrome still holds the profile's user-data directory (Chrome allows one process per profile), usually one left running after its borz daemon was killed, or after the profile's CDP port changed. A new launch would just hand off to that Chrome and never open borz's port, so borz stops and names the holder instead. Quit that Chrome (save anything open in it first), then retry. A daemon that hits this reports it as the `reason` of its `Chrome not connected` error.
 - **`managed browser identity mismatch on port N`** — borz records which Chrome it owns in `~/.borz/browser/browser.json`, and refuses to attach to a different one. That record can go stale (a Chrome launched by an older borz that didn't record identities, or a hand-killed record). `borz browser status` shows the recorded and the live browser side by side; `borz browser adopt` re-records the live one when it really is borz's own. borz never adopts on its own: from its side a stale record and someone else's Chrome on that port look identical.
 
   ```bash

@@ -145,3 +145,19 @@ func TestNewServerWiresEnsureBrowser(t *testing.T) {
 		t.Fatal("NewServer should wire ServerOptions.EnsureBrowser into the CDP connection")
 	}
 }
+
+func TestConnectReportsManagedBrowserLaunchFailureAsLastError(t *testing.T) {
+	port := reserveDeadPort(t)
+	c := NewCdpConnection("127.0.0.1", port, NewTabStateManager())
+	c.SetEnsureBrowser(func() error {
+		return fmt.Errorf("managed browser profile is already in use by another Chrome (pid 4242, on DevTools port 63729)")
+	})
+
+	if err := c.Connect(); err == nil {
+		t.Fatal("Connect must fail when the managed browser cannot launch")
+	}
+	got := c.GetLastError()
+	if !strings.Contains(got, "managed browser launch failed") || !strings.Contains(got, "pid 4242") {
+		t.Fatalf("last error should explain the launch failure, got %q", got)
+	}
+}

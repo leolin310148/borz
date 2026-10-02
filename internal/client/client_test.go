@@ -71,11 +71,8 @@ func failingDiscover(t *testing.T) {
 	})
 }
 
-var errFakeNoCDP = &fakeErr{msg: "no cdp"}
-
-type fakeErr struct{ msg string }
-
-func (e *fakeErr) Error() string { return e.msg }
+// errFakeNoCDP stands for discovery finding no browser to launch.
+var errFakeNoCDP = fmt.Errorf("no cdp: %w", errNoBrowserExecutable)
 
 // freePort reserves and releases a local TCP port, so connecting to it fails.
 func freePort(t *testing.T) int {

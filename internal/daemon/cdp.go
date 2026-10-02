@@ -67,6 +67,9 @@ type CdpConnection struct {
 	// on every request).
 	ensureBrowser func() error
 	lastEnsureAt  time.Time
+	// lastEnsureErr is the most recent managed-browser launch failure; it
+	// explains a refused CDP port better than the dial error does.
+	lastEnsureErr error
 
 	LastError string
 	lastErrMu sync.RWMutex
@@ -165,9 +168,11 @@ func (c *CdpConnection) maybeEnsureBrowser() bool {
 		return false
 	}
 	c.lastEnsureAt = time.Now()
+	c.lastEnsureErr = nil
 	fmt.Fprintf(os.Stderr, "CDP unreachable; launching managed browser for %s:%d\n", c.Host, c.Port)
 	c.log("info", "cdp_ensure_browser_started", observability.Fields{})
 	if err := c.ensureBrowser(); err != nil {
+		c.lastEnsureErr = err
 		fmt.Fprintf(os.Stderr, "managed browser launch failed: %v\n", err)
 		c.log("warn", "cdp_ensure_browser_failed", observability.Fields{ErrorCode: "browser_not_found"})
 		return false
@@ -242,6 +247,9 @@ func (c *CdpConnection) Connect() error {
 		webSocketURL, err = fetchCDPWebSocketURL(httpClient, versionURL, c.Host, c.Port)
 	}
 	if err != nil {
+		if c.lastEnsureErr != nil {
+			err = fmt.Errorf("managed browser launch failed: %w", c.lastEnsureErr)
+		}
 		c.setLastError(err.Error())
 		fmt.Fprintf(os.Stderr, "CDP connect failed: %v\n", err)
 		c.log("warn", "cdp_connect_failed", observability.Fields{ErrorCode: "cdp_disconnected"})
