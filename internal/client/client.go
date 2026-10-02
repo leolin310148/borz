@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net"
 	"net/http"
@@ -967,15 +968,8 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 	if profileName == "" {
 		profileName = "borz"
 	}
-	prefs := map[string]interface{}{
-		"profile": map[string]interface{}{"name": profileName},
-	}
-	prefsJSON, err := json.Marshal(prefs)
-	if err != nil {
-		return nil, fmt.Errorf("encode managed browser preferences: %w", err)
-	}
-	if err := os.WriteFile(prefsPath, prefsJSON, 0o644); err != nil {
-		return nil, fmt.Errorf("write managed browser preferences: %w", err)
+	if err := writeManagedBrowserPreferences(prefsPath, profileName); err != nil {
+		return nil, err
 	}
 
 	args := []string{
@@ -989,6 +983,9 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 		"--disable-features=Translate,MediaRouter",
 		"--disable-session-crashed-bubble",
 		"--hide-crash-restore-bubble",
+		// Names the first window after the borz profile so Mission Control,
+		// Cmd+` and the Window menu tell multiple managed browsers apart.
+		"--window-name=" + managedBrowserWindowName(config.Profile()),
 		"about:blank",
 	}
 
@@ -1029,6 +1026,68 @@ func launchManagedBrowser(port int) (*CDPEndpoint, error) {
 		time.Sleep(250 * time.Millisecond)
 	}
 	return nil, fmt.Errorf("browser did not start in time")
+}
+
+// managedBrowserWindowName is the --window-name label for a managed browser.
+func managedBrowserWindowName(profileName string) string {
+	if profileName == "" || profileName == "default" {
+		return "borz"
+	}
+	return "borz - " + profileName
+}
+
+// managedThemeColors are distinct, legible Chrome theme seed colors (ARGB).
+var managedThemeColors = []uint32{
+	0xFF1A73E8, // blue
+	0xFF188038, // green
+	0xFFD93025, // red
+	0xFF9334E6, // purple
+	0xFFE8710A, // orange
+	0xFF12B5CB, // teal
+	0xFFE52592, // pink
+	0xFF795548, // brown
+}
+
+// managedThemeColor picks a stable theme seed color for a profile name, as
+// the signed SkColor integer Chrome stores in Preferences.
+func managedThemeColor(profileName string) int32 {
+	h := fnv.New32a()
+	h.Write([]byte(profileName))
+	return int32(managedThemeColors[h.Sum32()%uint32(len(managedThemeColors))])
+}
+
+// writeManagedBrowserPreferences sets the Chrome profile name and, unless the
+// user already picked one, a per-profile theme color. Existing preferences
+// (site permissions, download directory, ...) are preserved; only an
+// unreadable file is replaced.
+func writeManagedBrowserPreferences(prefsPath, profileName string) error {
+	prefs := map[string]interface{}{}
+	if data, err := os.ReadFile(prefsPath); err == nil {
+		if json.Unmarshal(data, &prefs) != nil || prefs == nil {
+			prefs = map[string]interface{}{}
+		}
+	}
+	child := func(parent map[string]interface{}, key string) map[string]interface{} {
+		if existing, ok := parent[key].(map[string]interface{}); ok {
+			return existing
+		}
+		created := map[string]interface{}{}
+		parent[key] = created
+		return created
+	}
+	child(prefs, "profile")["name"] = profileName
+	theme := child(child(prefs, "browser"), "theme")
+	if _, chosen := theme["user_color"]; !chosen {
+		theme["user_color"] = managedThemeColor(profileName)
+	}
+	prefsJSON, err := json.Marshal(prefs)
+	if err != nil {
+		return fmt.Errorf("encode managed browser preferences: %w", err)
+	}
+	if err := os.WriteFile(prefsPath, prefsJSON, 0o644); err != nil {
+		return fmt.Errorf("write managed browser preferences: %w", err)
+	}
+	return nil
 }
 
 func freeTCPPort() (int, error) {

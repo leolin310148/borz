@@ -109,6 +109,13 @@ profile, for example `borz --profile work open https://example.com`. Profiles
 can also point at an existing CDP endpoint or a remote borz server — see
 [Profiles](#profiles) below.
 
+Each managed browser is labelled with its profile so several can be told
+apart: its first window is named `borz - <profile>` (just `borz` for the
+default profile) in Mission Control, Cmd+\` and the Window menu, and it gets a
+stable per-profile theme color unless you already picked one. The label is
+applied when borz launches Chrome; an already-running browser keeps its look
+until it is relaunched.
+
 If you prefer manual control, start Chrome with debugging enabled:
 
 ```bash
