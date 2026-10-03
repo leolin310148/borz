@@ -173,27 +173,48 @@ func handleClose(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResul
 
 // --- Interaction Handlers ---
 
-func handleClick(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	ref, err := r.RequireString("ref")
-	if err != nil {
-		return mcp.NewToolResultError("ref is required"), nil
+// refOrLabelArgs reads click/hover's target: ref, or label for a control
+// without a snapshot ref. Exactly one is required.
+func refOrLabelArgs(r mcp.CallToolRequest) (string, string, *mcp.CallToolResult) {
+	ref := normalizeRef(r.GetString("ref", ""))
+	label := strings.TrimSpace(r.GetString("label", ""))
+	switch {
+	case ref != "" && label != "":
+		return "", "", mcp.NewToolResultError("pass either ref or label, not both")
+	case ref == "" && label == "":
+		return "", "", mcp.NewToolResultError("ref is required (or label for a control without a ref)")
 	}
-	req := &protocol.Request{ID: newID(), Action: protocol.ActionClick, Ref: normalizeRef(ref)}
+	return ref, label, nil
+}
+
+func refOrLabelSummary(verb, ref, label string) string {
+	if ref != "" {
+		return fmt.Sprintf("%s element @%s", verb, ref)
+	}
+	return fmt.Sprintf("%s element labeled %q", verb, label)
+}
+
+func handleClick(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ref, label, errResult := refOrLabelArgs(r)
+	if errResult != nil {
+		return errResult, nil
+	}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionClick, Ref: ref, Label: label}
 	setTab(req, r)
 	applyWaitFor(req, r)
 	resp, err := sendCommand(req)
 	if e := checkError(resp, err); e != nil {
 		return e, nil
 	}
-	return textResult(resp, fmt.Sprintf("Clicked element @%s", normalizeRef(ref))), nil
+	return textResult(resp, refOrLabelSummary("Clicked", ref, label)), nil
 }
 
 func handleHover(ctx context.Context, r mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	ref, err := r.RequireString("ref")
-	if err != nil {
-		return mcp.NewToolResultError("ref is required"), nil
+	ref, label, errResult := refOrLabelArgs(r)
+	if errResult != nil {
+		return errResult, nil
 	}
-	req := &protocol.Request{ID: newID(), Action: protocol.ActionHover, Ref: normalizeRef(ref)}
+	req := &protocol.Request{ID: newID(), Action: protocol.ActionHover, Ref: ref, Label: label}
 	setTab(req, r)
 	applyWaitFor(req, r)
 	resp, err := sendCommand(req)

@@ -92,9 +92,12 @@ type Request struct {
 	PostDelayMs *int `json:"postDelayMs,omitempty"`
 
 	// Interaction
-	Ref  string `json:"ref,omitempty"`
-	Text string `json:"text,omitempty"`
-	Key  string `json:"key,omitempty"`
+	Ref string `json:"ref,omitempty"`
+	// Label, when Ref is empty, targets click/hover at the single visible
+	// control whose label is exactly this text (see daemon/labeltarget.go).
+	Label string `json:"label,omitempty"`
+	Text  string `json:"text,omitempty"`
+	Key   string `json:"key,omitempty"`
 
 	// Paste, when set on ActionClipboardWrite, fires the terminal paste
 	// shortcut (Ctrl+Shift+V) after the clipboard is written so the text lands
@@ -294,6 +297,9 @@ type RefInfo struct {
 	Role             string `json:"role"`
 	Name             string `json:"name,omitempty"`
 	TagName          string `json:"tagName,omitempty"`
+	// RowContext is daemon-internal: the text of the ref's row, used to
+	// disambiguate same-named per-row controls during ref recovery.
+	RowContext string `json:"-"`
 }
 
 // ElementInfo is a RefInfo with its ref ID inlined, for iterable consumers

@@ -60,7 +60,7 @@ var cliValueFlags = []string{
 	"--mode", "--audio", "--viewport", "--dpr", "--mask-selectors", "--max-size",
 	"--preset", "--annotations", "--trim", "--speed", "--watermark", "--format", "--role",
 	"--fps", "--width", "--height", "--ffmpeg", "--chapters", "--rect", "--ref", "--scope",
-	"--annotate", "--output", "--button",
+	"--annotate", "--output", "--button", "--label",
 	"--protocol", "--transport", "--has-resident-key", "--has-user-verification",
 	"--is-user-verified", "--automatic-presence",
 }
@@ -351,8 +351,8 @@ func main() {
 		})
 
 	case "click":
-		ref := getRef(cmdArgs)
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionClick, Ref: ref}
+		ref, label := refOrLabel("click", cmdArgs, args)
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionClick, Ref: ref, Label: label}
 		setTab(req, globalTabID)
 		applyCLIWaitFor(req, args)
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
@@ -369,8 +369,8 @@ func main() {
 		sendAndPrint(req, jsonOutput, func(*protocol.Response) { fmt.Println("Mouse input sent") })
 
 	case "hover":
-		ref := getRef(cmdArgs)
-		req := &protocol.Request{ID: newID(), Action: protocol.ActionHover, Ref: ref}
+		ref, label := refOrLabel("hover", cmdArgs, args)
+		req := &protocol.Request{ID: newID(), Action: protocol.ActionHover, Ref: ref, Label: label}
 		setTab(req, globalTabID)
 		applyCLIWaitFor(req, args)
 		sendAndPrint(req, jsonOutput, func(resp *protocol.Response) {
@@ -2722,6 +2722,22 @@ func getRef(args []string) string {
 		fatal("Missing ref parameter. Usage: borz <action> <ref> (for example: borz click 12); refs are positional, not --ref")
 	}
 	return normalizeRef(args[0])
+}
+
+// refOrLabel reads click/hover's target: a positional ref, or --label <text>
+// for a control that has no snapshot ref. Exactly one of them is required.
+func refOrLabel(action string, cmdArgs, rawArgs []string) (string, string) {
+	label, hasLabel := getArgValueOK(rawArgs, "--label")
+	if !hasLabel {
+		return getRef(cmdArgs), ""
+	}
+	if len(cmdArgs) > 0 {
+		fatal(fmt.Sprintf("%s takes either a ref or --label, not both", action))
+	}
+	if strings.TrimSpace(label) == "" {
+		fatal("--label needs the exact visible text of the control, for example --label \"Retry\"")
+	}
+	return "", label
 }
 
 func normalizeRef(ref string) string {

@@ -27,6 +27,9 @@ type rawDomElementNode struct {
 	IsInViewport   bool              `json:"isInViewport"`
 	HighlightIndex *int              `json:"highlightIndex"`
 	ShadowRoot     bool              `json:"shadowRoot"`
+	// RowContext is the text of the element's nearest row-like ancestor,
+	// recorded for refs so recovery can disambiguate per-row controls.
+	RowContext string `json:"rowContext,omitempty"`
 }
 
 type buildDomTreeResult struct {
@@ -276,10 +279,11 @@ func ConvertBuildDomTreeResult(result *buildDomTreeResult, interactiveOnly, comp
 			tag := strings.ToLower(n.el.TagName)
 			xpath := el2xpath(n.el)
 			refs[refID] = &protocol.RefInfo{
-				XPath:   xpath,
-				Role:    role,
-				Name:    name,
-				TagName: tag,
+				XPath:      xpath,
+				Role:       role,
+				Name:       name,
+				TagName:    tag,
+				RowContext: n.el.RowContext,
 			}
 			elements = append(elements, &protocol.ElementInfo{
 				Ref:     refID,
@@ -356,10 +360,11 @@ func ConvertBuildDomTreeResult(result *buildDomTreeResult, interactiveOnly, comp
 			tag := strings.ToLower(el.TagName)
 			xpath := el2xpath(el)
 			refs[refID] = &protocol.RefInfo{
-				XPath:   xpath,
-				Role:    role,
-				Name:    name,
-				TagName: tag,
+				XPath:      xpath,
+				Role:       role,
+				Name:       name,
+				TagName:    tag,
+				RowContext: el.RowContext,
 			}
 			elements = append(elements, &protocol.ElementInfo{
 				Ref:     refID,

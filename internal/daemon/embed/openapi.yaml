@@ -152,16 +152,16 @@ paths:
   /v1/click:
     post:
       tags: [interaction]
-      summary: Click an element by snapshot ref
-      requestBody: { $ref: "#/components/requestBodies/RefOnly" }
+      summary: Click an element by snapshot ref or exact visible label
+      requestBody: { $ref: "#/components/requestBodies/RefOrLabel" }
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
   /v1/hover:
     post:
       tags: [interaction]
-      summary: Hover an element by snapshot ref
-      requestBody: { $ref: "#/components/requestBodies/RefOnly" }
+      summary: Hover an element by snapshot ref or exact visible label
+      requestBody: { $ref: "#/components/requestBodies/RefOrLabel" }
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
@@ -1478,6 +1478,23 @@ components:
                 required: [ref]
                 properties:
                   ref: { type: string, description: Element ref from a prior snapshot }
+    RefOrLabel:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/TabTarget"
+              - $ref: "#/components/schemas/WaitOptions"
+              - type: object
+                properties:
+                  ref: { type: string, description: Element ref from a prior snapshot; required unless label is set }
+                  label:
+                    type: string
+                    description: >-
+                      Instead of ref, the exact visible label (aria-label, rendered text, button value,
+                      or title; whitespace-collapsed, case-sensitive) of a single control. Fails unless
+                      exactly one visible control matches.
 
   responses:
     Ok:

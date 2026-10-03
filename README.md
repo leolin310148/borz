@@ -674,6 +674,9 @@ borz snapshot
 # Click an element by its ref number from the snapshot
 borz click 5
 
+# Click a control the snapshot shows as text but gives no ref (exact, unique label match)
+borz click --label "Retry"
+
 # Fill a text input
 borz fill 3 "hello world"
 

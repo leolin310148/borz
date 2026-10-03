@@ -65,8 +65,8 @@ func TestPrintCommandHelpKnown(t *testing.T) {
 		}
 	})
 	for _, want := range []string{
-		"Click an element by ref.",
-		"Usage: borz click <ref>",
+		"Click an element by ref, or by its exact visible label.",
+		"Usage: borz click (<ref> | --label <text>)",
 		"Notes:",
 		"Global flags",
 	} {

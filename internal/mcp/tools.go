@@ -91,9 +91,14 @@ var closeTool = mcp.NewTool("browser_close",
 
 // --- Interaction ---
 
+func labelParam() mcp.ToolOption {
+	return mcp.WithString("label", mcp.Description("Instead of ref: the exact visible label (aria-label, text, button value, or title) of a single control; fails unless exactly one control matches"))
+}
+
 var clickTool = mcp.NewTool("browser_click",
-	mcp.WithDescription("Click an element on the page. Use browser_snapshot first to get element refs."),
-	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot (e.g. \"5\" or \"@5\")")),
+	mcp.WithDescription("Click an element on the page. Use browser_snapshot first to get element refs; for a control the snapshot shows without a ref, pass label instead."),
+	mcp.WithString("ref", mcp.Description("Element reference from snapshot (e.g. \"5\" or \"@5\"); required unless label is set")),
+	labelParam(),
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),
@@ -103,7 +108,8 @@ var clickTool = mcp.NewTool("browser_click",
 
 var hoverTool = mcp.NewTool("browser_hover",
 	mcp.WithDescription("Hover over an element on the page"),
-	mcp.WithString("ref", mcp.Required(), mcp.Description("Element reference from snapshot")),
+	mcp.WithString("ref", mcp.Description("Element reference from snapshot; required unless label is set")),
+	labelParam(),
 	tabParam(),
 	waitForParam(),
 	timeoutParam(),

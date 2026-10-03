@@ -43,6 +43,7 @@ borz extract --text                          # reader-mode alias for snapshot --
 borz snapshot --diff                         # only +/-/~ changes since last snapshot of this tab
 borz viewport [mobile|tablet|desktop|WxH|reset]  # responsive viewport emulation
 borz click <ref>                             # refs come from snapshot
+borz click --label "Retry"                   # control shown as text but with no ref; exact, unique match only
 borz mouse click|move|down|up <x> <y>          # viewport CSS pixels; move --button left for drag
 borz fill <ref> <text>                       # clear + fill; input is never echoed
 borz fill <ref> --file <path>                 # exact file contents, including empty/newlines

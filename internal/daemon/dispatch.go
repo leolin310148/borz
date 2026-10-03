@@ -967,6 +967,22 @@ func resolveBackendNodeIDBySemantics(cdp *CdpConnection, targetID string, found 
 			matches = append(matches, element)
 		}
 	}
+	if len(matches) > 1 && found.RowContext != "" {
+		// Per-row controls (a "select row" checkbox in every list row) share
+		// tag, role, and name; the row they sit in tells them apart. Only an
+		// exact, unique row match rebinds — a re-sorted or edited row stays
+		// stale rather than hitting a neighbour.
+		var sameRow []rawDomElementNode
+		for _, match := range matches {
+			if match.RowContext == found.RowContext {
+				sameRow = append(sameRow, match)
+			}
+		}
+		if len(sameRow) != 1 {
+			return 0, fmt.Errorf("semantic fallback found %d exact matches for <%s> %s %q and %d in the same row", len(matches), wantTag, wantRole, found.Name, len(sameRow))
+		}
+		matches = sameRow
+	}
 	if len(matches) != 1 {
 		return 0, fmt.Errorf("semantic fallback found %d exact matches for <%s> %s %q", len(matches), wantTag, wantRole, found.Name)
 	}
@@ -2704,7 +2720,7 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 
 	// --- Element interaction ---
 	case protocol.ActionClick, protocol.ActionHover:
-		if req.Ref == "" {
+		if req.Ref == "" && strings.TrimSpace(req.Label) == "" {
 			return failResp(req.ID, "missing ref parameter")
 		}
 		seq := tab.RecordAction()
@@ -2721,7 +2737,13 @@ func dispatchAction(cdp *CdpConnection, req *protocol.Request) *protocol.Respons
 			}
 			return failResp(req.ID, err)
 		}
-		backendID, err := parseRef(cdp, target.ID, tab, req.Ref, req.SessionID)
+		var backendID int
+		var err error
+		if req.Ref != "" {
+			backendID, err = parseRef(cdp, target.ID, tab, req.Ref, req.SessionID)
+		} else {
+			backendID, err = resolveBackendNodeIDByLabel(cdp, target.ID, req.Label)
+		}
 		if err != nil {
 			return clickFailure(err)
 		}

@@ -96,12 +96,17 @@ var commandHelp = map[string]cmdHelp{
 
 	// --- Interaction ---
 	"click": {
-		Summary:  "Click an element by ref.",
-		Usage:    "borz click <ref> [--tab <id>]" + waitForUsageSuffix,
-		Examples: []string{"  borz click 5"},
+		Summary:  "Click an element by ref, or by its exact visible label.",
+		Usage:    "borz click (<ref> | --label <text>) [--tab <id>]" + waitForUsageSuffix,
+		Examples: []string{"  borz click 5", "  borz click --label \"Retry\""},
 		Notes: refNote + "\nIf another element covers the target (a loading screen or transient overlay), click " +
 			"re-checks for up to 2s before failing with what it hit. For a styled checkbox/radio whose " +
-			"visual covers the real input, use 'borz check <ref>' / 'borz uncheck <ref>'.",
+			"visual covers the real input, use 'borz check <ref>' / 'borz uncheck <ref>'." +
+			"\n--label is for a control the snapshot shows as text but gives no ref (some error screens " +
+			"and custom widgets). It matches aria-label, rendered text, button value, or title exactly " +
+			"(whitespace-collapsed, case-sensitive), searches open shadow roots and the active frame, " +
+			"climbs to the nearest clickable ancestor, and refuses unless exactly one control matches — " +
+			"so --label \"Retry\" never hits \"Clear cache and retry\".",
 	},
 	"mouse": {
 		Summary:  "Send pointer input at viewport CSS pixel coordinates (including canvas/SVG).",
@@ -110,10 +115,10 @@ var commandHelp = map[string]cmdHelp{
 		Notes:    "Use a screenshot to determine coordinates. Pin --tab throughout a drag. For a held-button move use --button left; always release with mouse up. A drag that starts native HTML5 drag-and-drop (a draggable element) is intercepted and delivered as dragenter/dragover on move and drop on mouse up, so the button is always released. Overlay scrollbars (macOS) do not accept synthetic drags; scroll with 'borz scroll' or eval instead.",
 	},
 	"hover": {
-		Summary:  "Hover an element by ref.",
-		Usage:    "borz hover <ref> [--tab <id>]" + waitForUsageSuffix,
-		Examples: []string{"  borz hover 12"},
-		Notes:    refNote,
+		Summary:  "Hover an element by ref, or by its exact visible label.",
+		Usage:    "borz hover (<ref> | --label <text>) [--tab <id>]" + waitForUsageSuffix,
+		Examples: []string{"  borz hover 12", "  borz hover --label \"More options\""},
+		Notes:    refNote + "\n--label matches like 'borz click --label' (exact, unique, see 'borz help click').",
 	},
 	"fill": {
 		Summary: "Clear an input, textarea, or contenteditable and fill it with <text>.",

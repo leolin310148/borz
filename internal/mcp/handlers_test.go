@@ -1278,3 +1278,17 @@ func TestHandleTabPin_ForwardsToExtEndpoint(t *testing.T) {
 		t.Errorf("index body = %+v, want tab \"2\"", bodies[2])
 	}
 }
+
+func TestHandleClick_LabelInsteadOfRef(t *testing.T) {
+	cap := capturingSend(t, ok())
+	res, _ := handleClick(context.Background(), mkReq(map[string]any{"label": " Retry "}))
+	if res.IsError || cap.req.Ref != "" || cap.req.Label != "Retry" {
+		t.Fatalf("res=%+v req=%+v", res, cap.req)
+	}
+	for _, args := range []map[string]any{{}, {"ref": "3", "label": "Retry"}} {
+		res, _ := handleHover(context.Background(), mkReq(args))
+		if !res.IsError {
+			t.Fatalf("hover %v should be rejected", args)
+		}
+	}
+}

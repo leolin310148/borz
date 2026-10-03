@@ -552,6 +552,24 @@ window.buildDomTree = (
    * @param {HTMLElement} element - The element to check.
    * @returns {boolean} Whether the element is visible.
    */
+  // Text of the nearest row-like ancestor (table row, list item, grid row),
+  // crossing open shadow boundaries. Ref recovery uses it to tell apart
+  // same-named controls repeated per row, such as SharePoint's "選取資料列"
+  // checkboxes, after the list re-renders. textContent avoids a layout pass.
+  const ROW_SELECTOR = 'tr,[role="row"],[role="listitem"],[role="treeitem"],[role="option"],li,[aria-rowindex]';
+  function getRowContext(element) {
+    let cur = element;
+    for (let depth = 0; cur && depth < 25; depth++) {
+      const next = cur.parentElement || (cur.getRootNode && cur.getRootNode() instanceof ShadowRoot ? cur.getRootNode().host : null);
+      cur = next;
+      if (!cur || cur === document.body) return '';
+      if (cur.matches && cur.matches(ROW_SELECTOR)) {
+        return String(cur.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+      }
+    }
+    return '';
+  }
+
   function isElementVisible(element) {
     const style = getCachedComputedStyle(element);
     return (
@@ -1236,6 +1254,8 @@ window.buildDomTree = (
       if (nodeData.isInViewport || viewportExpansion === -1) {
         nodeData.highlightIndex = highlightIndex++;
         if (refRegistry) refRegistry.set(nodeData.highlightIndex, node);
+        const rowContext = getRowContext(node);
+        if (rowContext) nodeData.rowContext = rowContext;
 
         if (doHighlightElements) {
           if (focusHighlightIndex >= 0) {

@@ -46,10 +46,10 @@ func (s *Server) registerRESTRoutes(mux *http.ServeMux) {
 
 	// Interaction
 	mux.HandleFunc("/v1/click", s.restJSON(func(body restBody) *protocol.Request {
-		return body.applyWait(&protocol.Request{Action: protocol.ActionClick, Ref: body.Ref, TabID: body.tabID()})
+		return body.applyWait(&protocol.Request{Action: protocol.ActionClick, Ref: body.Ref, Label: body.Label, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/hover", s.restJSON(func(body restBody) *protocol.Request {
-		return body.applyWait(&protocol.Request{Action: protocol.ActionHover, Ref: body.Ref, TabID: body.tabID()})
+		return body.applyWait(&protocol.Request{Action: protocol.ActionHover, Ref: body.Ref, Label: body.Label, TabID: body.tabID()})
 	}))
 	mux.HandleFunc("/v1/fill", s.restJSON(func(body restBody) *protocol.Request {
 		return body.applyWait(&protocol.Request{Action: protocol.ActionFill, Ref: body.Ref, Text: body.Text, TabID: body.tabID()})
@@ -360,6 +360,7 @@ type restBody struct {
 	URL         string                    `json:"url,omitempty"`
 	New         bool                      `json:"new,omitempty"`
 	Ref         string                    `json:"ref,omitempty"`
+	Label       string                    `json:"label,omitempty"`
 	Text        string                    `json:"text,omitempty"`
 	Paste       bool                      `json:"paste,omitempty"`
 	Key         string                    `json:"key,omitempty"`
